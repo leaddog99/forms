@@ -13576,6 +13576,7 @@ async def extract_from_markdown_endpoint(
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
     progress_token: str = Form(""),
+    capture: str = Form(""),
 ):
     # PAID WORK — an authenticated caller only. These endpoints each spend
     # real LLM money, and until 2026-07-30 every one of them was reachable
@@ -13587,6 +13588,21 @@ async def extract_from_markdown_endpoint(
     # no real user anything; anonymous gets a 401 it can act on.
     _require_perm(request, "own_recipes")
     print("[EXTRACT] Extract from markdown endpoint called")
+    # Typed capture provenance (intake/capture_sources.py): the staged grab's
+    # `capture` block, passed through by the importer/form as JSON. Stamped on
+    # `_source.capture` below so a Facebook-reel recipe says so forever — the
+    # attribution fix (page as author, not facebook.com) and any "how do social
+    # captures fare" question both need rows that are findable.
+    capture_meta: Optional[dict] = None
+    if capture.strip():
+        try:
+            _c = json.loads(capture)
+            if isinstance(_c, dict) and (_c.get("kind") or _c.get("via")):
+                capture_meta = {k: _c[k] for k in ("kind", "label", "structure", "via",
+                                                   "selected", "chars", "comments", "links",
+                                                   "verified") if k in _c}
+        except Exception as e:
+            print(f"[CAPTURE] ignoring malformed capture field: {e}")
     try:
         raw = await file.read()
         try:
@@ -13777,6 +13793,19 @@ async def extract_from_markdown_endpoint(
 
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
+
+        if capture_meta:
+            _src = recipe.get("_source") or {}
+            _src["capture"] = capture_meta
+            recipe["_source"] = _src
+            _n_ing = len(recipe.get("recipeIngredient") or [])
+            _n_step = len(recipe.get("recipeInstructions") or [])
+            # The runtime record of how typed captures fare — one line per
+            # extraction, greppable: `[CAPTURE] result kind=facebook …`.
+            print(f"[CAPTURE] result kind={capture_meta.get('kind')} "
+                  f"structure={capture_meta.get('structure')} via={capture_meta.get('via')} "
+                  f"path={path_used} ingredients={_n_ing} steps={_n_step} "
+                  f"name={'yes' if (recipe.get('name') or '').strip() else 'no'}")
 
         _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log,
                                  progress_token=_prog)
@@ -14605,9 +14634,15 @@ async def stage_markdown_endpoint(request: Request):
                 cleaned_hints[k] = v.strip()
         if cleaned_hints.get("dish"):
             bcc_hints = cleaned_hints
+    # Typed capture source (intake/capture_sources.py). A Facebook/Instagram/…
+    # URL that arrives through the ORDINARY payload (a site whose CSP let the
+    # script run) is still that kind of page, so it is stamped here too — the
+    # provenance must not depend on which door the grab came through.
+    source_url = payload.get("source_url", "")
+    capture = _capture_meta_for(source_url, via="bookmarklet")
     _staged_markdown[token] = {
         "markdown": md_text,
-        "source_url": payload.get("source_url", ""),
+        "source_url": source_url,
         "title": payload.get("title", ""),
         # The bookmarklet uploads the page's hero image bytes to /images
         # from inside the user's authenticated session (paywall-aware),
@@ -14617,12 +14652,114 @@ async def stage_markdown_endpoint(request: Request):
         # source image so we're independent of the source site.
         "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
         "bcc_hints": bcc_hints,
+        "capture": capture,
         "expires_at": now + _STAGE_TTL_SECONDS,
     }
     print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars, "
           f"local_hero={'yes' if _staged_markdown[token]['local_hero_image_url'] else 'no'}, "
-          f"bcc_hints={bcc_hints or 'none'})")
+          f"bcc_hints={bcc_hints or 'none'}, capture={capture['kind'] if capture else 'none'})")
     return {"token": token}
+
+
+def _capture_meta_for(source_url: str, *, via: str, **extra) -> Optional[dict]:
+    """The `capture` block stamped on a staged grab and, later, on
+    `_source.capture` of the recipe: which typed source, what structure, which
+    door it came through. None for an ordinary page."""
+    try:
+        from intake.capture_sources import classify_capture_url
+        s = classify_capture_url(source_url or "")
+    except Exception as e:
+        print(f"[CAPTURE] classify skipped ({type(e).__name__}: {e})")
+        return None
+    if not s:
+        return None
+    meta = {"kind": s.kind, "label": s.label, "structure": s.structure_for(source_url),
+            "via": via, "verified": s.verified}
+    meta.update({k: v for k, v in extra.items() if v is not None})
+    return meta
+
+
+@app.get("/capture-source")
+async def capture_source_endpoint(url: str = ""):
+    """What kind of page is this, and what should the person expect? Read by
+    the in-progress page (forms/importing.html) the moment it opens, so a
+    Facebook grab says "posts are loosely written, check the result" BEFORE the
+    result lands rather than after a surprise. `{kind: null}` for an ordinary
+    recipe page."""
+    from intake.capture_sources import classify_capture_url
+    s = classify_capture_url((url or "").strip())
+    if not s:
+        return {"kind": None}
+    return {"kind": s.kind, "label": s.label, "structure": s.structure_for(url),
+            "verified": s.verified, "user_note": s.user_note,
+            "thin_result_note": s.thin_result_note}
+
+
+@app.post("/stage-capture")
+async def stage_capture_endpoint(request: Request):
+    """The CSP fallback's door: a capture made by the bookmark's OWN code (the
+    loader) on a page that refused our script and our fetch, handed over through
+    the URL fragment of forms/importing.html and posted here same-origin.
+
+    Body: {url, title, text, comments?: [str], local_hero_image_url?, selected?,
+    via?: 'loader' | 'payload'}. The text is whatever the loader could read:
+    the user's selection when they made one, else the post body, else the
+    page. `comments` are the AUTHOR's own comments when the page exposes them
+    (Facebook: the recipe is routinely "in the first comment").
+
+    Converts to the ONE staged shape (`_staged_markdown`) that every other grab
+    takes, so `/staged-markdown/{token}` → `/extract-from-markdown` is the same
+    path with no knowledge of this door. Also pulls outbound links out of the
+    comments: when the author's comment is only `Recipe >>>> https://blog…`, the
+    recipe's real address is that link, and the importer offers it."""
+    from intake.capture_sources import (classify_capture_url, build_capture_markdown,
+                                        links_in_text)
+    payload = await request.json()
+    url = (payload.get("url") or "").strip()
+    text = (payload.get("text") or "").strip()
+    if not url or not text:
+        raise HTTPException(status_code=400, detail="url and text are required")
+    text = text[:30000]
+    comments = [str(c)[:3000] for c in (payload.get("comments") or []) if isinstance(c, str) and c.strip()][:3]
+    title = (payload.get("title") or "").strip()
+    via = (payload.get("via") or "loader").strip()[:16]
+    selected = bool(payload.get("selected"))
+
+    source = classify_capture_url(url)
+    captured_at = datetime.now(timezone.utc).isoformat()
+    md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
+                                     captured_at=captured_at, source=source)
+    links = links_in_text(text, *comments, exclude_source=url)[:5]
+
+    now = time.time()
+    for k in [k for k, v in _staged_markdown.items() if v.get("expires_at", 0) < now]:
+        _staged_markdown.pop(k, None)
+    token = uuid.uuid4().hex
+    capture = _capture_meta_for(url, via=via, selected=selected,
+                                chars=len(text), comments=len(comments),
+                                links=links or None)
+    if capture is None:
+        # An ordinary page whose CSP still refused us (ChatGPT-style). Typed as
+        # 'page' so the provenance records the door, with no platform note.
+        capture = {"kind": None, "label": "", "structure": "page", "via": via,
+                   "selected": selected, "chars": len(text), "comments": len(comments),
+                   "links": links or None}
+    # The envelope's own title (first caption line when document.title was just
+    # the site's name) is what the form should show, not "(20+) Facebook".
+    envelope_title = md_text.splitlines()[0].lstrip("# ").strip() if md_text.startswith("#") else title
+    _staged_markdown[token] = {
+        "markdown": md_text,
+        "source_url": url,
+        "title": envelope_title or title,
+        "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
+        "bcc_hints": None,
+        "capture": capture,
+        "expires_at": now + _STAGE_TTL_SECONDS,
+    }
+    print(f"[CAPTURE] staged {token[:8]} kind={capture.get('kind')} "
+          f"structure={capture.get('structure')} via={via} selected={selected} "
+          f"chars={len(text)} comments={len(comments)} links={len(links)} url={url[:80]}")
+    return {"token": token, "capture": capture, "title": envelope_title or title}
 
 
 @app.get("/staged-latest")
@@ -14681,6 +14818,7 @@ async def get_staged_markdown(token: str, request: Request):
         "title": entry.get("title", ""),
         "local_hero_image_url": entry.get("local_hero_image_url"),
         "bcc_hints": entry.get("bcc_hints"),
+        "capture": entry.get("capture"),
     }
 
 

@@ -8169,7 +8169,32 @@
         stopRotation();
         stopProgress();
 
-        if (res.ok && result.success) {
+        await applyExtractResult(result, res.ok);
+      } catch (err) {
+        console.error('Extraction error:', err);
+        const fellBack = await autoFallbackToStagedImage('errored');
+        if (!fellBack) {
+          showErrorDialog({
+            title: 'Extraction failed',
+            message: (err && err.message) || 'Unable to reach the extraction server.',
+            showImageButton: true,
+          });
+        }
+      } finally {
+        stopRotation();
+        stopProgress();
+        dropZone.classList.remove('processing');
+      }
+    }
+
+    // Everything that happens to an /extract-from-markdown answer once it is
+    // in hand: fill the form, coopt the hero, trace, judge completeness, fall
+    // back to the staged screenshot. Split out of extractFromMarkdown
+    // (2026-10-06) because the in-progress page (forms/importing.html) now runs
+    // the extraction for bookmarklet grabs and hands the RESULT here through
+    // sessionStorage — the same handling, whichever page paid for the call.
+    async function applyExtractResult(result, httpOk) {
+        if (httpOk && result.success) {
           // Coopt the hero image: if the bookmarklet captured + uploaded
           // the source page's hero image (paywall-aware client-side
           // fetch), the resulting /generated/<file>.jpg URL is in
@@ -8217,26 +8242,11 @@
           if (!fellBack) {
             showErrorDialog({
               title: 'Extraction failed',
-              message: result.detail || 'Server returned an error.',
+              message: (result && result.detail) || 'Server returned an error.',
               showImageButton: true,
             });
           }
         }
-      } catch (err) {
-        console.error('Extraction error:', err);
-        const fellBack = await autoFallbackToStagedImage('errored');
-        if (!fellBack) {
-          showErrorDialog({
-            title: 'Extraction failed',
-            message: (err && err.message) || 'Unable to reach the extraction server.',
-            showImageButton: true,
-          });
-        }
-      } finally {
-        stopRotation();
-        stopProgress();
-        dropZone.classList.remove('processing');
-      }
     }
 
     // Populate form from extracted recipe data
@@ -8928,6 +8938,51 @@
       }
     })();
 
+    // HAND-OFF FROM THE IN-PROGRESS PAGE (forms/importing.html, 2026-10-06).
+    // For a v4 bookmarklet the extraction already ran there, with its own
+    // progress view; the answer arrives through sessionStorage (same tab, so it
+    // survives the navigation) and is applied exactly as if this page had made
+    // the call. Read once and removed, so a reload shows an empty editor rather
+    // than re-applying a stale result.
+    (async function () {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('imported') !== '1') return;
+      let payload = null;
+      try {
+        const raw = sessionStorage.getItem('bcc:imported');
+        sessionStorage.removeItem('bcc:imported');
+        payload = raw ? JSON.parse(raw) : null;
+      } catch (e) { payload = null; }
+      window.history.replaceState({}, '', window.location.pathname);
+      if (!payload) {
+        showFeedback('The imported recipe did not arrive. Press the bookmark again on the recipe page.', 'error');
+        return;
+      }
+      window.scrollTo({ top: 0 });
+      // The store the importer extracted under — keep the editor on the same one.
+      try {
+        const uidEl = document.getElementById('user_id');
+        if (payload.user_id != null && uidEl && String(uidEl.value) !== String(payload.user_id)) {
+          uidEl.value = String(payload.user_id);
+          uidEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      } catch (e) { /* the store control is still visible */ }
+      stagedToken = payload.token || '';
+      stagedSourceUrl = payload.source_url || '';
+      stagedTitle = payload.title || '';
+      stagedLocalHeroUrl = payload.local_hero_image_url || '';
+      if (payload.bcc_hints && payload.bcc_hints.dish) {
+        stagedBccHints = { dish: payload.bcc_hints.dish, run: payload.bcc_hints.run || '' };
+        applyHarvestLock(stagedBccHints);
+      }
+      try {
+        await applyExtractResult(payload.result || {}, !!payload.ok);
+      } catch (err) {
+        console.error('Imported result error:', err);
+        showFeedback('Could not apply the imported recipe: ' + (err && err.message ? err.message : err), 'error');
+      }
+    })();
+
     // Auto-extract when launched via bookmarklet with ONLY ?url=<page-url>.
     // (When both ?url= and ?staged= are present, the staged IIFE above wins
     // because client-captured DOM beats a server re-fetch for paywalled /
@@ -8946,7 +9001,7 @@
       // URL and run a SECOND paid extraction alongside the staged one — and
       // the server's copy is the worse of the two, since it cannot see
       // paywalled or JS-rendered content.
-      if (params.get('staged') || params.get('awaiting') === '1') return;
+      if (params.get('staged') || params.get('awaiting') === '1' || params.get('imported') === '1') return;
       window.scrollTo({ top: 0 });
       const urlInput = document.getElementById('extractUrlInput');
       if (urlInput) urlInput.value = url;

@@ -78,6 +78,7 @@
           <a id="dragLink" class="drag" href="#">Grab Recipe</a>
         </div>
         <p class="note" style="text-align:center">Then visit any recipe page and click it.</p>
+        <p class="note" style="text-align:center">On Facebook, Instagram or Reddit, select the recipe text first, then click. Posts there are loosely written, so check the result.</p>
       </div>
 
       <div class="card">
@@ -156,7 +157,7 @@
     // every device, because the form saves under whoever is signed in.
     function buildLoader(base) {
       base = String(base || '').replace(/\/+$/, '');
-      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__bccLoaderV=3;var s=document.createElement('script');s.src='" + base + "/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
+      return "javascript:(function(){var B='" + base + "',U=location.href,F=B+'/forms/importing.html?url='+encodeURIComponent(U);var p=window.open(F,'_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}window.__recipeBookmarkletPopup=p;window.__bccLoaderV=4;window.__recipeBookmarkletApi=B;var d=0;function Q(s,r){return [].slice.call((r||document).querySelectorAll(s))}function T(e){return e?String(e.innerText||'').trim():''}function fb(){if(d||window.__bccPayloadStarted)return;d=1;var w=700;Q('[role=button]').forEach(function(e){var t=(e.textContent||'').trim().toLowerCase();if(t.length<12&&t.slice(-4)=='more'){try{e.click()}catch(x){}}});if(!Q('[role=article][aria-label^=Comment]').length){var cb=Q('[role=button][aria-label=Comment]')[0];if(cb){try{cb.click();w=1800}catch(x){}}}setTimeout(function(){var sel=String(window.getSelection?window.getSelection():'').trim();var body=document.querySelector('[data-ad-preview=message],[data-ad-comet-preview=message]');if(!body){var sp=Q('span[dir=auto],div[dir=auto]').sort(function(a,b){return T(b).length-T(a).length})[0];if(sp&&T(sp).length>80)body=sp}var art=document.querySelector('article,[role=main],main');var text=(sel||T(body)||T(art)||T(document.body)).slice(0,30000);var cm=Q('[role=article][aria-label^=Comment]').filter(function(a){return T(a).indexOf('Author')!=-1}).map(function(a){return T(a).slice(0,3000)}).slice(0,3);var og=Q('meta').filter(function(m){return m.getAttribute('property')=='og:image'})[0];var img=og&&og.content;if(!img){var best=null,ar=0;Q('img').forEach(function(i){var a=(i.naturalWidth||0)*(i.naturalHeight||0);if(a>ar&&a>40000){ar=a;best=i.currentSrc||i.src}});var v=document.querySelector('video[poster]');img=best||(v&&v.poster)||null}var cap={v:1,url:U,title:document.title,text:text,comments:cm,image:img,selected:!!sel,via:'loader'};var enc=btoa(unescape(encodeURIComponent(JSON.stringify(cap)))).split('+').join('-').split('/').join('_').replace(/=+$/,'');p.location.href=F+'#capture='+enc},w)}var s=document.createElement('script');s.src=B+'/forms/bookmarklet.js?'+Date.now();s.onerror=fb;setTimeout(fb,4000);(document.body||document.documentElement).appendChild(s)})();";
     }
 
     // Start from this page's own origin so drag/copy work instantly; then ask

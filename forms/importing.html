@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Importing your recipe</title>
+  <!-- IMPORTING — the page a person sees between pressing the bookmark and the
+       editor opening. For many people it is the FIRST thing of ours they ever
+       see (2026-10-06, curator: "right now it looks like a DOS screen"), so it
+       is a real page on our host rather than a document.write into about:blank.
+
+       It owns the whole wait: sign-in (in parallel with the grab), receiving the
+       staged token (fragment, or the /staged-latest poll that beats the
+       coalesced-navigation race), the CSP fallback capture (#capture= from the
+       loader or the payload → /stage-capture), the extraction itself with honest
+       phase progress, and the hand-off of the RESULT to the editor through
+       sessionStorage (same tab, so it survives the navigation). The editor's
+       applyExtractResult then does exactly what it did when it ran the extraction
+       itself — one path, a better waiting room in front of it.
+
+       Design: the one memorable thing is the recipe sheet that assembles as the
+       pipeline reports progress — photo and title the moment the grab lands,
+       ingredient lines as the model reads, steps after. It is a progress bar
+       shaped like the thing being built. Everything else stays quiet.
+
+       Shell contract (library-shell.js header comment): library-shell.css +
+       tokens.css LAST + the shared .app-header. No page-local :root. -->
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 34px 18px 56px; padding-bottom: max(56px, env(safe-area-inset-bottom)); }
+    .wrap h1 { font-size: 1.85rem; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.012em; font-weight: 600; overflow-wrap: anywhere; }
+    .wrap h1 .host { color: var(--accent-dark); }
+    .phase { margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.5; min-height: 1.5em; }
+    .rule { height: 3px; background: var(--line); border-radius: 2px; margin: 18px 0 8px; overflow: hidden; }
+    .rule-fill { height: 100%; width: 2%; background: var(--accent); border-radius: 2px; transition: width .6s ease; }
+    .source-note { margin: 10px 0 0; font-size: .92rem; line-height: 1.5; color: var(--muted); }
+    .source-note b { color: var(--ink); font-weight: 600; }
+
+    /* The recipe sheet. A card the pipeline fills in; lines turn from tan
+       placeholders to ink as the phase they belong to completes. */
+    .sheet { margin-top: 28px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0 0 22px; overflow: hidden; }
+    .sheet-photo { height: 150px; background: var(--accent-soft); position: relative; overflow: hidden; }
+    .sheet-photo img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .7s ease; }
+    .sheet-photo img.in { opacity: 1; }
+    .sheet-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,250,242,.55) 50%, transparent 70%); transform: translateX(-100%); animation: sweep 2.2s ease-in-out infinite; }
+    .sheet-photo.has-img::after, [data-state="failed"] .sheet-photo::after, [data-state="thin"] .sheet-photo::after { animation: none; display: none; }
+    @keyframes sweep { to { transform: translateX(100%); } }
+    .sheet-body { padding: 18px 22px 0; }
+    .sheet-title { font-size: 1.25rem; font-weight: 600; line-height: 1.25; min-height: 1.25em; margin: 0 0 6px; }
+    .sheet-title .ph { width: 72%; height: .95em; }
+    .sheet-meta { display: flex; gap: 10px; margin-bottom: 18px; }
+    .sheet-meta .ph { width: 64px; height: .7em; }
+    .sheet-cols { display: grid; grid-template-columns: 2fr 3fr; gap: 22px; }
+    @media (max-width: 460px) { .sheet-cols { grid-template-columns: 1fr; gap: 14px; } }
+    .sheet-h { font-size: .8rem; color: var(--muted); margin: 0 0 8px; }
+    .ph { display: inline-block; background: var(--line); border-radius: 3px; height: .78em; vertical-align: middle; transition: background .5s ease, width .5s ease; }
+    .ph.on { background: #8a7a6c; }
+    .line { display: block; margin: 0 0 9px; }
+    .line .ph { display: block; }
+    .steps .line { margin-bottom: 7px; }
+    .steps .line:nth-child(3n) { margin-bottom: 13px; }
+    .sheet-tools { margin: 18px 22px 0; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; gap: 8px; align-items: center; font-size: .82rem; color: var(--muted); }
+    .sheet-tools .ph { width: 48px; }
+    .sheet-tools .ph + .ph { width: 70px; }
+
+    .flavor { margin: 14px 2px 0; font-size: .9rem; color: var(--muted); font-style: italic; min-height: 1.4em; }
+
+    /* Outcome states replace the phase + sheet with words and two actions. */
+    .outcome { margin-top: 26px; padding: 20px 22px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; }
+    .outcome h2 { margin: 0 0 8px; font-size: 1.2rem; font-weight: 600; }
+    .outcome p { margin: 0 0 8px; line-height: 1.55; }
+    .outcome .got { color: var(--muted); font-size: .92rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .btn { font: inherit; font-size: .95rem; padding: 10px 16px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; }
+    .btn:hover { border-color: var(--accent); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent-dark); }
+    .btn:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+    .foot { margin: 30px 2px 0; font-size: .85rem; color: var(--muted); line-height: 1.5; }
+    .foot a { color: var(--accent-dark); }
+    [hidden] { display: none !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet-photo::after { animation: none; }
+      .rule-fill, .ph, .sheet-photo img { transition: none; }
+    }
+  </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260901a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <script src="/forms/library-shell.js?v=20260831b"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
+  <main class="wrap" id="stage" data-state="reading">
+    <h1 id="headline">Reading <span class="host" id="host">the page</span></h1>
+    <p class="phase" id="phase" aria-live="polite">Opening the page you grabbed…</p>
+    <div class="rule" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="2" id="rule"><div class="rule-fill" id="fill"></div></div>
+    <p class="source-note" id="sourceNote" hidden></p>
+
+    <section class="sheet" id="sheet" aria-hidden="true">
+      <div class="sheet-photo" id="sheetPhoto"><img alt="" id="sheetImg"></div>
+      <div class="sheet-body">
+        <div class="sheet-title" id="sheetTitle"><span class="ph" data-at="0.10"></span></div>
+        <div class="sheet-meta"><span class="ph" data-at="0.16"></span><span class="ph" data-at="0.20"></span><span class="ph" data-at="0.24"></span></div>
+        <div class="sheet-cols">
+          <div>
+            <p class="sheet-h">Ingredients</p>
+            <div class="ings" id="ings"></div>
+          </div>
+          <div>
+            <p class="sheet-h">Method</p>
+            <div class="steps" id="steps"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-tools"><span>Equipment</span><span class="ph" data-at="0.78"></span><span class="ph" data-at="0.80"></span></div>
+    </section>
+    <p class="flavor" id="flavor"></p>
+
+    <section class="outcome" id="outcome" hidden>
+      <h2 id="outcomeTitle"></h2>
+      <p id="outcomeText"></p>
+      <p class="got" id="outcomeGot" hidden></p>
+      <div class="actions" id="outcomeActions"></div>
+    </section>
+
+    <p class="foot" id="foot">Nothing is saved until you press Save in the editor.</p>
+  </main>
+
+  <script>
+    // User-facing strings in one place. There is no t() runtime in the forms
+    // yet (memory: i18n as we go); when a catalog exists, this object is what it
+    // replaces.
+    const STR = {
+      reading: (host) => `Reading <span class="host">${host}</span>`,
+      opening: 'Opening the page you grabbed…',
+      signin: 'Sign in to save this recipe',
+      signinMsg: 'You grabbed a recipe with the bookmark. Sign in and it will be saved to your collection.',
+      waiting: 'Signed in. Waiting for the page you grabbed…',
+      staging: 'Reading the post…',
+      stagingImage: 'Saving the picture…',
+      stagedFrom: (label, structure) => `A ${label} ${structure}.`,
+      extracting: 'Reading the recipe…',
+      handing: 'Opening the editor…',
+      signinCancelled: 'Sign-in cancelled. Nothing was saved.',
+      signinNoSession: 'Signed in, but the session did not take effect. Reload this tab and press the bookmark again.',
+      neverArrived: {
+        title: 'The grab never arrived',
+        text: 'The page you pressed the bookmark on did not send anything here within two minutes. Go back to that tab and press the bookmark again.',
+      },
+      notFound: { title: 'That grab has expired', text: 'Staged pages are kept for a few minutes. Press the bookmark again on the recipe page.' },
+      nothing: { title: 'Nothing to import', text: 'This page opens when you press the recipe bookmark on another site.' },
+      failed: { title: 'Couldn’t read this page', text: 'The extraction did not complete.' },
+      thin: { title: 'This one came through thin' },
+      got: (n, m) => `We found ${n} ingredient${n === 1 ? '' : 's'} and ${m} step${m === 1 ? '' : 's'}.`,
+      openEditor: 'Open in the editor',
+      openEditorAnyway: 'Open in the editor anyway',
+      importFrom: (host) => `Import from ${host} instead`,
+      installLink: 'Install the bookmark',
+      retryHint: 'Select the recipe text on the post and press the bookmark again.',
+    };
+
+    const API = location.origin;
+    const FORM = API + '/forms/recipe_form_styled.html';
+    const PHASES = {
+      'reading': 'Reading the page…', 'cache-check': 'Checking for a previous extraction…',
+      'cache-hit': 'Found a previous extraction…', 'translating': 'Translating to English…',
+      'structured-data': 'Reading the site’s structured recipe data…', 'ai-extract': 'Reading the recipe…',
+      'equipment': 'Working out the equipment…', 'finalizing': 'Classifying and scoring the source…',
+      'done': 'Done — opening the editor…', 'error': 'The extraction hit a problem…',
+    };
+    // Where each pipeline phase sits on the bar when the server gives no pct.
+    const PHASE_FLOOR = { 'reading': .04, 'cache-check': .06, 'structured-data': .3, 'ai-extract': .08, 'equipment': .77, 'finalizing': .85, 'done': 1 };
+
+    const $ = (id) => document.getElementById(id);
+    const stage = $('stage');
+    const params = new URLSearchParams(location.search);
+    const srcUrl = (params.get('url') || '').trim();
+    const srcHost = (() => { try { return new URL(srcUrl).hostname.replace(/^www\./, ''); } catch (e) { return ''; } })();
+
+    if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'importing' });
+
+    // ---- sheet: build placeholder lines, reveal by progress ---------------
+    (function buildSheet() {
+      const ings = $('ings'), steps = $('steps');
+      const widths = [58, 71, 49, 66, 54, 62, 45];
+      widths.forEach((w, i) => {
+        const l = document.createElement('span'); l.className = 'line';
+        const p = document.createElement('span'); p.className = 'ph'; p.style.width = w + '%';
+        p.dataset.at = (0.12 + i * 0.065).toFixed(3); l.appendChild(p); ings.appendChild(l);
+      });
+      [92, 84, 60, 95, 78, 42, 88, 70, 55].forEach((w, i) => {
+        const l = document.createElement('span'); l.className = 'line';
+        const p = document.createElement('span'); p.className = 'ph'; p.style.width = w + '%';
+        p.dataset.at = (0.40 + i * 0.038).toFixed(3); l.appendChild(p); steps.appendChild(l);
+      });
+    })();
+    let shownPct = 0.02;
+    function setProgress(pct, phaseText) {
+      pct = Math.max(shownPct, Math.min(1, pct || 0));   // never runs backwards
+      shownPct = pct;
+      $('fill').style.width = Math.max(2, Math.round(pct * 100)) + '%';
+      $('rule').setAttribute('aria-valuenow', String(Math.round(pct * 100)));
+      document.querySelectorAll('.ph[data-at]').forEach(el => {
+        el.classList.toggle('on', pct >= parseFloat(el.dataset.at));
+      });
+      if (phaseText) $('phase').textContent = phaseText;
+    }
+    function setSheetTitle(text) {
+      if (!text) return;
+      $('sheetTitle').textContent = text;
+    }
+    function setSheetImage(url) {
+      if (!url) return;
+      const img = $('sheetImg');
+      img.onload = () => { img.classList.add('in'); $('sheetPhoto').classList.add('has-img'); };
+      img.src = url.startsWith('http') ? url : API + url;
+    }
+
+    // ---- flavor: the curated rotating lines (status_messages, 'extract') --
+    let flavorStop = () => {};
+    (async function startFlavor() {
+      let list = ['Working some kitchen magic…', 'Stirring the pot…', 'Almost plated…'];
+      try {
+        const r = await fetch(`${API}/status-messages/active`);
+        if (r.ok) { const d = await r.json(); if (d && d.extract && d.extract.length) list = d.extract; }
+      } catch (e) { /* keep the built-in three */ }
+      let i = Math.floor(Math.random() * list.length);
+      $('flavor').textContent = list[i];
+      const id = setInterval(() => { i = (i + 1) % list.length; $('flavor').textContent = list[i]; }, 3400);
+      flavorStop = () => { clearInterval(id); $('flavor').textContent = ''; };
+    })();
+
+    // ---- outcome states ------------------------------------------------
+    function showOutcome({ title, text, got, actions }) {
+      stage.dataset.state = stage.dataset.state === 'thin' ? 'thin' : 'failed';
+      flavorStop();
+      $('phase').textContent = '';
+      $('sheet').hidden = true;
+      $('outcomeTitle').textContent = title;
+      $('outcomeText').textContent = text || '';
+      const g = $('outcomeGot'); g.hidden = !got; g.textContent = got || '';
+      const box = $('outcomeActions'); box.innerHTML = '';
+      (actions || []).forEach(a => {
+        const el = document.createElement(a.href ? 'a' : 'button');
+        el.className = 'btn' + (a.primary ? ' primary' : '');
+        el.textContent = a.label;
+        if (a.href) { el.href = a.href; } else { el.type = 'button'; el.addEventListener('click', a.onClick); }
+        box.appendChild(el);
+      });
+      $('outcome').hidden = false;
+    }
+
+    // ---- capture source (what to expect) --------------------------------
+    let captureSource = null;   // {kind,label,structure,user_note,thin_result_note}
+    async function loadCaptureSource() {
+      if (!srcUrl) return;
+      try {
+        const r = await fetch(`${API}/capture-source?url=${encodeURIComponent(srcUrl)}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d && d.kind) {
+          captureSource = d;
+          const n = $('sourceNote');
+          n.innerHTML = `<b>${escapeHtml(STR.stagedFrom(d.label, d.structure))}</b> ${escapeHtml(d.user_note || '')}`;
+          n.hidden = false;
+        }
+      } catch (e) { /* the note is a courtesy */ }
+    }
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    // ---- fragment readers --------------------------------------------------
+    function stagedTokenFromHash() { const m = /[#&]staged=([^&]+)/.exec(location.hash || ''); return m ? decodeURIComponent(m[1]) : ''; }
+    function captureFromHash() {
+      const m = /[#&]capture=([^&]+)/.exec(location.hash || '');
+      if (!m) return null;
+      try {
+        let b = m[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (b.length % 4) b += '=';
+        const json = decodeURIComponent(escape(atob(b)));
+        const cap = JSON.parse(json);
+        return cap && cap.text ? cap : null;
+      } catch (e) { console.warn('[importing] bad capture fragment', e); return null; }
+    }
+    function clearHash() { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+
+    // The CSP fallback: a capture made by the bookmark's own code arrives in the
+    // fragment. Coopt its picture (same-origin now), then stage it through the
+    // typed door, and from here on it is an ordinary staged grab.
+    async function stageCapture(cap) {
+      stage.dataset.state = 'staging';
+      clearHash();   // never re-stage on reload; never leave the text in history
+      setProgress(0.03, STR.staging);
+      setSheetTitle((cap.title && !/^\(\d+\+?\)\s*\w+$/.test(cap.title) && cap.title !== 'Facebook') ? cap.title : (cap.text.split('\n').find(l => l.trim()) || '').slice(0, 140));
+      let localHero = null;
+      if (cap.image && /^https?:\/\//.test(cap.image)) {
+        setProgress(0.04, STR.stagingImage);
+        try {
+          const r = await fetch(`${API}/images/fetch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: cap.image }) });
+          if (r.ok) { const d = await r.json(); localHero = d && d.url ? d.url : null; }
+        } catch (e) { /* the picture is a courtesy; the recipe is the point */ }
+      }
+      setSheetImage(localHero || cap.image);
+      const r = await fetch(`${API}/stage-capture`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: cap.url || srcUrl, title: cap.title || '', text: cap.text, comments: cap.comments || [],
+                               local_hero_image_url: localHero, selected: !!cap.selected, via: cap.via || 'loader' }),
+      });
+      if (!r.ok) throw new Error('stage-capture HTTP ' + r.status);
+      const d = await r.json();
+      if (d.title) setSheetTitle(d.title);
+      return d.token;
+    }
+
+    // The ordinary hand-off: the payload appends #staged= (fast when it wins the
+    // race) and /staged-latest answers when it does not.
+    function awaitStagedToken(timeoutMs = 120000) {
+      const now = stagedTokenFromHash();
+      if (now) return Promise.resolve(now);
+      return new Promise(resolve => {
+        let settled = false;
+        const done = (t) => { if (settled) return; settled = true; window.removeEventListener('hashchange', onHash); clearTimeout(timer); clearInterval(poll); resolve(t); };
+        const poll = srcUrl ? setInterval(async () => {
+          try {
+            const r = await fetch(`${API}/staged-latest?url=${encodeURIComponent(srcUrl)}`);
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d && d.token) done(String(d.token));
+          } catch (e) { /* transient */ }
+        }, 1000) : null;
+        const onHash = () => {
+          const cap = captureFromHash();
+          if (cap) { done({ capture: cap }); return; }
+          const t = stagedTokenFromHash(); if (t) done(t);
+        };
+        window.addEventListener('hashchange', onHash);
+        const timer = setTimeout(() => done(''), timeoutMs);
+      });
+    }
+
+    function selfUserId(authUid) {
+      try {
+        const explicit = localStorage.getItem('app:self_user_id');
+        if (explicit != null && explicit !== '') { const n = parseInt(explicit, 10); if (Number.isInteger(n) && n >= 0) return n; }
+        const legacy = localStorage.getItem('sidebar:user_id');
+        if (legacy && parseInt(legacy, 10) > 0) return parseInt(legacy, 10);
+      } catch (e) {}
+      return authUid != null ? authUid : 1;
+    }
+
+    // ---- the extraction, with honest progress ------------------------------
+    async function runExtraction(data, token, userId) {
+      stage.dataset.state = 'extracting';
+      setSheetTitle(data.title);
+      setSheetImage(data.local_hero_image_url);
+      setProgress(0.06, STR.extracting);
+      const progressToken = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/extract-progress/${encodeURIComponent(progressToken)}`);
+          if (!r.ok) return;
+          const s = await r.json();
+          if (!s || !s.phase) return;
+          const pct = (s.pct != null ? s.pct : (PHASE_FLOOR[s.phase] || shownPct));
+          const label = (PHASES[s.phase] || s.phase) + (s.phase === 'ai-extract' ? ` ${Math.round(pct * 100)}%` : '');
+          setProgress(pct, label);
+        } catch (e) {}
+      }, 900);
+      const safeName = (data.title || 'staged').replace(/[^a-z0-9]/gi, '_').slice(0, 40) || 'staged';
+      const fd = new FormData();
+      fd.append('file', new File([data.markdown], safeName + '.md', { type: 'text/markdown' }));
+      if (data.source_url) fd.append('source_url', data.source_url);
+      if (data.title) fd.append('title', data.title);
+      fd.append('user_id', String(userId));
+      fd.append('progress_token', progressToken);
+      if (data.capture) fd.append('capture', JSON.stringify(data.capture));
+      let res, result;
+      try {
+        res = await fetch(`${API}/extract-from-markdown`, { method: 'POST', body: fd });
+        result = await res.json().catch(() => ({}));
+      } finally { clearInterval(poll); }
+      return { ok: res.ok && !!result.success, status: res.status, result };
+    }
+
+    function handOff(payload) {
+      stage.dataset.state = 'handing';
+      setProgress(1, STR.handing);
+      try { sessionStorage.setItem('bcc:imported', JSON.stringify(payload)); }
+      catch (e) {
+        // sessionStorage unavailable (very rare). The staged token is still
+        // good: the editor can extract again from it the old way.
+        location.replace(`${FORM}?url=${encodeURIComponent(payload.source_url || '')}&staged=${encodeURIComponent(payload.token || '')}`);
+        return;
+      }
+      setTimeout(() => location.replace(`${FORM}?imported=1`), 350);
+    }
+
+    function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } }
+
+    // ---- main --------------------------------------------------------------
+    (async function main() {
+      if (!srcUrl && !captureFromHash() && !stagedTokenFromHash()) {
+        $('headline').textContent = STR.nothing.title;
+        $('phase').textContent = '';
+        $('sheet').hidden = true; $('rule').hidden = true; flavorStop();
+        showOutcome({ title: STR.nothing.title, text: STR.nothing.text,
+                      actions: [{ label: STR.installLink, href: '/forms/install.html', primary: true }, { label: STR.openEditor, href: FORM }] });
+        return;
+      }
+      $('headline').innerHTML = STR.reading(escapeHtml(srcHost || 'the page'));
+      setProgress(0.02, STR.opening);
+      loadCaptureSource();
+
+      // Identity first — before anything paid. Same rule as the editor's staged
+      // path: a grab is worth nothing to someone who cannot save it.
+      let me = null;
+      try { me = await LibraryShell.fetchAuth(); } catch (e) { me = null; }
+      if (!(me && me.user)) {
+        stage.dataset.state = 'signin';
+        const res2 = await LibraryShell.signInDialog({ title: STR.signin, message: STR.signinMsg });
+        if (!res2.ok) { showOutcome({ title: STR.signinCancelled, text: '', actions: [{ label: STR.openEditor, href: FORM }] }); return; }
+        try { me = await LibraryShell.fetchAuth(); } catch (e) { me = null; }
+        if (!(me && me.user)) { showOutcome({ title: STR.failed.title, text: STR.signinNoSession, actions: [{ label: STR.openEditor, href: FORM }] }); return; }
+        try { localStorage.setItem('sidebar:user_id', String(me.user.user_id)); } catch (e) {}
+      }
+      const userId = selfUserId(me.user.user_id);
+
+      // The grab: a capture in the fragment (CSP fallback), a token in the
+      // fragment, or the poll.
+      let token = '';
+      try {
+        const cap = captureFromHash();
+        if (cap) token = await stageCapture(cap);
+        else {
+          stage.dataset.state = 'waiting';
+          setProgress(0.03, STR.waiting);
+          const got = await awaitStagedToken();
+          if (got && got.capture) token = await stageCapture(got.capture);
+          else token = got;
+        }
+      } catch (e) {
+        console.error('[importing] staging failed', e);
+        showOutcome({ title: STR.failed.title, text: String(e && e.message || e), actions: [{ label: STR.openEditor, href: FORM }] });
+        return;
+      }
+      if (!token) { showOutcome({ title: STR.neverArrived.title, text: STR.neverArrived.text, actions: [{ label: STR.openEditor, href: FORM }] }); return; }
+      clearHash();
+
+      const r = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
+      if (!r.ok) { showOutcome({ title: STR.notFound.title, text: STR.notFound.text, actions: [{ label: STR.openEditor, href: FORM }] }); return; }
+      const data = await r.json();
+      const capture = data.capture || null;
+      if (capture && capture.kind && !captureSource) await loadCaptureSource();
+
+      let outcome;
+      try { outcome = await runExtraction(data, token, userId); }
+      catch (e) { outcome = { ok: false, status: 0, result: { detail: String(e && e.message || e) } }; }
+
+      const payload = {
+        ok: outcome.ok, status: outcome.status, result: outcome.result, token,
+        source_url: data.source_url || srcUrl, title: data.title || '',
+        local_hero_image_url: data.local_hero_image_url || '', bcc_hints: data.bcc_hints || null,
+        capture, user_id: userId,
+      };
+      const recipe = outcome.ok ? (outcome.result.recipe || {}) : null;
+      const nIng = recipe ? (recipe.recipeIngredient || []).length : 0;
+      const nStep = recipe ? (recipe.recipeInstructions || []).length : 0;
+      const thin = recipe && (!(recipe.name || '').trim() || !nIng || !nStep);
+      const rejected = recipe && recipe.current_status && recipe.current_status.value === 'rejected';
+      const links = (capture && capture.links) || [];
+      const linkAction = links.length ? { label: STR.importFrom(hostOf(links[0])), href: `${FORM}?url=${encodeURIComponent(links[0])}` } : null;
+
+      if (!outcome.ok) {
+        // The editor keeps its own fallbacks (the bookmarklet's screenshot, the
+        // image path); handing it the failure lets them run.
+        showOutcome({
+          title: STR.failed.title,
+          text: (outcome.result && outcome.result.detail) || STR.failed.text,
+          actions: [linkAction, { label: STR.openEditor, primary: !linkAction, onClick: () => handOff(payload) }].filter(Boolean).map((a, i) => i === 0 ? { ...a, primary: true } : a),
+        });
+        return;
+      }
+      if ((thin || rejected) && capture && capture.kind) {
+        // Expected often, for exactly the reasons the source's note gives. Say
+        // what we got, what to do, and let them continue if they want.
+        stage.dataset.state = 'thin';
+        showOutcome({
+          title: STR.thin.title,
+          text: (captureSource && captureSource.thin_result_note) || STR.retryHint,
+          got: STR.got(nIng, nStep),
+          actions: [linkAction, { label: STR.openEditorAnyway, onClick: () => handOff(payload) }].filter(Boolean).map((a, i) => i === 0 ? { ...a, primary: true } : a),
+        });
+        return;
+      }
+      setProgress(1, PHASES.done);
+      handOff(payload);
+    })();
+  </script>
+</body>
+</html>

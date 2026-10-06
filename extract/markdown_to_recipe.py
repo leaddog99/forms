@@ -129,6 +129,23 @@ def markdown_to_recipe(
     try:
         from input.pipeline.domains_lib import extract_hint_for_url
         _hint = extract_hint_for_url(source_url) if source_url else ""
+        # CAPTURE-SOURCE NOTE (intake/capture_sources.py, 2026-10-06): for a
+        # Facebook / Instagram / Reddit / YouTube / Medium / Substack URL, what
+        # text of that SHAPE is like — a caption, not an article; the method may
+        # be a comment or a link; never invent a missing step. Decided from the
+        # URL, so a social page gets the same guidance whichever door it came
+        # through (bookmarklet, the CSP-fallback capture, a server fetch). Sits
+        # beside the publisher's own prose in the one notes block, not in a
+        # second channel.
+        try:
+            from intake.capture_sources import capture_prompt_note
+            _shape = capture_prompt_note(source_url) if source_url else ""
+        except Exception as e:
+            _shape = ""
+            print(f"     [EXTRACT] capture note skipped ({type(e).__name__}: {e})")
+        if _shape:
+            _hint = (_shape + ("\n\n" + _hint if _hint else ""))
+            print(f"     [EXTRACT] capture-source note applied")
         if _hint:
             system_prompt = SYSTEM_PROMPT + (
                 "\n\nPUBLISHER NOTES — written by our curator about THIS site "

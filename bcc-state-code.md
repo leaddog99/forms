@@ -10836,3 +10836,76 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
   Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
+
+## Session log — 2026-10-03 → 10-06 — the backup's exit-code lie; BAILEY's DHCP address; recipes from Facebook: a typed capture source, the CSP fallback, and a real in-progress page
+
+* **10-03 backups:** core work clean every night (dump verified, ADAM, offsite dump).
+  **BAILEY sync failed 10-03** — BAILEY rebooted onto a NEW address (.180 → .183; no
+  DHCP reservation) and MARLEY's resolver served the stale one for the whole 03:12–03:46
+  window. Flushed DNS, re-ran `-WithDbs` by hand: BAILEY on the 10-03 snapshot exactly.
+  **Fixed (`59ff966`):** the nightly logged `bailey sync exit code: 0` on EVERY failure —
+  `%ERRORLEVEL%` inside the `( )` block expands at parse time; now `!ERRORLEVEL!` with
+  delayed expansion (proved with a test batch: old prints 0 after exit 1, new prints 1);
+  `ipconfig /flushdns` before the stage; the two code-sync rclone calls are checked.
+  **Still owed by the curator:** a DHCP reservation for BAILEY in the Verizon router;
+  our own rclone Drive client ID (the mirror hit Drive's quota again 10-02 and 10-03).
+* **Recipes on Facebook (10-06).** The curator pressed the bookmark on a reel and it
+  hung. Diagnosis (from BAILEY's f2n session, `f2n/docs/notes-for-recipes/bookmarklet-
+  csp-fallback.md`): Facebook's CSP refuses our injected payload AND the staging fetch;
+  the server gets only a logged-out preview; the text exists only in the signed-in
+  browser. **Built as a TYPED SOURCE, not a Facebook patch** (curator: "build it cleanly
+  as another typed source… instagram, reddit, youtube, medium, substack… a lot may fail"):
+  - `intake/capture_sources.py` — `CaptureSource` registry (host suffixes, structure,
+    model note, user note, thin-result note, verified flag); `classify_capture_url`,
+    `build_capture_markdown` (the SAME envelope the payload writes, so
+    `markdown_passthrough` and everything after are unchanged), `links_in_text`,
+    `capture_prompt_note`. Six kinds; **only facebook is verified.**
+  - `POST /stage-capture` (the one door for captures → the one staged shape),
+    `GET /capture-source?url=` (what to expect), `capture` on `/staged-markdown`,
+    `capture` form field on `/extract-from-markdown` → `_source.capture`
+    `{kind,structure,via,selected,chars,comments,links}` + a `[CAPTURE] result …` log
+    line per extraction; `/stage-markdown` stamps the kind too (a social URL that came
+    through the normal payload is still that kind). The kind's model note is appended
+    beside `domains.extract_notes` in the ONE publisher-notes block, decided from the
+    URL so every door gets it.
+  - **Loader v4** (`install.html` + the template in `bookmarklet.js`, identical, verified
+    by building one from the other): opens `forms/importing.html?url=` directly; arms a
+    fallback on `<script>.onerror` + a 4 s timer, disarmed by the payload's new first
+    statement `window.__bccPayloadStarted = true`. The fallback clicks "…more", opens
+    the comments panel, then captures selection → post body → longest `dir=auto` span →
+    article/main → body, plus the AUTHOR's comments, plus og:image / largest image /
+    video poster, and navigates the popup to the splash with the capture base64url in
+    the FRAGMENT. No double quotes, no backslashes in the one-liner (it lives in a
+    double-quoted string). The payload gained the same fallback for a refused fetch.
+  - **Verified on the live reel in Chrome** (`facebook.com/reel/1090516330378970`): no
+    og tags, no `[role=article]`, no `data-ad-preview` on a reel — the caption is the
+    longest `span[dir=auto]` (566 chars after "See more"); the author's first comment is
+    `Recipe >>>> https://ketosl.com/…` (the method is NOT on Facebook); the hero is the
+    fbcdn poster. The loader body run on that page captured all of it in a 1,974-char
+    URL. `markdown_to_recipe` on that capture → name, yield, times, 12 ingredients,
+    **0 steps** (the note says never invent; it did not), 6.4 s.
+  - **`forms/importing.html` — the in-progress page** (curator: "the first time a user
+    SEES our system… right now it looks like a DOS screen"; "use claude design and our
+    styles"). Shell contract (library-shell.css + tokens.css last + shared header).
+    Owns the whole wait: sign-in in parallel with the grab, token by fragment or the
+    `/staged-latest` poll, `#capture=` → `/images/fetch` → `/stage-capture`, the
+    extraction with the honest phase bar, then the RESULT to the editor via
+    sessionStorage (same tab) → `?imported=1`. The memorable element: a recipe sheet
+    that fills in as phases report (photo+title when the grab lands, ingredient lines
+    as the model reads, steps after, equipment last). Thin social result = its own
+    state: what we found, the platform's advice, "Import from <linked host> instead"
+    (our normal URL path) and "Open in the editor anyway". Strings in one `STR` object
+    (no t() runtime exists yet).
+  - **Editor:** `extractFromMarkdown`'s handling split into `applyExtractResult(result,
+    httpOk)`; new `?imported=1` receiver sets the staged vars + store and applies. v3
+    bookmarks keep working (awaiting state + the out-of-date notice).
+  - **Host-gate bug found:** patterns are FULL matches, so `/status-messages/active`,
+    `/extract-progress/<token>` and `/staged-latest` 404'd on the CUSTOMER host (the
+    form's progress bar and race rescue were dead there). Added, with the new routes.
+  - Design note: `docs/capture-sources.md`. Open: attribution (page as author, not
+    facebook.com — f2n's link cards already do this); try one real page each for the
+    five unverified kinds; Instagram's recipe-in-the-picture is a vision problem.
+* **Not yet live:** BCC on MARLEY still runs the 10-03 code — `bcc_restart.bat` needs
+  the UAC approval (cannot elevate from the session). A session-token mint for a
+  localhost test was declined by the tool classifier; the live, signed-in run on the
+  reel is the remaining verification.

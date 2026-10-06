@@ -81,6 +81,7 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     # is the affordance; the permission is the control.
     (r"/forms/recipe_form_styled\.html", frozenset({"GET"})),
     (r"/forms/install\.html", frozenset({"GET"})),       # the grab bookmarklet
+    (r"/forms/importing\.html", frozenset({"GET"})),     # the bookmarklet's in-progress page
     (r"/forms/cook\.html", frozenset({"GET"})),
     (r"/forms/[^/]+\.(css|js)", frozenset({"GET"})),     # shared shell assets
     (r"/r/.+", frozenset({"GET"})),                      # short permalink -> the form
@@ -90,6 +91,15 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     (r"/robots\.txt", frozenset({"GET"})),
     (r"/healthz", frozenset({"GET"})),           # liveness; leaks nothing
     (r"/status-messages", frozenset({"GET"})),          # the funny wait messages
+    # Patterns are FULL matches. The form and the in-progress page actually call
+    # /status-messages/active, poll /extract-progress/<token> for the honest
+    # progress bar, and ask /staged-latest?url= when the fragment hand-off loses
+    # its race — all three 404'd on the customer host until 2026-10-06. None
+    # leaks anything: a token the caller minted, a url the caller already has,
+    # and the wait messages.
+    (r"/status-messages/active", frozenset({"GET"})),
+    (r"/extract-progress/[^/]+", frozenset({"GET"})),
+    (r"/staged-latest", frozenset({"GET"})),
     (r"/messages", frozenset({"GET"})),
 
     # --- identity ----------------------------------------------------------
@@ -128,6 +138,8 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     (r"/extract-from-markdown", frozenset({"POST"})),
     (r"/enrich-recipe", frozenset({"POST"})),
     (r"/stage-markdown", frozenset({"POST"})),
+    (r"/stage-capture", frozenset({"POST"})),           # the CSP-fallback door (typed capture)
+    (r"/capture-source", frozenset({"GET"})),           # what kind of page; what to expect
     (r"/staged-markdown.*", frozenset({"GET"})),
     (r"/stage-image", frozenset({"POST"})),
     (r"/staged-image.*", frozenset({"GET"})),

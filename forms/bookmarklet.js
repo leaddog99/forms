@@ -10,6 +10,12 @@
 //
 // Edit this file → update is live on the next bookmark click/tap (the
 // loader cache-busts with ?<timestamp>). No re-install ever.
+//
+// FIRST, before anything can fail: tell the loader we arrived. The v4 loader
+// (2026-10-06) arms a 4-second fallback that captures the page ITSELF when a
+// page's Content-Security-Policy refuses this script (Facebook, Instagram,
+// ChatGPT…); this flag is how it knows not to. It must be the first statement.
+window.__bccPayloadStarted = true;
 (async function () {
   // The app host is NOT hardcoded here (portable-package: no data in code). It
   // rides in on the loader, which sets window.__recipeBookmarkletApi and the
@@ -38,7 +44,9 @@
   // bookmarks bar is frozen at install time. Bump BOTH this and the loader when
   // the one-liner's shape changes, and an old install gets told to re-install
   // instead of failing in some confusing way.
-  const LOADER_V = 3;
+  // v4 (2026-10-06): the loader opens forms/importing.html — the in-progress
+  // page — instead of a blank tab, and carries the CSP fallback capture.
+  const LOADER_V = 4;
   const loaderV = (function () {
     try { return parseInt(window.__bccLoaderV, 10) || 0; } catch (e) { return 0; }
   })();
@@ -93,7 +101,16 @@
     await new Promise(r => setTimeout(r, 2500));
   }
 
-  const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
+  // The in-progress page (forms/importing.html). A v4 loader has ALREADY opened
+  // the popup on it, so the popup is showing our own branded wait state while
+  // this runs; it owns sign-in, the token hand-off and the extraction, and it
+  // then opens the editor with the result. An older loader opened a blank tab,
+  // and for it the early hand-off below still goes to the form's awaiting state.
+  const SPLASH = API + '/forms/importing.html';
+  const SPLASH_URL = SPLASH + '?url=' + encodeURIComponent(location.href);
+  const AWAIT_URL = loaderV >= 4
+    ? SPLASH_URL
+    : FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
   let popupHandedOff = false;
   // Did the popup ACTUALLY take a navigation? Tracked separately from
   // popupHandedOff so that, when every attempt to drive it fails, the capture
@@ -107,14 +124,21 @@
   // (verified 2026-07-31: the popup reports opener === null), so neither side can
   // message the other. The fragment below is best-effort; the form's own
   // /staged-latest poll is what actually completes the hand-off.
-  try {
-    popup.location.href = AWAIT_URL;
+  if (loaderV >= 4) {
+    // The loader opened the popup ON the splash. Re-assigning the same URL
+    // would reload it and destroy a sign-in dialog the user may be typing into.
     popupHandedOff = true;
     popupNavigated = true;
-  } catch (e) {
-    // Navigation refused — fall back to the original behaviour further down,
-    // which navigates once with ?staged= after the token exists.
-    console.log('[recipe-bookmarklet] early hand-off failed:', e && e.message);
+  } else {
+    try {
+      popup.location.href = AWAIT_URL;
+      popupHandedOff = true;
+      popupNavigated = true;
+    } catch (e) {
+      // Navigation refused — fall back to the original behaviour further down,
+      // which navigates once with ?staged= after the token exists.
+      console.log('[recipe-bookmarklet] early hand-off failed:', e && e.message);
+    }
   }
 
   // Only when the hand-off did NOT happen is there an empty tab left to fill.
@@ -767,11 +791,34 @@
       bcc_hints: Object.keys(bccHints).length ? bccHints : null
     };
 
-    const stageRes = await fetch(API + '/stage-markdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let stageRes;
+    try {
+      stageRes = await fetch(API + '/stage-markdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (netErr) {
+      // CONNECT-SRC REFUSED (2026-10-06). Some pages let this script load and
+      // still forbid the fetch: the CSP's connect-src lists only the site's own
+      // hosts. A bookmarklet's own code is not governed by the page's CSP, and
+      // NAVIGATING a window is not governed by connect-src — so hand the capture
+      // we already built to our in-progress page through its URL FRAGMENT, and
+      // let THAT page (same-origin with the API) stage it. A fragment is never
+      // sent to any server. Same door as the loader's own fallback
+      // (intake/capture_sources.py), one hand-off for every locked-down site.
+      console.log('[recipe-bookmarklet] stage fetch refused, handing capture over by fragment:',
+                  netErr && netErr.message);
+      const heroUrl = (function () { try { return findHeroImageUrl(jsonld) || null; } catch (e) { return null; } })();
+      const cap = { v: 1, url: canonicalSourceUrl, title: document.title,
+                    text: mdText.replace(/\n{3,}/g, '\n\n').trim().slice(0, 30000),
+                    comments: [], image: heroUrl, selected: false, via: 'payload' };
+      const enc = btoa(unescape(encodeURIComponent(JSON.stringify(cap))))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      try { popup.location.href = SPLASH_URL + '#capture=' + enc; popupNavigated = true; }
+      catch (e) { console.log('[recipe-bookmarklet] fragment hand-off failed:', e && e.message); }
+      return;
+    }
     if (!stageRes.ok) throw new Error('Stage failed: HTTP ' + stageRes.status);
     const { token } = await stageRes.json();
 
@@ -792,6 +839,8 @@
       // Still sent: when it DOES win the race it is faster than the form's next
       // poll tick, and it keeps older form builds working. When it loses, the
       // form's /staged-latest poll finds the grab by source url instead.
+      // With a v4 loader AWAIT_URL is the splash, which listens for the same
+      // fragment and polls /staged-latest for the same race.
       try { popup.location.href = AWAIT_URL + '#staged=' + encodeURIComponent(token); }
       catch (e) { /* popup gone */ }
     } else {
@@ -902,6 +951,29 @@
 // (derived from its own <script src>, so the host appears once) and the script
 // above reads it back — no host hardcoded in the JS.
 //
+// LOADER v4 (2026-10-06). What changed from v3, and why each line is there:
+//   - opens forms/importing.html?url=… directly — the branded in-progress page —
+//     instead of a blank tab with a document.write'd <h2>;
+//   - sets window.__recipeBookmarkletApi from __BASE__ (no URL parsing needed);
+//   - arms a FALLBACK (fb) for pages whose Content-Security-Policy refuses this
+//     script: the <script>'s error event (Chrome fires it for a CSP block) and a
+//     4-second timer, both no-ops once the payload has set __bccPayloadStarted.
+//     The fallback clicks "see more"-style buttons, opens the comments panel when
+//     none is open, waits for the DOM to settle, then captures: the user's
+//     SELECTION if any, else the post body ([data-ad-preview=message] on a
+//     Facebook post; else the longest dir=auto span — verified on a Facebook REEL
+//     2026-10-06, where no post-body marker exists), else article/main, else body;
+//     plus the AUTHOR's own comments ([role=article][aria-label^=Comment] whose
+//     text carries the "Author" badge — the recipe is routinely "in the first
+//     comment"); plus og:image, else the largest image, else the video poster.
+//     It then NAVIGATES the popup to the splash with the capture base64url-encoded
+//     in the URL FRAGMENT — a fragment is never sent to a server, and navigation
+//     is not governed by the page's connect-src.
+//   Constraints on this one line: NO double quotes (it lives inside a double-
+//   quoted string in install.html) and NO backslashes (same reason) — hence
+//   attribute selectors without quotes and split/join instead of regex escapes.
+//   The readable version with the reasoning is docs/capture-sources.md.
+//
 // Template (install page substitutes __BASE__ with the public base URL).
 // __bccLoaderV must match LOADER_V at the top of this file:
-// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__bccLoaderV=3;var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
+// javascript:(function(){var B='__BASE__',U=location.href,F=B+'/forms/importing.html?url='+encodeURIComponent(U);var p=window.open(F,'_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}window.__recipeBookmarkletPopup=p;window.__bccLoaderV=4;window.__recipeBookmarkletApi=B;var d=0;function Q(s,r){return [].slice.call((r||document).querySelectorAll(s))}function T(e){return e?String(e.innerText||'').trim():''}function fb(){if(d||window.__bccPayloadStarted)return;d=1;var w=700;Q('[role=button]').forEach(function(e){var t=(e.textContent||'').trim().toLowerCase();if(t.length<12&&t.slice(-4)=='more'){try{e.click()}catch(x){}}});if(!Q('[role=article][aria-label^=Comment]').length){var cb=Q('[role=button][aria-label=Comment]')[0];if(cb){try{cb.click();w=1800}catch(x){}}}setTimeout(function(){var sel=String(window.getSelection?window.getSelection():'').trim();var body=document.querySelector('[data-ad-preview=message],[data-ad-comet-preview=message]');if(!body){var sp=Q('span[dir=auto],div[dir=auto]').sort(function(a,b){return T(b).length-T(a).length})[0];if(sp&&T(sp).length>80)body=sp}var art=document.querySelector('article,[role=main],main');var text=(sel||T(body)||T(art)||T(document.body)).slice(0,30000);var cm=Q('[role=article][aria-label^=Comment]').filter(function(a){return T(a).indexOf('Author')!=-1}).map(function(a){return T(a).slice(0,3000)}).slice(0,3);var og=Q('meta').filter(function(m){return m.getAttribute('property')=='og:image'})[0];var img=og&&og.content;if(!img){var best=null,ar=0;Q('img').forEach(function(i){var a=(i.naturalWidth||0)*(i.naturalHeight||0);if(a>ar&&a>40000){ar=a;best=i.currentSrc||i.src}});var v=document.querySelector('video[poster]');img=best||(v&&v.poster)||null}var cap={v:1,url:U,title:document.title,text:text,comments:cm,image:img,selected:!!sel,via:'loader'};var enc=btoa(unescape(encodeURIComponent(JSON.stringify(cap)))).split('+').join('-').split('/').join('_').replace(/=+$/,'');p.location.href=F+'#capture='+enc},w)}var s=document.createElement('script');s.src=B+'/forms/bookmarklet.js?'+Date.now();s.onerror=fb;setTimeout(fb,4000);(document.body||document.documentElement).appendChild(s)})();
