@@ -180,8 +180,19 @@
       if (xl) xl.style.visibility = isForeign(sel.value) ? '' : 'hidden';
       const prev = sel.dataset.prev ?? '';
       sel.dataset.prev = sel.value;
-      if (isForeign(sel.value) && !isForeign(prev) && row.querySelector('.qr-q').value.trim())
-        translateRow(row, o, dirty);
+      const qEl = row.querySelector('.qr-q');
+      if (isForeign(sel.value) && qEl.value.trim()){
+        if (!isForeign(prev)){
+          translateRow(row, o, dirty);                 // first pick on English text
+        } else if ((row.dataset.qsrc || '').trim()){
+          // Greek → Italian on a line the editor translated: go back to the
+          // English it came from and translate THAT, so the box never holds
+          // Greek under an Italian flag (curator, 2026-10-10). A line typed
+          // natively has no origin and is left alone — 🌐 is there for it.
+          qEl.value = row.dataset.qsrc;
+          translateRow(row, o, dirty);
+        }
+      }
       if (!isForeign(sel.value)){
         // Back to English / dish default: the provenance no longer applies.
         row.dataset.qsrc = '';

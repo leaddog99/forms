@@ -11076,4 +11076,9 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   n=20 (default) gl=it hl=it keep=none (translated from 'Pizza Sauce')`. Curator: "all Italian
   sites! grazi". Note bottom_ou −5.8: the relaxed foreign floor let a negative-OU page in, as
   designed for a foreign-only batch — the dish's cohort is now Italian-calibrated.
+* **Follow-up (curator): a Greek line switched to Italian kept the Greek.** The auto-translate
+  only fired on a first pick over English. Rule now: a line the editor translated (q_src on
+  the row) re-translates from its English origin on ANY language change; a natively typed line
+  is left alone (🌐 for it). Verified on the tunnel: it→el "σάλτσα για πίτσα", el→it back to
+  "salsa per pizza", origin kept, country follows. Asset tag → `?v=20261010b`.
 * **Open:** carried items.
