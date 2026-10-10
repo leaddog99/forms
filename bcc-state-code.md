@@ -11081,4 +11081,18 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   the row) re-translates from its English origin on ANY language change; a natively typed line
   is left alone (🌐 for it). Verified on the tunnel: it→el "σάλτσα για πίτσα", el→it back to
   "salsa per pizza", origin kept, country follows. Asset tag → `?v=20261010b`.
+* **Tzatziki #2401 "why only 2 of 5 reserved seats": not a seating bug.** The Greek line
+  "Tzatziki" (Latin letters, gl=gr hl=el, n=25) came back mostly YouTube/Pinterest (blocklisted)
+  and cookpad.com/gr search pages (collection-title); two seatable pages survived (eatapedia.com
+  scored; food.gr authority-absent), so two seats filled — "2 scored candidate(s), 2 already in
+  the pool, +0 carried through". Same root cause as Pizza Sauce: English text on a locale line.
+  Remedy = 🌐 on the line ("Συνταγή τζατζίκι") and refresh.
+* **Ledger keyed by line + locale (SHIPPED).** `run_candidates.queries` stored query TEXT only, so
+  a Greek "Tzatziki" line's candidates were indistinguishable from the English line's in the
+  audit. Now stores `_lines` (dishes.line_key: text + `[gl= hl=]`, bare text for us/en — so every
+  single-locale dish reads exactly as before; Editor's Choice pins fall back to `_queries`).
+  Same text-key defect found and fixed in the mixed-batch per-line OU relax
+  (`_foreign_line_qs` / `_min_ou_filter`): "Pizza Sauce" (us/en) + "Pizza Sauce" (it/it) would
+  have given the English line's candidates the Italian floor. Synthetic two-locale check passes;
+  takes effect on the next refresh (jobs run out-of-process, no service restart needed).
 * **Open:** carried items.

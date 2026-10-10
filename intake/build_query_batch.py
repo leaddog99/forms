@@ -1567,12 +1567,15 @@ def _min_ou_filter(entries: list[dict], *,
         # an OU). The negative-threshold cut is what the relax flag governs.
         unscoreable = ou is None
         # PER-CANDIDATE relax on a MIXED batch (2026-08-30): a candidate
-        # discovered by a foreign-locale line (its `_queries` intersect
+        # discovered by a foreign-locale line (its `_lines` intersect
         # relaxed_queries) gets the relaxed floor while base-language
         # candidates keep the strict one — one French line must not switch
         # off the negative-OU roundup protection for English candidates.
+        # Keyed by LINE (text + locale, dishes.line_key), not text (2026-10-10):
+        # "Pizza Sauce" (us/en) and "Pizza Sauce" (it/it) share a text, and a
+        # text key handed the English line's candidates the Italian floor.
         line_relaxed = bool(relaxed_queries
-                            and set(e.get("_queries") or []) & relaxed_queries)
+                            and set(e.get("_lines") or e.get("_queries") or []) & relaxed_queries)
         below = (not unscoreable) and drop_below_threshold \
             and not line_relaxed and ou < MIN_OU_SCORE
         if unscoreable or below:
@@ -1872,7 +1875,7 @@ def build_batch(
         # PERSISTED so demand-vs-authority questions are analyzable
         # (2026-08-29: Google's #1 finishing #10 by OU had no data trail).
         (e.get("url"), e.get("da"), e.get("pa"),
-         e.get("google_rank"), (e.get("_queries") or [""])[0])
+         e.get("google_rank"), ((e.get("_lines") or e.get("_queries") or [""])[0]))
         for e in entries
         if isinstance(e.get("da"), (int, float)) and isinstance(e.get("pa"), (int, float))
     ]
@@ -1902,7 +1905,7 @@ def build_batch(
     # foreign verdict still relaxes the whole run (single-locale batches).
     _base_lang = (normalize_lang(instance_base_language()) or "en")[:2]
     _foreign_line_qs = frozenset(
-        r["q"] for r in (query_rows or [])
+        _line_key(r) for r in (query_rows or [])
         if (r.get("hl") or "")[:2] not in ("", _base_lang))
     _mixed = (foreign_locale and locale_src.startswith("query-row locale")
               and any((r.get("hl") or "")[:2] in ("", _base_lang)

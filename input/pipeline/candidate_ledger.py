@@ -106,7 +106,7 @@ def ensure_candidate_ledger_table(conn: sqlite3.Connection) -> None:
             url_normalized   TEXT NOT NULL,
             title            TEXT,
             serp_rank        INTEGER,                    -- rank in the SERP union
-            queries          TEXT,                       -- JSON: which queries found it
+            queries          TEXT,                       -- JSON: which search LINES found it (text + locale, dishes.line_key)
             stage            TEXT NOT NULL,              -- how far it got (STAGES)
             outcome          TEXT NOT NULL,              -- 'kept' | 'dropped'
             reason           TEXT,                       -- verbatim _dropped_reason
@@ -187,7 +187,13 @@ def build_rows(batch: dict, *, collection_type: str, collection_key: str,
             "url_normalized": key,
             "title": e.get("title") or None,
             "serp_rank": e.get("google_rank"),
-            "queries": json.dumps(e.get("_queries") or [], ensure_ascii=False),
+            # Line identity = text + locale (dishes.line_key): "Tzatziki" (us/en) and
+            # "Tzatziki [gl=gr hl=el]" are two lines, and the ledger must tell them
+            # apart or a locale line's candidates cannot be audited (job #2401,
+            # 2026-10-10). Default-locale keys ARE the bare text, so single-locale
+            # dishes read exactly as before. `_queries` is the pre-2026-09 fallback
+            # (Editor's Choice pins carry only `_queries`).
+            "queries": json.dumps(e.get("_lines") or e.get("_queries") or [], ensure_ascii=False),
             "stage": stage,
             "outcome": outcome,
             "reason": reason,
