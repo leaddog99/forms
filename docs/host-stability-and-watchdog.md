@@ -61,10 +61,10 @@ Kernel-Power Event 41 records; 2026-04-14 and 2026-05-21 carry a real
 ```
 4/14 16:19 · 5/10 13:12 · 5/21 12:02 · 5/30 12:51 · 6/8 00:29 · 6/12 01:34
 6/16 20:34 · 6/22 21:36 · 6/23 04:18 · 6/25 14:06 · 7/10 11:25 · 7/24 22:04 · 7/29 01:28
-7/31 ~10:00 · 9/10 19:03 · 9/11 22:16
+7/31 ~10:00 · 9/10 19:03 · 9/11 22:16 · 10/6 15:51
 ```
 
-Only **four** recorded a bugcheck code (6/12, 7/29, 9/10 and 9/11, all `0x101`). The other twelve
+Only **five** recorded a bugcheck code (6/12, 7/29, 9/10, 9/11 and 10/6, all `0x101`). The other twelve
 logged `BugcheckCode = 0` — a total hang with nothing written at all.
 
 **2026-09-10 19:03 incident** (read 09-11): `0x101` on processor 4 (`BugcheckParameter4=0x4`,
@@ -99,6 +99,34 @@ mitigation keeps every core at full clock at idle (§7 — "costs watts and idle
 came under six running jobs. Whether heat is now a contributor or a symptom, the answer is the same:
 the mitigation has stopped buying time, and the box moves off the critical path (BAILEY cut-over).
 Before the next long run on this host, leave HWiNFO64 logging so a crash carries a temperature trace.
+
+**2026-10-06 15:51 incident** (read 10-10, four days later — nobody was at the machine):
+`0x101` on **processor 9** again (`BugcheckParameter4=0x9`, same core as 9/11). EventLog 6008 puts
+the hang at 15:51:24; Event 41 was written 18:09:14 on the reboot, so the box was dead **2 h 18 m**
+(powered on by hand). **Nothing was written**: no Event 1001, no minidump, no MEMORY.DMP — the
+Event 41 record is the only trace. Uptime before the crash **21 d 18 h** (09-14 21:20 update
+reboot → 10-06 15:51), the longest run since the 9/10 + 9/11 pair. **Idle**: the 14:00 local
+job batch (chapter rollups, dish rematch, page-cache purge, screenshot refresh #2367) finished
+15:01:13 with success; the 15:00 schedule tick ran; last System events 15:35–15:37 are routine
+Kernel-General hive flushes; Application log empty 15:40–15:52. Sleep ruled out again (no
+Kernel-Power 42/107 since the boot). Microcode still 0x12F, build 26200.9457 (25H2). HWiNFO64
+was not running — no temperature trace, again. TrustedInstaller restarted the box twice right
+after the boot (a staged update applying), the same pattern as 9/11; not a cause.
+Post-crash checklist green on 10-10: git clean and in sync, compileall 0, quick_check ok, WAL,
+`recipes.sql.gz` gzip OK, BCC + Cloudflared running since 18:11 on 10-06, / answers 200.
+
+**Collateral — the one new lesson.** All three BCC scheduled tasks (nightly backup 03:00, backup
+watcher 07:00, hourly dish schedule) run as `john` with **Interactive** logon ("run only when user is
+logged on"). After the crash the host rebooted to the sign-in screen and sat there; Winlogon shows
+the only logon since the crash at **10-10 07:59**. So **four nightly backups (10-07…10-10) never ran,
+the watcher that would have emailed about it never ran either** (same dependency — it cannot catch
+this failure class), and ~88 hourly schedule ticks were skipped. `StartWhenAvailable` did not catch
+up at logon (next run shown as 10-11). The app itself (NSSM service) and the tunnel came back at
+boot, so nothing looked wrong from the browser. Fix is a decision for the curator: autologon of
+`john` at boot (Sysinternals Autologon; the session may lock, tasks still run) — which is also what
+§"Why it never restarted by itself" wants — or re-register the three tasks as "run whether user is
+logged on or not" with a stored password (S4U will not do: the ADAM share and rclone need john's
+credentials and profile).
 
 Run `kernel_power_check.bat` for the live table; the generated exhibit is
 `warranty-evidence/crash-evidence.txt`.

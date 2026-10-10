@@ -10919,3 +10919,73 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   the outcome's phase line ("Done — opening the editor…" under the thin card);
   "open anyway" no longer waits 45 s for a bookmarklet screenshot that a capture
   never has (`acknowledged_thin` → `applyExtractResult(..., {quietIncomplete})`).
+
+## Session log — 2026-10-10 — crash #17 found four days late; the backups it silently took with it; the week's harvests logged
+
+* **Catch-up read of the state file first** (the last entry was 10-06 13:2x, the Facebook
+  capture source going live). Then the curator asked "did we have another chip failure".
+* **Crash #17 — MARLEY_SVR, 2026-10-06 15:51:24 local**, about 2.5 h after that day's BCC
+  restart. `0x101 CLOCK_WATCHDOG_TIMEOUT` on **processor 9** (same core as #16). Reboot by
+  hand at 18:09 → dead **2 h 18 m**. **Nothing written**: no Event 1001, no minidump, no
+  MEMORY.DMP; Event 41 is the only record. Uptime before it **21 d 18 h** (from the 09-14
+  update reboot) — the longest run since the 09-10/09-11 pair. **Idle**: the 14:00 job batch
+  (#2364–2367, screenshot refresh last) finished 15:01 with success; nothing running at
+  15:51, nothing interrupted. Sleep ruled out (no 42/107 events). Microcode 0x12F, build
+  26200.9457. HWiNFO not running — no temperature trace again. Tally: **17 Event 41
+  records, 15 spontaneous, 5 with a recorded 0x101.** Doc `docs/host-stability-and-
+  watchdog.md` §2 updated (frequency list + incident paragraph); exhibit
+  `warranty-evidence/crash-evidence.txt` gets an ADDENDUM.
+* **Post-crash checklist (doc §3) — all green on 10-10:** tree clean and in sync with
+  origin, compileall 0, `quick_check` ok + WAL, counts sane (master 11,805 · dishes 419 ·
+  jobs 2,401), `recipes.sql.gz` gzip OK, BCC + Cloudflared running since 18:11 on 10-06
+  (nssm 5732 → python 6264 → uvicorn 7836 own :8009, all born at boot — no zombie), / = 200.
+* **The real damage: four nights with no backup, and the watcher was blind to it.** The
+  nightly (03:00), the backup watcher (07:00) and the hourly dish schedule all run as
+  `john` **Interactive** = "run only when user is logged on". The host rebooted to the
+  sign-in screen and sat there; Winlogon shows the ONLY logon since the crash at **10-10
+  07:59:53**. So: **no dump 10-07, 10-08, 10-09, 10-10** (latest local and ADAM dump =
+  10-06 03:01), **no watcher email** (same dependency — it cannot catch this class), and
+  **~88 schedule ticks skipped** (no nightly batch 10-07…10-09: screenshot refresh, chapter
+  rollups, dish rematch, cache purge). `StartWhenAvailable` did NOT catch up at logon (both
+  daily tasks show next run 10-11). The app (NSSM service) and the tunnel came back at boot,
+  so from the browser nothing looked wrong — the curator used it all week. **Backup started
+  by hand 08:10** (`schtasks /Run /TN "BCC Recipes DB Backup"`; `backup_db.py --verify`
+  running). **DECISION OWED (curator):** (a) autologon `john` at boot — Sysinternals
+  Autologon, password in LSA secrets, session may lock, tasks still fire; also what the
+  "never restarted by itself" story wants — or (b) re-register the three tasks "run whether
+  user is logged on or not" with a stored password. S4U is NOT an option: the ADAM share and
+  rclone need john's credential + profile (proved 09-11 on BAILEY: 1326 + "didn't find
+  section gdrive"). Nothing changed yet.
+* **rclone is now on a clock, not just a quota:** the 10-06 log carries the NOTICE "This
+  remote uses rclone's shared Google Drive client_id, which is being retired and will stop
+  working during 2026." The owed client ID is a deadline.
+* **Dish Schedule task last result `0xC000013A`** (STATUS_CONTROL_C_EXIT) on the 08:00 tick
+  and `jobs_schedule.log` ends in `^C`; the detached dish_refresh it launched (#2409) is
+  running normally. Not understood yet — open.
+* **The week's work, run through the UI while the server stayed up (10-08 → 10-10):**
+  dish refreshes Kung Pao Chicken (10-08); Filet Mignon, Polenta, Caesar Dressing,
+  Tortellini Soup, Cranberry Sauce, Pavlova, Scalloped Potatoes, Vegetable Lasagna, Béchamel
+  Sauce, Huevos Rancheros (10-09); Injera, Tuna Salad, Skordalia, Tzatziki, "Piizza Sauce",
+  Coquilles Saint Jacques (10-10, last one running) — each with its dish_rematch. **Seven
+  publisher harvests, all success** (stored / extracted): alexandracooks.com 176/30 ·
+  billyparisi.com 199/20 · thefoodblog.net 88/15 · selfproclaimedfoodie.com 119/20 ·
+  thewanderlustkitchen.com 139/25 · joyfoodsunshine.com 99/20 · sugarspunrun.com 112/25.
+  Cook reworks: Classic Meatloaf (The Food Lab) 10 steps / 7 bundles; Easy Stuffed Zucchini
+  Boats 7 / 4. Curated run **Pastry Cutter #2408** running since 07:51. The 15 SEMrush
+  exports sitting untracked in `input/semrush/` are ALL already harvested (the other eight
+  09-20 … 10-06); committed with this entry like the 259 before them.
+* **"Piizza Sauce" (sic)** — dish created 10-10 09:44Z with the typo in `name`, which is the
+  immutable join key ([[project_dish_display_name]]); refresh #2406 spent 20 min on it.
+  Curator's call: rename (check `dish_run_data_points` + master stamps) or delete and re-add
+  as Pizza Sauce. Not touched.
+* **Best Buy / "can they replace the CPU?"** answered from doc §7: Best Buy Protection expired
+  2025-11-21, so not under coverage; Geek Squad in-store Hardware Installation is a paid
+  labor line (~$40, their published price) and a boxed i7-13700 retails ~$480 — versus the
+  Intel Vmin-shift program (HP first, Intel second) which replaces the chip free to
+  2028-11-21. Labor is the only cost that survives either route.
+* **Open:** the task-logon decision above · DHCP reservation for BAILEY · rclone client ID
+  (deadline) · Piizza Sauce · Dish Schedule 0xC000013A · HWiNFO logging before the next long
+  run · delete the local JPEGs once looked at · the heroes pass · capture-source attribution
+  + one real page per unverified kind · llmkit phase 2 · Postgres+BAILEY planning session ·
+  imagekit's browser half · orphan-thumb nightly sweep · Yogurt / Smoothie · Williams
+  Sonoma's last 7 · carried items.

@@ -110,3 +110,32 @@ ADDENDUM 2026-09-11 22:16 local — crash #16 (read 22:35 from the agent session
 
   Running tally: 16 Event 41 records 2026-04-14 .. 2026-09-11; 14 spontaneous after
   excluding the two power-button events; 4 with a recorded 0x101 (6/12, 7/29, 9/10, 9/11).
+
+ADDENDUM 2026-10-06 15:51 local — crash #17 (read 2026-10-10 08:00 from the agent session; nobody was at the machine)
+
+  EventLog 6008, 2026-10-06 18:09:55:
+    The previous system shutdown at 3:51:24 PM on 10/6/2026 was unexpected.
+  Kernel-Power Event 41, 10/06/2026 18:09:14:
+    BugcheckCode = 257
+    BugcheckParameter1 = 0x8
+    BugcheckParameter2 = 0x0
+    BugcheckParameter3 = 0xffffe700dbdd1180
+    BugcheckParameter4 = 0x9
+    PowerButtonTimestamp = 0
+    BugcheckInfoFromEFI = false
+    WHEABootErrorCount = 0
+    -> 0x101 = CLOCK_WATCHDOG_TIMEOUT, processor 9 (Parameter4) — the same core as 9/11.
+  Dump                       : NONE — no Event 1001, no C:\WINDOWS\Minidump\*.dmp, no MEMORY.DMP. Event 41 is the only record.
+  Boot before the crash      : 2026-09-14 21:20:23 (EventLog 6005, update reboot) -> uptime 21 d 18 h
+  Interval since prior crash : 24 d 17 h (2026-09-11 22:16 -> 2026-10-06 15:51)
+  Load at the time           : idle — the 14:00 job batch finished 15:01:13 (success); nothing running, nothing interrupted
+  Last events before the hang: System 15:35:15 / 15:37:15 / 15:37:16 Kernel-General 11/15 (routine hive flushes); Application log empty 15:40-15:52
+  Sleep                      : ruled out — no Kernel-Power 42/107 since the boot
+  Dead                       : 2 h 18 m (15:51:24 -> boot 18:09:14, powered on by hand)
+  Windows Update             : TrustedInstaller "Upgrade (Planned)" restarts at 18:09:31 / 18:10:07 / 18:10:38 = a staged update applying on the first boot, same pattern as 9/11; not a cause. Build 26200.9457 (25H2).
+  WHEA-Logger                : none since the boot
+  Microcode / mitigation     : 0x12F (BIOS F.45); min processor state 100% since 2026-07-29; Fast Startup off since 2026-09-11
+  Temperature                : no trace — HWiNFO64 not running
+
+  Running tally: 17 Event 41 records 2026-04-14 .. 2026-10-06; 15 spontaneous after
+  excluding the two power-button events; 5 with a recorded 0x101 (6/12, 7/29, 9/10, 9/11, 10/6).
