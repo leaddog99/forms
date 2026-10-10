@@ -11055,10 +11055,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   ricetta salsa per pizza · Tzatziki → Συνταγή τζατζίκι · Bulgogi → 불고기 레시피 · Xiamen → the
   exact Chinese already on the line. Caveat seen: the model dropped the quotes around
   "Beef Bulgogi" — curator reviews before Save. The refresh log now prints `keep=` per row.
-  **NOT yet live: the BCC service on MARLEY still runs the old code (PID 7836, worker from this
-  morning) — the elevated restart was cancelled at the UAC prompt; curator runs
-  `bcc_restart.bat`.** Pizza Sauce's rows are still English — open the dish, 🌐 each line, set
-  Reserve if an English line is added, Save, refresh.
+  LIVE: BCC on MARLEY restarted (worker PID 7836 → 22084). Second trap found on the way: the
+  tunnel host served the 09-09 `query-rows.js` from Cloudflare's cache (cf-cache-status HIT,
+  same `?v=20260909`), so 🌐 never rendered there until the asset tag was bumped to
+  `?v=20261010` (dishes_v2 + product_collections) — bump the tag whenever a shared JS asset
+  changes. End-to-end on recipes.tbotb.com: both Pizza Sauce lines translated in the form
+  (salsa per pizza / ricetta salsa per pizza, q_src carried in `collect`), Save lit — **left
+  unsaved for the curator**; then Refresh.
 * **`.env` CORRUPTED by a stray paste at 09:00** (the Dell/Lenovo table from this chat landed in
   the middle of the file): ANTHROPIC/RAINFOREST/SCALESERP lines mangled, PERPLEXITY line gone,
   4 prose lines inside. Invisible to git (ignored) and to the running service (key held in
@@ -11067,4 +11070,4 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   copy carries .env's own 10-01 mtime). Damaged file kept as `.env.corrupt-20261010.local`
   (gitignored). python-dotenv's "could not parse statement at line N" was the alarm all
   morning. Memory [[feedback_stray_keystroke_corruption]] extended.
-* **Open:** restart BCC on MARLEY · Pizza Sauce rows · carried items.
+* **Open:** Save + refresh Pizza Sauce · carried items.
