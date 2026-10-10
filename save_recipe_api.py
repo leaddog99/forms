@@ -3663,6 +3663,36 @@ def dish_name_check_endpoint(request: Request, name: str = ""):
             "similar": ev if (ev and ev.get("tier")) else None}
 
 
+@app.post("/dishes/translate-query")
+async def dish_translate_query_endpoint(request: Request):
+    """Translate ONE search line's English text into its line language, for the
+    row editor: the curator picks Italian on 'Pizza Sauce' and the box fills with
+    'salsa per pizza' — reviewed on the form, stored verbatim as the row's `q` with
+    the English kept in `q_src`. Nothing is saved here (the form fills, the curator
+    Saves). Body {q, hl}. Declared BEFORE /dishes/{name} like name-check."""
+    _require_perm(request, "manage_dishes")
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
+    q = (body.get("q") or "").strip()
+    hl = (body.get("hl") or "").strip().lower()
+    if not q:
+        raise HTTPException(status_code=400, detail="q is required")
+    if not hl or not dishes_lib._CODE_RE.match(hl):
+        raise HTTPException(status_code=400, detail="hl must be a two-letter language code")
+    from intake import translate as _tr
+    if not _tr.is_non_english(hl):
+        return {"q": q, "q_src": None, "hl": hl, "changed": False}
+    try:
+        out = await asyncio.to_thread(_tr.translate_query, q, hl)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"translation failed: {e}") from e
+    changed = out.strip().lower() != q.lower()
+    return {"q": out, "q_src": q if changed else None, "hl": hl,
+            "language": _tr.language_name(hl), "changed": changed}
+
+
 @app.get("/dishes/gap-report")
 def dish_gap_report_endpoint(request: Request, min_group: int = 3, limit: int = 100):
     """The weakest-link holes (input/pipeline/dish_gaps.py) for the coverage
@@ -8460,7 +8490,11 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     print(f"=== Dish refresh: {canonical_name!r} ===")
     print("queries:")
     for r in query_rows:
-        print(f"  {r['q']!r}  n={r['n'] or f'{top_serp} (default)'}  gl={r['gl']} hl={r['hl']}")
+        # `keep` printed so the log shows whether a reservation was in force —
+        # Pizza Sauce #2411 ran with keep=null and nobody could tell from here.
+        _keep_disp = f"  keep={r['keep']} (reserved seats)" if r.get("keep") else "  keep=none"
+        _src_disp = f"  (translated from {r['q_src']!r})" if r.get("q_src") else ""
+        print(f"  {r['q']!r}  n={r['n'] or f'{top_serp} (default)'}  gl={r['gl']} hl={r['hl']}{_keep_disp}{_src_disp}")
     print(f"top_n_serpapi: {top_serp} per query, top_n_final: {top_final}")
     print(f"[REFRESH-DISH] {canonical_name!r} starting")
 

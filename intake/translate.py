@@ -464,6 +464,44 @@ def translate_title(title: str, src_lang: str) -> str:
     ).strip()
 
 
+def translate_query(query: str, target_lang: str) -> str:
+    """Render an English dish SEARCH QUERY the way a native speaker would type it
+    into Google in `target_lang` — the idiomatic dish name, not a word-for-word
+    gloss. Pizza Sauce #2411 (2026-10-10) is the motivating case: the curator put
+    'Pizza Sauce' on an it/it line and Google Italy answered an English query with
+    English blogs plus Italian jars of Mutti — in Italy 'pizza sauce' is a product
+    name; the recipe pages are titled 'salsa per pizza'. Operators ("…", -word,
+    site:) pass through verbatim; a query already in the target language comes
+    back unchanged. Returns the query text only; raises on API error."""
+    if not query or not query.strip() or not is_non_english(target_lang):
+        return (query or "").strip()
+    tgt_name = language_name(target_lang)
+    msg = llm.create(
+        operation="translate_query", model=_TRANSLATION_MODEL,
+        max_tokens=120,
+        system=(f"You translate recipe SEARCH QUERIES from English into {tgt_name}. "
+                f"Output the query a native {tgt_name} speaker would type into Google to "
+                f"find recipes for that dish: the idiomatic, everyday dish name in the "
+                f"script {tgt_name} is written in, plus the natural word for 'recipe' "
+                f"where the English query says 'recipe' (e.g. Italian 'Pizza Sauce' -> "
+                f"'salsa per pizza', 'Pizza Sauce Recipe' -> 'ricetta salsa per pizza'). "
+                f"Never translate word-for-word when the dish has its own name in "
+                f"{tgt_name}. Keep search operators exactly as given: double-quoted "
+                f"phrases stay quoted (translate the words inside), -word and site: "
+                f"terms are copied verbatim. If the query is already in {tgt_name}, "
+                f"return it unchanged. Output ONLY the query text — no quotes around "
+                f"it, no explanation."),
+        messages=[{"role": "user", "content": query.strip()}],
+    )
+    out = "".join(
+        b.text for b in msg.content if getattr(b, "type", None) == "text"
+    ).strip()
+    # A chatty or empty reply must not become a search line.
+    if not out or "\n" in out or len(out) > 200:
+        raise ValueError(f"translate_query: unusable reply {out[:80]!r}")
+    return out
+
+
 # === Sanity check =================================================
 
 # Quantities we expect to survive translation intact. The translation

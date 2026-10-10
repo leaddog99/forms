@@ -11034,3 +11034,37 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   logging before the next long run · local JPEGs · heroes pass · capture-source attribution ·
   llmkit phase 2 · Postgres+BAILEY planning · imagekit browser half · orphan-thumb sweep ·
   Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
+
+## Session log — 2026-10-10 (afternoon) — the "min" that wasn't; the query that was English; the .env that was pasted into
+
+* **Curator report: "the min spec on dish extracts isn't working — I ask for 5 Italian and get
+  none."** Checked the code AND five runs: the reservation works. Aglio e Olio (it, keep 5)
+  seated 5/5 Italian sites; Pasta al Forno 5/5; Keftedes 6/6; Bulgogi 4/5; Tzatziki 2/5 (only two
+  Greek candidates survived). `_rank_blended` carries a reserved line's own candidates past the
+  blend cut; the OU floor relaxes per foreign line. **Pizza Sauce #2411 was the real case:** both
+  rows it/it with `keep: null` (no reservation at all) and the query TEXT in English — Google
+  Italy answered "Pizza Sauce" with 9 English blogs + 7 Italian JARS (Mutti, Steriltom, Solana,
+  Amazon.it; is_recipe dropped them correctly). Italian recipe pages are titled "salsa per pizza".
+  Nothing Italian was ever in the pool to seat.
+* **SHIPPED — query translation in the row editor** (`forms/query-rows.js`, `POST
+  /dishes/translate-query`, `intake.translate.translate_query`, Haiku via llm gateway, op
+  `translate_query`): picking a non-English language on an English line translates the text in
+  place (🌐 re-runs it; a line already in that language comes back unchanged); the English it
+  came from is kept as `q_src` on the row (`normalize_query_rows` carries it), shown under the
+  line and in the refresh log. Verified: Pizza Sauce → salsa per pizza · Pizza Sauce Recipe →
+  ricetta salsa per pizza · Tzatziki → Συνταγή τζατζίκι · Bulgogi → 불고기 레시피 · Xiamen → the
+  exact Chinese already on the line. Caveat seen: the model dropped the quotes around
+  "Beef Bulgogi" — curator reviews before Save. The refresh log now prints `keep=` per row.
+  **NOT yet live: the BCC service on MARLEY still runs the old code (PID 7836, worker from this
+  morning) — the elevated restart was cancelled at the UAC prompt; curator runs
+  `bcc_restart.bat`.** Pizza Sauce's rows are still English — open the dish, 🌐 each line, set
+  Reserve if an English line is added, Save, refresh.
+* **`.env` CORRUPTED by a stray paste at 09:00** (the Dell/Lenovo table from this chat landed in
+  the middle of the file): ANTHROPIC/RAINFOREST/SCALESERP lines mangled, PERPLEXITY line gone,
+  4 prose lines inside. Invisible to git (ignored) and to the running service (key held in
+  memory; detached jobs inherit the service env) — found only when a fresh process got 401.
+  **Restored from `Z:\Backups\recipes-db\env.backup`** (25 untouched lines matched by hash; the
+  copy carries .env's own 10-01 mtime). Damaged file kept as `.env.corrupt-20261010.local`
+  (gitignored). python-dotenv's "could not parse statement at line N" was the alarm all
+  morning. Memory [[feedback_stray_keystroke_corruption]] extended.
+* **Open:** restart BCC on MARLEY · Pizza Sauce rows · carried items.

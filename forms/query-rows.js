@@ -45,19 +45,66 @@
         <select class="qr-hl" title="Search language for this line (dish default = follow 'Sources in')" style="width:150px;${QIN}">${langOpts}</select>
         <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Google country index, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${esc(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">`;
     }
-    return `<div class="qrow" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
+    // 🌐 (2026-10-10): translate the line's English into its search language —
+    // Pizza Sauce on an it/it line fetched English blogs + Italian jars of
+    // Mutti, because Google Italy answered the ENGLISH words; Italian recipe
+    // pages are titled 'salsa per pizza'. The button shows on a non-English
+    // line and fires by itself the first time a language is picked. What it
+    // writes lands in the box for the curator to read and edit; the English
+    // it came from stays on the row (q_src) for the form and the refresh log.
+    const xl = o.langs ? `<button type="button" class="qr-xl ed-btn" title="Translate this query into the line's language (what a native speaker would type into Google)" style="padding:6px 8px;${isForeign(r.hl) ? '' : 'visibility:hidden'}">🌐</button>` : '';
+    const src = o.langs ? `<div class="qr-src" style="flex-basis:100%;font-size:.75rem;color:var(--muted,#6b5b4f);margin:-4px 0 2px 2px;${r.q_src ? '' : 'display:none'}">${r.q_src ? `translated from “${esc(r.q_src)}” — edit freely` : ''}</div>` : '';
+    return `<div class="qrow" data-qsrc="${esc(r.q_src || '')}" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:flex-start">
       <textarea rows="1" class="qr-q" placeholder='${esc(o.queryPlaceholder)}' style="flex:1;min-width:0;${QIN}">${esc(r.q || '')}</textarea>
       <input type="number" class="qr-n" min="1" ${o.nMax ? `max="${o.nMax}"` : ''} placeholder="${esc(o.nPlaceholder)}" title="${esc(o.nTitle)}" value="${r.n ?? ''}" style="width:70px;${QIN}">
-      ${locale}
+      ${locale}${xl}
       <input type="number" class="qr-keep" min="1" placeholder="—" title="Reserved winner seats for this line (ⓘ in the header explains)" value="${r.keep ?? ''}" style="width:56px;${QIN}">
       <button type="button" class="qr-del ed-btn" title="Remove line" style="padding:6px 10px">✕</button>
+      ${src}
     </div>`;
+  }
+
+  const isForeign = (hl) => !!hl && hl.toLowerCase().slice(0, 2) !== 'en';
+
+  // Ask the server for the line language's form of the query and put it in
+  // the box. Nothing is saved here — the curator reads it, edits if the model
+  // picked an odd phrasing, then Saves like any other edit.
+  async function translateRow(row, o, dirty){
+    const qEl = row.querySelector('.qr-q'), hlEl = row.querySelector('.qr-hl');
+    const q = qEl.value.trim(), hl = hlEl ? hlEl.value : '';
+    const note = row.querySelector('.qr-src');
+    const say = (msg, show = true) => { if (note){ note.textContent = msg; note.style.display = show ? '' : 'none'; } };
+    if (!q || !isForeign(hl)) return;
+    const btn = row.querySelector('.qr-xl');
+    if (btn) btn.disabled = true;
+    say('translating…');
+    try {
+      const resp = await fetch(o.translateUrl || '/dishes/translate-query', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({q, hl}),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      if (data.changed && data.q){
+        qEl.value = data.q;
+        qEl.style.height = 'auto'; qEl.style.height = qEl.scrollHeight + 'px';
+        row.dataset.qsrc = data.q_src || q;
+        say(`translated from “${row.dataset.qsrc}” — edit freely`);
+        if (dirty) dirty();
+      } else {
+        say(`already in ${data.language || hl} — left as typed`);
+      }
+    } catch (e) {
+      say(`translation failed: ${e.message || e} — type the ${hl} query by hand`);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function blockHtml(boxId, opts){
     const o = Object.assign({}, DEFAULTS, opts || {});
     _opts[boxId] = o;
-    const localeHead = o.langs ? `<span style="width:150px">Language</span><span style="width:56px">Country</span>` : '';
+    const localeHead = o.langs ? `<span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:34px"></span>` : '';
     return `
       <div id="${boxId}">
         <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b5b4f)">
@@ -96,8 +143,23 @@
         const hl = row.querySelector('.qr-hl'); if (hl) hl.value = '';
         const gl = row.querySelector('.qr-gl'); if (gl) gl.value = '';
         row.querySelector('.qr-keep').value = '';
+        row.dataset.qsrc = '';
+        const xl = row.querySelector('.qr-xl'); if (xl) xl.style.visibility = 'hidden';
+        const src = row.querySelector('.qr-src'); if (src){ src.textContent = ''; src.style.display = 'none'; }
       }
       dirty();
+    });
+    // 🌐 on demand — re-run after editing, or translate a line saved in English.
+    box.addEventListener('click', (e) => {
+      const xl = e.target.closest('.qr-xl'); if (!xl) return;
+      translateRow(xl.closest('.qrow'), o, dirty);
+    });
+    // Remember what the language select held before a change, so a FIRST pick
+    // of a foreign language on English text translates by itself, while a
+    // switch between two foreign languages (or a re-pick) does not rewrite a
+    // query the curator already wrote natively — 🌐 is there for that.
+    box.addEventListener('focusin', (e) => {
+      const sel = e.target.closest('.qr-hl'); if (sel) sel.dataset.prev = sel.value;
     });
     box.addEventListener('input', (e) => {
       const q = e.target.closest('.qr-q'); if (q) autosize(q);
@@ -112,7 +174,19 @@
     // Picking a language auto-fills its country; still editable afterwards.
     box.addEventListener('change', (e) => {
       const sel = e.target.closest('.qr-hl'); if (!sel) return;
-      sel.closest('.qrow').querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
+      const row = sel.closest('.qrow');
+      row.querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
+      const xl = row.querySelector('.qr-xl');
+      if (xl) xl.style.visibility = isForeign(sel.value) ? '' : 'hidden';
+      const prev = sel.dataset.prev ?? '';
+      sel.dataset.prev = sel.value;
+      if (isForeign(sel.value) && !isForeign(prev) && row.querySelector('.qr-q').value.trim())
+        translateRow(row, o, dirty);
+      if (!isForeign(sel.value)){
+        // Back to English / dish default: the provenance no longer applies.
+        row.dataset.qsrc = '';
+        const src = row.querySelector('.qr-src'); if (src){ src.textContent = ''; src.style.display = 'none'; }
+      }
     });
     // Belt-and-braces dirty signal (2026-08-30): the Reserve spinner edit
     // reached the value without tripping the #page input/change tracker for
@@ -167,7 +241,13 @@
       const keep = keepRaw === '' ? null : parseInt(keepRaw, 10);
       if (keepRaw !== '' && !(keep > 0)) return {error: `Reserve for “${q}” must be a positive number (or blank)`};
       const row = {q, n, keep};
-      if (o.langs){ row.gl = glRaw || (hl ? glForLang(hl) : null); row.hl = hl; }
+      if (o.langs){
+        row.gl = glRaw || (hl ? glForLang(hl) : null); row.hl = hl;
+        // The English a translated line came from — provenance for the form +
+        // the refresh log; only meaningful while the line is non-English.
+        const qsrc = (el.dataset.qsrc || '').trim();
+        row.q_src = (qsrc && isForeign(hl) && qsrc.toLowerCase() !== q.toLowerCase()) ? qsrc : null;
+      }
       out.push(row);
     }
     if (!out.length) return {error: 'At least one search query is required'};

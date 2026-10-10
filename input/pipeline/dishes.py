@@ -653,7 +653,15 @@ def normalize_query_rows(raw) -> list[dict]:
             keep = None
         if keep is not None and keep <= 0:
             keep = None
-        out.append({"q": q, "n": n, "gl": gl, "hl": hl, "keep": keep})
+        # `q_src` = the English the curator typed before the row editor translated
+        # it into the line language (2026-10-10, Pizza Sauce → 'salsa per pizza').
+        # Provenance only: the search runs `q` verbatim; q_src is shown on the form
+        # and in the refresh log so a translated line is never mistaken for a typo.
+        q_src = item.get("q_src") if isinstance(item, dict) else None
+        q_src = (str(q_src).strip() or None) if q_src not in (None, "") else None
+        if q_src is not None and q_src.lower() == str(q).strip().lower():
+            q_src = None
+        out.append({"q": q, "n": n, "gl": gl, "hl": hl, "keep": keep, "q_src": q_src})
     return out
 
 
