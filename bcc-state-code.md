@@ -11018,6 +11018,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   the Dell shows 1 of 2 slots used, one Crucial 16 GB DDR5-5600 UDIMM CT16G56C46U5 ($279.99)
   takes it to 32 GB later. **Rule saved to memory: no HP** (ENVY = this saga; the all-in-one
   just rebuilt) — HP and sub-brands never make a shortlist.
+* **ORDERED 2026-10-10 (curator): the Dell Slim Desktop, SKU 6622616, $1,099.99, shipped — arrives
+  2026-10-11.** Memory decision deferred until the box is open: day-one check = Task Manager →
+  Performance → Memory → "Slots used: 1 of 2" (Best Buy's spec says one 16 GB stick; Dell's manual
+  allows 2×8); if 1 of 2, one Crucial CT16G56C46U5 ($279.99) → 32 GB dual-channel. Also looked at and
+  passed: GEEKOM A7 mini ($699, marketplace, self-contradicting spec), Lenovo IdeaCentre Ryzen AI 7
+  350 32 GB ($1,469.99, Best Buy-sold but a 28 W laptop chip), full-size Dell Desktop 32 GB/2 TB
+  ($1,699, marketplace seller XTI). Dell direct wanted $1,279.99 for the same Slim config.
 * **Next for the Dell** = the BAILEY cut-over playbook, pointed at a new host: git clone, DB
   from the nightly dump, `.env`, NSSM service, the three tasks (registered "run whether logged
   on or not" OR with this same autologon+lock pair), tunnel, rclone with our own client ID —
