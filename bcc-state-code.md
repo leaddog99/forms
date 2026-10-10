@@ -11000,10 +11000,10 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   `docs/host-stability-and-watchdog.md` §2 ("Resolved 2026-10-10").
 * **`bcc_lock_if_idle.ps1` (new, project root)** — closes the unlocked desktop the autologon
   leaves: Win32 `GetLastInputInfo`, lock if idle ≥ 45 s, log to `logs\lock_after_logon.log`.
-  Dry-run 12:30 ok (`idle 87s < 999999s -> leaving the desktop unlocked`). **The task
-  "BCC Lock After Autologon" is NOT registered yet** — the agent's Register-ScheduledTask was
-  denied by its permission layer twice; the one-liner is in the doc §2 for the curator to run.
-  Until it is registered an autologon boot leaves the desktop unlocked.
+  Dry-run 12:30 ok (`idle 87s < 999999s -> leaving the desktop unlocked`). Task
+  **"BCC Lock After Autologon" registered 12:40** (AtLogOn MARLEY_SVR\john, delay PT1M, Ready) —
+  the curator handed the agent the exact one-liner after its own two attempts were denied by the
+  permission layer. The autologon + lock pair is complete; first live exercise = the next boot.
 * **Reboot:** none yet — #2409 (Coquilles Saint Jacques dish_refresh) still running; #2408
   (Pastry Cutter curated run) finished success 12:11Z. Autologon is verified at the next boot,
   whenever that is; nothing forces one.
@@ -11022,7 +11022,7 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   from the nightly dump, `.env`, NSSM service, the three tasks (registered "run whether logged
   on or not" OR with this same autologon+lock pair), tunnel, rclone with our own client ID —
   pair with the Postgres move ([[project_postgres_migration]]).
-* **Open (carried):** register the lock task · rclone client ID (deadline — retiring during
+* **Open (carried):** rclone client ID (deadline — retiring during
   2026) · DHCP reservation for BAILEY · Piizza Sauce · Dish Schedule 0xC000013A · HWiNFO
   logging before the next long run · local JPEGs · heroes pass · capture-source attribution ·
   llmkit phase 2 · Postgres+BAILEY planning · imagekit browser half · orphan-thumb sweep ·

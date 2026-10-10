@@ -135,7 +135,8 @@ boot, so the next crash-reboot lands on an unlocked desktop with the three tasks
 The unlocked desktop is closed by `bcc_lock_if_idle.ps1` (project root) behind the task **"BCC Lock
 After Autologon"** (AtLogOn `MARLEY_SVR\john`, delay 60 s, 45 s idle check, logs to
 `logs\lock_after_logon.log`): nobody at the keyboard → `LockWorkStation()`; a human who just logged
-on moves the mouse within the window and keeps the desktop. Register with:
+on moves the mouse within the window and keeps the desktop. Registered 2026-10-10 12:40 (Ready); to
+re-create it on a rebuilt host:
 
 ```
 Register-ScheduledTask -TaskName 'BCC Lock After Autologon' -User 'MARLEY_SVR\john' -RunLevel Limited -Force -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Users\john\PycharmProjects\forms\bcc_lock_if_idle.ps1') -Trigger (& { $t = New-ScheduledTaskTrigger -AtLogOn -User 'MARLEY_SVR\john'; $t.Delay = 'PT60S'; $t }) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5))
