@@ -11070,4 +11070,10 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   copy carries .env's own 10-01 mtime). Damaged file kept as `.env.corrupt-20261010.local`
   (gitignored). python-dotenv's "could not parse statement at line N" was the alarm all
   morning. Memory [[feedback_stray_keystroke_corruption]] extended.
-* **Open:** Save + refresh Pizza Sauce · carried items.
+* **Pizza Sauce #2412 (13:54, curator saved + refreshed): 10/10 Italian — giallozafferano ×3,
+  galbani, cookidoo, gustini, spadellandia, topricette, mamablip, prodottitipicitoscani (one
+  backfill from reserve, one skip-thin).** Log shows the new line format: `'salsa per pizza'
+  n=20 (default) gl=it hl=it keep=none (translated from 'Pizza Sauce')`. Curator: "all Italian
+  sites! grazi". Note bottom_ou −5.8: the relaxed foreign floor let a negative-OU page in, as
+  designed for a foreign-only batch — the dish's cohort is now Italian-calibrated.
+* **Open:** carried items.
