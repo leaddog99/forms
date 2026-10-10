@@ -10989,3 +10989,41 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   + one real page per unverified kind · llmkit phase 2 · Postgres+BAILEY planning session ·
   imagekit's browser half · orphan-thumb nightly sweep · Yogurt / Smoothie · Williams
   Sonoma's last 7 · carried items.
+
+## Session log — 2026-10-10 (later) — the task-logon decision taken; the replacement machine chosen
+
+* **DECISION (curator, 12:25): autologon.** Sysinternals Autologon64 enabled on MARLEY_SVR —
+  `AutoAdminLogon=1`, `DefaultUserName=john`, `DefaultDomainName=MARLEY_SVR`, no plaintext
+  `DefaultPassword` (LSA secret). From the next boot the three Interactive tasks (nightly backup,
+  watcher, hourly dish schedule) fire after a crash-reboot without anyone at the machine — the
+  failure class behind the four skipped backups is closed. Documented in
+  `docs/host-stability-and-watchdog.md` §2 ("Resolved 2026-10-10").
+* **`bcc_lock_if_idle.ps1` (new, project root)** — closes the unlocked desktop the autologon
+  leaves: Win32 `GetLastInputInfo`, lock if idle ≥ 45 s, log to `logs\lock_after_logon.log`.
+  Dry-run 12:30 ok (`idle 87s < 999999s -> leaving the desktop unlocked`). **The task
+  "BCC Lock After Autologon" is NOT registered yet** — the agent's Register-ScheduledTask was
+  denied by its permission layer twice; the one-liner is in the doc §2 for the curator to run.
+  Until it is registered an autologon boot leaves the desktop unlocked.
+* **Reboot:** none yet — #2409 (Coquilles Saint Jacques dish_refresh) still running; #2408
+  (Pastry Cutter curated run) finished success 12:11Z. Autologon is verified at the next boot,
+  whenever that is; nothing forces one.
+* **Replacement machine (curator, after the Best Buy/repair question):** no CPU repair or
+  swap — every Raptor Lake part carries the same defect, and the curator wants a different
+  machine per app anyway. **Chosen: Dell Slim Desktop, Core Ultra 7 265 (Arrow Lake — not
+  affected), 16 GB / 1 TB, model DECS1250-7224BLK-PUS, Best Buy SKU 6622616, $1,099.99
+  (markdown ends 10-11)**; Framingham pickup 10-15 or ship next day. My Best Buy Total covers
+  Geek Squad hardware install + in-store data transfer at $0 and 24-mo protection. **No 64 GB
+  kit**: DRAM shortage has the Crucial Pro 2×32 at $1,029.99 and the recipes server uses ~1 GB
+  (MARLEY's 26 GB in use is PyCharm/SQL Server/Chrome/OneDrive/Dropbox). If Task Manager on
+  the Dell shows 1 of 2 slots used, one Crucial 16 GB DDR5-5600 UDIMM CT16G56C46U5 ($279.99)
+  takes it to 32 GB later. **Rule saved to memory: no HP** (ENVY = this saga; the all-in-one
+  just rebuilt) — HP and sub-brands never make a shortlist.
+* **Next for the Dell** = the BAILEY cut-over playbook, pointed at a new host: git clone, DB
+  from the nightly dump, `.env`, NSSM service, the three tasks (registered "run whether logged
+  on or not" OR with this same autologon+lock pair), tunnel, rclone with our own client ID —
+  pair with the Postgres move ([[project_postgres_migration]]).
+* **Open (carried):** register the lock task · rclone client ID (deadline — retiring during
+  2026) · DHCP reservation for BAILEY · Piizza Sauce · Dish Schedule 0xC000013A · HWiNFO
+  logging before the next long run · local JPEGs · heroes pass · capture-source attribution ·
+  llmkit phase 2 · Postgres+BAILEY planning · imagekit browser half · orphan-thumb sweep ·
+  Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
