@@ -11095,4 +11095,12 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   (`_foreign_line_qs` / `_min_ou_filter`): "Pizza Sauce" (us/en) + "Pizza Sauce" (it/it) would
   have given the English line's candidates the Italian floor. Synthetic two-locale check passes;
   takes effect on the next refresh (jobs run out-of-process, no service restart needed).
+* **Chef collections — DESIGN written (docs/chef-collections.md).** Curator asked whether a Google
+  query on a domain row could gather "Marcella Hazan's best recipes". No: the domain harvest's
+  verbatim-query branch keeps only the domain's own host; a dish row would stamp `_master.dish`
+  and has no same-recipe collapse. Decision: new extract type `chef` = own `chefs` master table
+  (query rows in the dish JSON shape) → collection_members → master rows with `_master.chef`;
+  dish pipeline stages 1-6 + attribution gate (by/adapted keep, mention drop `not-credited`,
+  before Moz) + one-per-dish collapse (extract top 3× before ranking, group by matched dish,
+  best copy wins). Not built; §8 build order, 2-3 days.
 * **Open:** carried items.
