@@ -393,7 +393,8 @@ def _moz_batched(cand_lists: list[list[str]], auth: str) -> dict[int, Optional[l
     while i < len(cand_lists):
         j, total = i, 0
         while j < len(cand_lists) and (j == i or total + len(cand_lists[j]) <= MOZ_BATCH_TARGETS):
-            total += len(cand_lists[j]); j += 1
+            total += len(cand_lists[j])
+            j += 1
         chunk = list(range(i, j))
         flat = [t for k in chunk for t in cand_lists[k]]
         res = _moz_url_metrics(flat, auth) if flat else []
@@ -401,7 +402,8 @@ def _moz_batched(cand_lists: list[list[str]], auth: str) -> dict[int, Optional[l
             pos = 0
             for k in chunk:
                 n = len(cand_lists[k])
-                out[k] = res[pos:pos + n]; pos += n
+                out[k] = res[pos:pos + n]
+                pos += n
         else:
             for k in chunk:   # per-list fallback = the old one-URL-per-call path
                 r = _moz_url_metrics(cand_lists[k], auth)
