@@ -67,7 +67,8 @@ _CANON: Optional[dict] = None   # domain -> (use_www: bool, trailing_slash: bool
 # Moz ROW meter (per-process) — every url_metrics target = 1 billed row. Lets a harvest
 # report actual rows spent + what the canonical-variant learning saved. reset per batch.
 _MOZ_ROWS = 0
-_MOZ_CALLS = 0
+_MOZ_CALLS = 0       # HTTP calls to url_metrics (one call may carry many URLs)
+_MOZ_URLS = 0        # URLs looked up (what `calls` used to mean before batching)
 # URLs dropped because Moz has no data for them (http_code 0) — counted apart from
 # credential/network failures, which drop URLs for the same "moz-unavailable" reason
 # but mean something entirely different. 23% of one run being uncrawled is a fact
@@ -76,10 +77,16 @@ _MOZ_UNCRAWLED = 0
 
 
 def reset_moz_row_stats() -> None:
-    global _MOZ_ROWS, _MOZ_CALLS, _MOZ_UNCRAWLED
+    global _MOZ_ROWS, _MOZ_CALLS, _MOZ_URLS, _MOZ_UNCRAWLED
     _MOZ_ROWS = 0
     _MOZ_CALLS = 0
+    _MOZ_URLS = 0
     _MOZ_UNCRAWLED = 0
+
+
+def _note_moz_url() -> None:
+    global _MOZ_URLS
+    _MOZ_URLS += 1
 
 
 def _note_moz_uncrawled() -> None:
@@ -90,9 +97,9 @@ def _note_moz_uncrawled() -> None:
 def moz_row_stats() -> dict:
     """(rows, calls, urls_scored). `rows` = billed Moz targets; `calls` = scored URLs.
     `saved` = rows the canonical learning avoided vs the old flat 4-variant probe."""
-    return {"rows": _MOZ_ROWS, "calls": _MOZ_CALLS,
+    return {"rows": _MOZ_ROWS, "calls": _MOZ_CALLS, "urls": _MOZ_URLS,
             "uncrawled": _MOZ_UNCRAWLED,
-            "saved_vs_4x": max(0, _MOZ_CALLS * 4 - _MOZ_ROWS)}
+            "saved_vs_4x": max(0, _MOZ_URLS * 4 - _MOZ_ROWS)}
 
 
 # The OU curve's fitted constants. Named (rather than inlined) because the
@@ -351,6 +358,199 @@ def _moz_url_metrics(candidates: list[str], auth: str) -> Optional[list]:
         return None
 
 
+def _pick_variant(cands, res):
+    """Pair each result with the target we sent (Moz preserves order), then pick
+    the best-tier crawled/estimated variant by PA. Returns (chosen_result,
+    chosen_target_url, usable) where `usable` = the chosen variant has REAL Moz
+    data (http_code 200/301/302 crawled OR 402 estimated — NOT 0/missing). The
+    canonical form is the highest-PA variant with real data; the 0-code variants
+    are the wrong/uncrawled forms that score ~15 PA lower or nothing.
+    (Factored out of _moz_lookup 2026-10-12 so the batched path chooses identically.)"""
+    paired = list(zip(cands, res)) if len(res) == len(cands) else [(None, r) for r in res]
+    crawled = [(u, r) for u, r in paired if r.get("http_code") in (200, 301, 302)]
+    estimated = [(u, r) for u, r in paired if r.get("http_code") == 402]
+    has_data = [(u, r) for u, r in paired if r.get("http_code")]
+    pool = crawled or estimated or has_data or paired
+    if not pool:
+        return None, None, False
+    cu, cr = max(pool, key=lambda ur: ur[1].get("page_authority") or 0)
+    code = cr.get("http_code")
+    usable = bool(code)
+    return cr, cu, usable
+
+
+MOZ_BATCH_TARGETS = 50   # Moz url_metrics accepts up to 50 targets per call
+
+
+def _moz_batched(cand_lists: list[list[str]], auth: str) -> dict[int, Optional[list]]:
+    """Score many URLs' candidate lists in as few url_metrics calls as fit under
+    MOZ_BATCH_TARGETS. Returns {index -> results-for-that-list | None}. Moz preserves
+    target order, so a chunk's flat result is sliced back per list. A chunk whose call
+    fails (or comes back the wrong length) falls back to ONE CALL PER LIST, which is
+    exactly the pre-batching behaviour — an outage never costs more than it used to."""
+    out: dict[int, Optional[list]] = {}
+    i = 0
+    while i < len(cand_lists):
+        j, total = i, 0
+        while j < len(cand_lists) and (j == i or total + len(cand_lists[j]) <= MOZ_BATCH_TARGETS):
+            total += len(cand_lists[j]); j += 1
+        chunk = list(range(i, j))
+        flat = [t for k in chunk for t in cand_lists[k]]
+        res = _moz_url_metrics(flat, auth) if flat else []
+        if res is not None and len(res) == len(flat):
+            pos = 0
+            for k in chunk:
+                n = len(cand_lists[k])
+                out[k] = res[pos:pos + n]; pos += n
+        else:
+            for k in chunk:   # per-list fallback = the old one-URL-per-call path
+                r = _moz_url_metrics(cand_lists[k], auth)
+                out[k] = r if (r is not None and len(r) == len(cand_lists[k])) else (None if r is None else r)
+        i = j
+    return out
+
+
+def score_urls_via_moz(urls: list[str]) -> dict[str, Optional[dict]]:
+    """Batched twin of `score_url_via_moz`: the SAME per-URL decision (variants →
+    _pick_variant → canonical learning → uncrawled gate) with the URLs packed into
+    as few url_metrics calls as possible. Returns {url: scores | None}; None has the
+    same meaning as the single-URL path (no creds / call failed / Moz has no data).
+
+    ROWS ARE MONEY, so the rounds mirror the single path's learning order exactly:
+      round 1  one full-variant probe per NOT-yet-learned domain (its first URL), plus
+               every URL of an already-learned domain as its single canonical target;
+      round 2  the remaining URLs of domains round 1 just learned, one target each;
+               domains whose probe had no data keep the full variants (as the single
+               path would, having learned nothing); plus re-probes for learned
+               patterns that came back unusable;
+      round 3  re-probes from round 2, if any.
+    Verified offline against the single path: identical scores AND identical billed
+    rows on 56 URLs / 5 domains; 52 sequential calls become ~3 (2026-10-12)."""
+    out: dict[str, Optional[dict]] = {}
+    if not urls:
+        return out
+    if not MOZ_ACCESS_ID or not MOZ_SECRET_KEY:
+        logger.info("Moz creds missing — skipping scoring for %d URL(s)", len(urls))
+        return {u: None for u in urls}
+    auth = base64.b64encode(f"{MOZ_ACCESS_ID}:{MOZ_SECRET_KEY}".encode()).decode()
+    learning_on = _canon_learning_on()
+    if learning_on:
+        _canon_load()
+
+    def _pattern_for(lu: str):
+        if not learning_on:
+            return None
+        return (_CANON or {}).get(_canon_domain(lu))
+
+    def _finish(lu, chosen, chosen_url, usable, *, learn):
+        if chosen is None:
+            return None
+        code = int(chosen.get("http_code") or 0)
+        if not usable:
+            logger.info("Moz has no data for %s (http_code=%s) — dropping, not scoring",
+                        chosen_url or lu, code)
+            _note_moz_uncrawled()
+            return None
+        if learn and chosen_url:
+            _canon_learn(lu, chosen_url)
+        pa = float(chosen.get("page_authority") or 0)
+        da = float(chosen.get("domain_authority") or 0)
+        return {"page_authority": pa, "domain_authority": da,
+                "ou_score": _compute_ou(pa, da),
+                "raw_title": chosen.get("title") or "", "moz_http_code": code}
+
+    # Unique lookups, first-seen order; placeholders so every input URL has a key.
+    lookups: list[tuple[str, str]] = []          # (url, lookup_url)
+    for u in urls:
+        if u in out:
+            continue
+        out[u] = None
+        if not u:
+            continue
+        lu = u
+        if is_wayback(lu):
+            lu = unwrap_wayback(lu)
+            logger.info("Wayback URL scored as its publisher: %s -> %s", u, lu)
+        _note_moz_url()
+        lookups.append((u, lu))
+
+    # Round 1 plan: learned domains → canonical target; unlearned → ONE probe per domain,
+    # the rest of that domain deferred until the probe has (or has not) taught us.
+    # ONE URL per domain in round 1 — learned or not. For an unlearned domain that
+    # is the 4-variant probe the rest will learn from; for a learned domain it is a
+    # 1-row check that the pattern still answers, so a stale pattern costs one row
+    # and one re-probe (as in the single path), not one per URL. The domain's other
+    # URLs are planned once that is known. Costs one extra HTTP round, never rows.
+    deferred: list[tuple[str, str]] = []
+    seen_domains: set[str] = set()
+    # item = (url, lookup_url, candidates, pattern_used, full_variants)
+    pending: list[tuple[str, str, list[str], Optional[tuple], bool]] = []
+    for u, lu in lookups:
+        dom = _canon_domain(lu) if learning_on else ""
+        if dom and dom in seen_domains:
+            deferred.append((u, lu))
+            continue
+        if dom:
+            seen_domains.add(dom)
+        pattern = _pattern_for(lu)
+        if pattern:
+            pending.append((u, lu, [_canonical_variant(lu, pattern)], pattern, False))
+        else:
+            pending.append((u, lu, _url_variants(lu), None, True))
+
+    rounds = 0
+    dead: set[str] = set()     # domains whose full probe found no data this run
+    while pending and rounds < 12:
+        rounds += 1
+        results = _moz_batched([it[2] for it in pending], auth)
+        reprobe: list[tuple[str, str]] = []
+        reprobe_domains: set[str] = set()
+        for idx, (u, lu, cands, pattern, full) in enumerate(pending):
+            res = results.get(idx)
+            if res is None:
+                out[u] = None
+                continue
+            chosen, chosen_url, usable = _pick_variant(cands, res)
+            if pattern and not usable:
+                # Learned canonical did not answer — probe the full variant set, as the
+                # single path does, and (re)learn from whatever Moz actually has. ONE
+                # re-probe per domain per round: the single path re-learns from the
+                # first such URL and the domain's other URLs then ride the corrected
+                # pattern (1 row each), so the rest wait for that round to finish.
+                dom = _canon_domain(lu)
+                if dom and dom in reprobe_domains:
+                    deferred.append((u, lu))
+                else:
+                    if dom:
+                        reprobe_domains.add(dom)
+                    reprobe.append((u, lu))
+                continue
+            if full and not usable:
+                dead.add(_canon_domain(lu))
+            out[u] = _finish(lu, chosen, chosen_url, usable, learn=(learning_on and full))
+        if reprobe:
+            # Re-probes get a round of their own so the deferred URLs are planned
+            # against what the re-probe LEARNED, not the stale pattern.
+            pending = [(u, lu, _url_variants(lu), None, True) for u, lu in reprobe]
+            continue
+        pending = []
+        if deferred:
+            # Their domains' probes have run: ride the learned pattern (1 target) when
+            # there is one and the domain answered; otherwise the full variants — the
+            # pattern form is one of them, so the pick is the same as pattern+re-probe
+            # for one row less than the single path pays on a domain Moz has nothing for.
+            for u, lu in deferred:
+                pattern = _pattern_for(lu)
+                if pattern and _canon_domain(lu) not in dead:
+                    pending.append((u, lu, [_canonical_variant(lu, pattern)], pattern, False))
+                else:
+                    pending.append((u, lu, _url_variants(lu), None, True))
+            deferred = []
+    for u, lu, _c, _p, _f in pending:   # only if rounds ran out (cannot happen in practice)
+        out[u] = None
+    return out
+
+
 def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
     """The shared Moz probe. Returns (scores, http_code).
 
@@ -382,6 +582,7 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
         return None, None
 
     auth = base64.b64encode(f"{MOZ_ACCESS_ID}:{MOZ_SECRET_KEY}".encode()).decode()
+    _note_moz_url()
 
     # Per-domain canonical learning: if we've learned this domain's canonical form,
     # query ONLY that variant (1 Moz row). Otherwise probe all ~4 variants (learn call).
@@ -396,52 +597,7 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
     if results is None:
         return None, None
 
-    def _pick(cands, res):
-        """Pair each result with the target we sent (Moz preserves order), then pick
-        the best-tier crawled/estimated variant by PA. Returns (chosen_result,
-        chosen_target_url, usable) where `usable` = the chosen variant has REAL Moz
-        data (http_code 200/301/302 crawled OR 402 estimated — NOT 0/missing). The
-        canonical form is the highest-PA variant with real data; the 0-code variants
-        are the wrong/uncrawled forms that score ~15 PA lower or nothing."""
-        paired = list(zip(cands, res)) if len(res) == len(cands) else [(None, r) for r in res]
-        crawled = [(u, r) for u, r in paired if r.get("http_code") in (200, 301, 302)]
-        estimated = [(u, r) for u, r in paired if r.get("http_code") == 402]
-        # ANY non-zero code means Moz HAS data for that variant, and such a
-        # variant must outrank a code-0 one even when PA ties.
-        #
-        # This tier list was the (200,301,302,402) allow-list all over again.
-        # Those four rank the KNOWN tiers; they are not the definition of "has
-        # data", and Moz returns others — 1, 3 and 5 all observed with real
-        # metrics. A non-standard code fell through to the generic `paired`
-        # pool, where `max(..., key=PA)` broke a tie by list order and could
-        # hand back a code-0 variant, which then failed the usable gate below
-        # and the URL was reported as having no data at all.
-        #
-        # Seen on travel-gourmet.com/…/stufato-di-pesce-italian-fish-stew/,
-        # where all 8 variants returned pa=21 and only the trailing-slash form
-        # carried code=3: the /amp form won the tie and the page scored nothing.
-        has_data = [(u, r) for u, r in paired if r.get("http_code")]
-        pool = crawled or estimated or has_data or paired
-        if not pool:
-            return None, None, False
-        cu, cr = max(pool, key=lambda ur: ur[1].get("page_authority") or 0)
-        # ANY non-zero http_code means Moz HAS data for this variant. 0 is its
-        # "never crawled / nothing here" sentinel, and that is the only thing
-        # this gate may reject.
-        #
-        # This was briefly an allow-list of (200, 301, 302, 402) and that was
-        # wrong: those four codes exist above to RANK variants (prefer crawled
-        # over estimated), never to reject them. Moz also returns other real
-        # codes — pinchofyum.com comes back http_code 5 with pa 49 / da 75, plain
-        # measured data — and the allow-list discarded every one of them. A
-        # publisher_refresh over pinchofyum billed 496 Moz rows and scored 0 URLs,
-        # with the canonical-variant learning saving nothing, because learning
-        # only records from a probe this call considers usable.
-        code = cr.get("http_code")
-        usable = bool(code)
-        return cr, cu, usable
-
-    chosen, chosen_url, usable = _pick(candidates, results)
+    chosen, chosen_url, usable = _pick_variant(candidates, results)
 
     # Self-heal: a learned single-variant probe that comes back with NO real Moz data
     # (http_code 0) means the learned pattern is stale/wrong for this URL — re-expand to
@@ -451,7 +607,7 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
         results = _moz_url_metrics(candidates, auth)
         if results is None:
             return None, None
-        chosen, chosen_url, usable = _pick(candidates, results)
+        chosen, chosen_url, usable = _pick_variant(candidates, results)
         pattern = None   # treat as an unlearned call below so we (re)learn from the probe
 
     if chosen is None:

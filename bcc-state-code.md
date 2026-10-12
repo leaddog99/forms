@@ -11176,4 +11176,28 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Re-run batch (27 dishes, 10-11 + 10-12, SerpApi temporarily):** running since 12:15; runner
   restores `serp_provider=scaleserp` at the end. Tortilla Soup saved 15/15 (66 fetched); Chilaquiles
   saved 15 with 11 rejects at save (to look at).
+* **Speed: where a 10-minute dish went (Blueberry Crumble, 10.5 min).** SERP ~1.5 min; **is-recipe
+  fetch of 70 pages ~4.5 min, one page at a time** (10 s timeouts, unblocker escalations serial);
+  Moz ~1 min, **one HTTP call per URL**; save loop 3 min (17 extracts, 2 wasted on deep-page
+  strays dropped off-dish). The pool tripled and both loops were sequential.
+* **SHIPPED: concurrent prefetch + batched Moz (curator: "do the concurrent fetch and moz
+  batching").** `_is_recipe_filter` is now two passes: pass 1 runs the pre-fetch gates in order
+  (cheap, sequential); pass 2 prefetches on a bounded ThreadPool (`filter_fetch_workers`, default
+  6, lookahead 2x) while **judging stays strictly sequential and in order** — every decision,
+  print, streak and tally unchanged; workers=1 is the old loop. **Single-host runs (publisher
+  harvests) stay at 1 worker** (anti-bot; the gated-publisher breaker must not have prefetched a
+  dozen more). Cancel stops the pool and raises as before. `score_urls_via_moz` batches up to 50
+  targets per url_metrics call; **rounds mirror the single path's canonical learning** (one
+  probe per domain first, the rest ride the learned form) so **billed rows are identical** — the
+  first cut spent 280 rows where the single path spent 78, caught by the harness. `_pick_variant`
+  factored out so both paths choose identically.
+* **Verified offline (scratch harness, fake fetch + fake Moz, side-effect modules stubbed):**
+  32 candidates / 8 hosts → identical kept+dropped sets, order, reasons and print order at 1 vs
+  6 workers, 5.5x faster; cancel raises cleanly; 56 URLs / 6 domains incl. no-data, 402
+  estimated, wrong learned pattern re-probe and a failed packed call → identical scores, identical
+  78 billed rows, 10 HTTP calls vs 57, max chunk 50. **Live (batch picked it up at dish 8, Waldorf
+  Salad): front end 66 s** (2 lines, 66 fetches, 59 URLs in 3 Moz calls) vs 7.5 min; dish 3.5 min
+  vs 10-12; saved 10/10.
+* **Carried TO-DO (curator):** the new v4 bookmarklet did not transition cleanly to the
+  edit-recipe page target earlier today — check the importing/stage-capture logs.
 * **Open:** carried items + the 109-dish re-refresh decision (27 of them in this batch).

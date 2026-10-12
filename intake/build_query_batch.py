@@ -579,6 +579,22 @@ def _english_title(title: str, lang_code: str) -> str:
         return ""
 
 
+def _filter_fetch_workers(*, single_host: bool, n: int) -> int:
+    """How many candidate fetches run in flight during the is-recipe stage.
+    system_config `filter_fetch_workers` (default 6); 1 = the old sequential loop.
+    Forced to 1 for a single-host run (publisher harvest): parallel hits on one
+    publisher are what trips anti-bot, and the gated-publisher breaker there wants
+    to stop after a few pages without having prefetched a dozen more."""
+    if single_host or n <= 1:
+        return 1
+    try:
+        from input.pipeline.system_config import get_setting as _gs
+        w = int(_gs("filter_fetch_workers", 6) or 1)
+    except Exception:
+        w = 6
+    return max(1, min(w, 12))
+
+
 def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
                       unblocker: bool = False, url_prefilter: bool = False,
@@ -834,6 +850,11 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     _hosts = {(root_domain(e.get("url") or "") or "").lower() for e in entries}
     _single_host = next(iter(_hosts)) if len(_hosts) == 1 and "" not in _hosts else ""
     _nostruct_streak = 0
+    # ---- PASS 1: pre-fetch gates, in order, sequential (cheap, no network) ----
+    # Decides which candidates need a fetch at all. Drops here are the same drops
+    # the old single loop made before its fetch line; only their log lines now
+    # print together, ahead of the fetch stage.
+    plan: list[tuple[int, dict, bool]] = []   # (i, entry, render_now)
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
         # candidates (each is a fetch + score, the slow unit). Raises up to the job
@@ -915,18 +936,53 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 dropped.append(e)
                 print(f"  [{i:>2}/{len(entries)}] KW-SKIP     {url}")
                 continue
-        # R2: render up front when this domain is ALREADY known to need a browser
-        # (run-level `render` from the publisher's render_required, or the
-        # per-entry `_allow_render` the dish batch stamps for render-eligible
-        # hosts). Otherwise the static fetch is a guaranteed JS shell and the
-        # escalation below pays for the same page a second time.
-        _render_now = bool(render or e.get("_allow_render"))
-        # Heartbeat BEFORE the fetch (curator, 2026-09-06: two dish refreshes were
+        plan.append((i, e, bool(render or e.get("_allow_render"))))
+
+    # ---- PASS 2: fetch + judge. Fetches run AHEAD on a bounded pool; judging stays
+    # strictly sequential and in order, so every decision, print, streak and tally
+    # below is unchanged. workers=1 is the old loop exactly. Single-host runs
+    # (publisher harvests) stay at 1 — hammering one publisher is how to get blocked.
+    _workers = _filter_fetch_workers(single_host=bool(_single_host), n=len(plan))
+    _pool = None
+    _futs: dict = {}
+    if _workers > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        _pool = ThreadPoolExecutor(max_workers=_workers, thread_name_prefix="isrecipe-fetch")
+    _lookahead = max(1, _workers * 2)
+
+    def _prefetch_from(k: int) -> None:
+        if _pool is None:
+            return
+        for j in range(k, min(len(plan), k + _lookahead)):
+            if j not in _futs:
+                _pi, _pe, _prn = plan[j]
+                _futs[j] = _pool.submit(_fetch_for_filter, _pe["url"],
+                                        unblocker=unblocker, render=_prn)
+
+    def _stop_prefetch() -> None:
+        if _pool is None:
+            return
+        for _f in _futs.values():
+            _f.cancel()
+        _pool.shutdown(wait=False, cancel_futures=True)
+
+    if _pool is not None:
+        print(f"  [fetch] {len(plan)} candidate(s) to fetch, {_workers} in flight", flush=True)
+    for k, (i, e, _render_now) in enumerate(plan):
+        if should_cancel and should_cancel():
+            _stop_prefetch()
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled(f"cancelled after {i - 1}/{len(entries)} candidates")
+        url = e["url"]
+        _prefetch_from(k)
+        # Heartbeat BEFORE the wait (curator, 2026-09-06: two dish refreshes were
         # cancelled as "dead" while a delish.com fetch ground through the unblocker
-        # ladder in silence). The KEEP/DROP line only prints AFTER the fetch, and a
-        # single anti-bot host can take minutes — so say what we're waiting on.
+        # ladder in silence). Says what we are waiting on.
         print(f"  [{i:>2}/{len(entries)}] fetching    {url}", flush=True)
-        result = _fetch_for_filter(url, unblocker=unblocker, render=_render_now)
+        if _pool is not None:
+            result = _futs.pop(k).result()
+        else:
+            result = _fetch_for_filter(url, unblocker=unblocker, render=_render_now)
         if _render_now:
             # Already the rendered variant — the escalation has nothing left to try.
             # DELIBERATELY not `_render_escalated`: that flag drives the auto-learn
@@ -1042,8 +1098,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 # bookmarklet, signed in), as for Milk Street.
                 _nostruct_streak += 1
                 if (_single_host and not kept and _nostruct_streak >= GATED_ABORT_AFTER
-                        and i < len(entries)):
-                    rest = entries[i:]
+                        and k + 1 < len(plan)):
+                    rest = [_pe for (_pi, _pe, _prn) in plan[k + 1:]]
                     for r in rest:
                         r["recipe_score"] = 0
                         r["_dropped_reason"] = "gated-suspected: not fetched"
@@ -1054,6 +1110,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                           f"left un-fetched to save unblocker credits. If the site really is "
                           f"members-only, set 'Human capture only' on the domain and use "
                           f"📋 Queue + your bookmarklet.\n", flush=True)
+                    _stop_prefetch()
                     break
             continue
 
@@ -1105,6 +1162,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     # HEURISTIC decision and the cascade verdict. In 'decide' mode we then re-partition
     # kept/dropped per the asymmetric rescue/catch policy — AFTER capture, so the
     # training label stays the heuristic's call. Best-effort. See docs/is-recipe-classifier.md.
+    _stop_prefetch()
+
     _casc_mode = "off"
     try:
         from intake.isrecipe_cascade import cascade_mode, shadow_classify
@@ -1173,9 +1232,12 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     kept, dropped = [], []
     from input.pipeline import url_scoring as _us
     _us.reset_moz_row_stats()
+    # One batched lookup for the whole survivor set (≤50 targets per Moz call) —
+    # identical per-URL decision to score_url_via_moz, 10-25x fewer HTTP calls.
+    _batch = _us.score_urls_via_moz([e["url"] for e in entries])
     for i, e in enumerate(entries, start=1):
         url = e["url"]
-        scores = score_url_via_moz(url)
+        scores = _batch.get(url)
         if not scores:
             e["_dropped_reason"] = "moz-unavailable"
             dropped.append(e)
@@ -1208,8 +1270,9 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
               f"pa={_fmt_num(e['pa'])} da={_fmt_num(e['da'])} "
               f"ou={_fmt_num(e['ou'], width=6, decimals=2)}  {url}")
     _ms = _us.moz_row_stats()
-    print(f"  [moz] rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
-          f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old 4-variant probe)")
+    print(f"  [moz] rows: {_ms['rows']} billed for {_ms.get('urls', len(entries))} URL(s) in "
+          f"{_ms['calls']} call(s) (canonical-variant learning saved ~{_ms['saved_vs_4x']} rows "
+          f"vs the old 4-variant probe)")
     return kept, dropped
 
 
