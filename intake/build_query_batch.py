@@ -194,8 +194,14 @@ def _serpapi_lookup(query: str, target_n: int,
     # Fetch via the provider-agnostic chokepoint (SerpApi or Scale SERP, by config).
     # Query CONSTRUCTION (verbatim + curly-quote norm + exclusions, above) stays
     # here; only the HTTP fetch + pagination delegate. gl/hl/filter=0 preserved.
+    # Blocked hosts (the same set _filter_disallowed drops) do not spend the
+    # line's budget: `target_n` means target_n USABLE results, and the provider
+    # pages on until it has them. Blocked rows still come back (flagged) so the
+    # downstream filter records them in the ledger as before.
     from input.pipeline.serp_search import serp_search, active_provider
-    results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl=gl, hl=hl)
+    _blocked, _aggr = _blocked_root_domains()
+    results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl=gl, hl=hl,
+                          skip_hosts=_blocked | _aggr)
     out: list[dict] = []
     for r in results:
         url = r.get("link")
@@ -207,8 +213,10 @@ def _serpapi_lookup(query: str, target_n: int,
             "google_rank": r.get("rank"),   # 1-based in returned order (dedup-stable)
             "domain": root_domain(url),
         })
-    print(f"  [SERP:{active_provider()}] {len(out)} URLs (target {target_n})")
-    return out[:target_n]
+    n_blocked = sum(1 for r in results if r.get("blocked"))
+    print(f"  [SERP:{active_provider()}] {len(out) - n_blocked} usable URLs (target {target_n})"
+          f" + {n_blocked} on blocked hosts")
+    return out
 
 
 def _line_key(row: dict) -> str:
@@ -291,6 +299,24 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
     return out
 
 
+def _blocked_root_domains() -> tuple[set[str], set[str]]:
+    """(blocked, aggregator) root-domain sets - the config seed unioned with the
+    curator's table list, and the curated aggregator hosts. Shared by the SERP
+    budget (skip_hosts) and _filter_disallowed so the two can never disagree."""
+    try:
+        from input.pipeline.domains_lib import get_blocked_root_domains
+        table_block = get_blocked_root_domains()
+    except Exception:
+        table_block = set()
+    blocked = {d.lower() for d in DISALLOWED_DOMAINS} | {d.lower() for d in table_block}
+    try:
+        from input.pipeline.domains_lib import get_aggregator_root_domains
+        aggregator = {d.lower() for d in get_aggregator_root_domains()}
+    except Exception:
+        aggregator = set()
+    return blocked, aggregator
+
+
 def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     """Drop entries by root-domain OR by URL-path substring. Both checks
     are zero-cost (set/substring membership), run before any HTTP fetch.
@@ -300,25 +326,14 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     best-beef-stew used the same recipe vocabulary as a real recipe
     page but is structurally an article)."""
     kept, dropped = [], []
-    # The domains table is the source of truth for blocking (allowed = 0);
-    # the config list is unioned in as a safety net so nothing is lost if the
-    # table hasn't been seeded yet. Both are root-domain grain, matching the
-    # entry's root_domain(url).
-    try:
-        from input.pipeline.domains_lib import get_blocked_root_domains
-        table_block = get_blocked_root_domains()
-    except Exception:
-        table_block = set()
-    domain_block = {d.lower() for d in DISALLOWED_DOMAINS} | table_block
-    # AGGREGATORS (curated `domains.aggregator`, 2026-09-10 — punchfork): thin
-    # wrappers whose directions live on the real publisher's page. Dropped
-    # before any fetch, under their own reason so the ledger can count them
-    # apart from junk hosts. Their pointers are the future "follow" build.
-    try:
-        from input.pipeline.domains_lib import get_aggregator_root_domains
-        aggregator_block = get_aggregator_root_domains()
-    except Exception:
-        aggregator_block = set()
+    # The domains table is the source of truth for blocking; the config list is
+    # unioned in as a safety net so nothing is lost if the table hasn't been
+    # seeded yet. AGGREGATORS (curated `domains.aggregator`, 2026-09-10 -
+    # punchfork): thin wrappers whose directions live on the real publisher's
+    # page, dropped under their own reason so the ledger counts them apart from
+    # junk hosts. Both sets come from _blocked_root_domains, shared with the
+    # SERP budget, root-domain grain matching the entry's root_domain(url).
+    domain_block, aggregator_block = _blocked_root_domains()
     # URL-path fragments: the LIVE editable list (system_config), falling back to the
     # config.py seed (imported as DISALLOWED_URL_PATH_FRAGMENTS) if unset/unreadable.
     try:

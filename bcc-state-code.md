@@ -11104,3 +11104,48 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   before Moz) + one-per-dish collapse (extract top 3× before ranking, group by matched dish,
   best copy wins). Not built; §8 build order, 2-3 days.
 * **Open:** carried items.
+
+## 2026-10-12 — the video flood: dish SERP budget spent on YouTube (SHIPPED fix)
+* **Symptom (curator, Panna Cotta #2481):** "a high level of url rejects… only a few recipes
+  pass on". 80 SERP results → 66 unique → **47 disallowed (youtube.com ×45, facebook.com ×2)**
+  → 19 fetched → 10 kept, 2 reserve. Every October dish run looks like this.
+* **Cause, in two parts.** (1) Since ~09-10 Google returns YouTube/Facebook videos AS organic
+  results — live pages today: 7-9 organic, 5-8 of them video. (2) Those were kept off the SERP
+  by the `-site:` query exclusions until **09-18, when the agent switched them off**
+  (system_config `serp_exclude_blocklist=false`) because the provider returned empty page 2+
+  for any exclusion operator + locale (recorded in commit 5233360, not put to the curator —
+  see memory feedback_no_silent_removal). From then on blocked rows spent each line's 40-result
+  budget before `_filter_disallowed` rejected them. **Nothing about YouTube itself changed:
+  youtube.com was and is on the blocklist; every row was rejected.** The Facebook capture
+  source (10-06) is unrelated — the shift predates it by four weeks.
+* **Re-tests 2026-10-12 (x4 where the 09-18 note demanded):** full exclusion list + locale →
+  page 2 empty 4/4, page 3 empty; two exclusions → page 2 fine but videos remain (`-site:` does
+  not remove video results); `udm=14` → no effect via the provider. Exclusions are dead as a
+  remedy.
+* **Fix (serp_search.py + build_query_batch.py):** `serp_search(skip_hosts=)` — results on
+  blocked/aggregator hosts come back flagged `blocked` (so the ledger still records them) but
+  **do not count toward `want`**; paging continues until the line has its usable count.
+  `_blocked_root_domains()` is one helper shared by the SERP budget and the filter. Scale SERP
+  now sends Google `filter=0` (the SerpApi path always did; without it Google ends a dish query
+  ~page 7). An **empty page is retried** through the transient budget before it counts as the
+  end — three live runs hit a false "no results" at p6, p7, p8 (`pagination.next` absent each
+  time, so it is not a tell); a page empty on every try with `next` is a LOST page, paging on.
+* **Proof run, 'Panna Cotta' n=40:** before = 15-16 usable, end at p7-8. After = **37 usable
+  (+61 blocked) across 14 pages, 384 s**, two false ends caught by retry, true end at p14. Google
+  tops out ~110 results, so ~35-40 usable per plain query is the ceiling. Cost ≈ 3× SERP pages
+  per line; time ≈ 6 min per 40-seat line.
+* **Impact since 09-18 (ledger):** 125 dish runs / 111 dishes; **109 of 446 dishes carry a
+  top-N chosen from the shallow pool.** Median usable candidates per run: 60 (before 09-10) →
+  45 (Sep 18-30) → 37 (Oct). 7 runs filled fewer than 10 seats. Not wrong winners — real
+  recipes, ranked correctly among what survived — but a pool a third to half the intended size
+  and thin reserves. **24 dishes** had < 30 usable candidates (worst: Five Spice Powder 10,
+  Pizza Sauce 17/19, Coquilles Saint Jacques 18, Panna Cotta 19, Chocolate Pudding 19,
+  Souvlaki 20, Béchamel 21, Welsh Rarebit 22, Niu Rou Mian 23, Pasta al Forno 24,
+  Maroulosalata 24, Conch Chowder 25, Lobster Bisque 25, Shorabet Adas 26, Chilaquiles 27,
+  Shakshuka 27, Strawberry Cake 28, Pavlova 28, Tortilla Soup 28, Chicken Stock 28, Portuguese
+  Kale Soup 29, Candied Pecans 29). Re-refresh is the curator's call (SERP + fetch + Moz spend).
+* **Takes effect on the next refresh** (jobs run out-of-process). No restart needed.
+* **Curator note (TO-DO, parked):** "show related recipes" lacks domain source + scores and
+  sortable columns like the dishes list — "a really powerful feature that looks like an
+  afterthought". Wait for the mega design pass (f2n-style). Memory project_related_recipes_ui.
+* **Open:** carried items + the 109-dish re-refresh decision.

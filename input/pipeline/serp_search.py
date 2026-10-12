@@ -167,16 +167,68 @@ def google_hl(hl: str | None, gl: str | None = None) -> str | None:
 
 def serp_search(query: str, pages: int = 7, *, want: int | None = None,
                 gl: str | None = None, hl: str | None = None,
-                provider: str | None = None, timeout: int = 60) -> list[dict]:
+                provider: str | None = None, timeout: int = 60,
+                skip_hosts: set[str] | frozenset[str] | None = None) -> list[dict]:
     """Verbatim Google search. `pages` = how many 10-result pages to fetch; `want`
     early-stops once that many results are collected (truncates). `provider` forces
     a specific vendor (for the A/B); otherwise the configured one. Returns
-    [{link, title, rank}] deduped in rank order."""
+    [{link, title, rank}] deduped in rank order.
+
+    `skip_hosts` (root domains, 2026-10-12): results on these hosts are still
+    returned - flagged `blocked: True`, so the caller's filter can record them -
+    but they do NOT count toward `want`, and paging continues until `want` USABLE
+    results are in hand (or `pages` runs out). Why: since the `-site:` exclusions
+    were switched off (2026-09-18, provider fault) Google fills 5-8 of every 7-9
+    organic slots with YouTube/Facebook videos; a 40-result dish line stopped at
+    page 5 with ~12 real pages (Panna Cotta #2481: 66 unique, 47 blocked). Google
+    ignores `-site:` for video results and udm=14 has no effect via the provider
+    (tested x4, 2026-10-12), so the budget has to be kept on OUR side."""
     prov = (provider or active_provider()).lower()
     hl = google_hl(hl, gl)
+    skip = {h.lower() for h in (skip_hosts or ())}
     if prov in _SCALESERP_ALIASES:
-        return _scaleserp(query, pages, want, gl, hl, timeout)
-    return _serpapi(query, pages, want, gl, hl, timeout)
+        return _scaleserp(query, pages, want, gl, hl, timeout, skip)
+    return _serpapi(query, pages, want, gl, hl, timeout, skip)
+
+
+def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[str],
+                  *, label: str, page: int) -> int:
+    """Append one page's organic results to `out` (deduped, ranked in arrival order),
+    flagging `skip`-host results `blocked`. Returns the number of USABLE results in
+    `out` so far. Prints the page's usable/blocked split when anything was blocked."""
+    from input.pipeline.url_utils import root_domain
+    n_blocked, hosts = 0, {}
+    for it in org:
+        link = it.get("link") or it.get("url") or ""
+        if not link or link in seen:
+            continue
+        seen.add(link)
+        row = {"link": link, "title": it.get("title") or "", "rank": len(out) + 1}
+        host = root_domain(link) if skip else ""
+        if host and host.lower() in skip:
+            row["blocked"] = True
+            n_blocked += 1
+            hosts[host] = hosts.get(host, 0) + 1
+        out.append(row)
+    usable = sum(1 for r in out if not r.get("blocked"))
+    if n_blocked:
+        top = ", ".join(f"{h} x{n}" for h, n in sorted(hosts.items(), key=lambda kv: -kv[1])[:3])
+        print(f"  [{label}] page {page}: {len(org)} organic, {n_blocked} on blocked hosts "
+              f"({top}) - {usable} usable so far")
+    return usable
+
+
+def _trim(out: list[dict], want: int | None) -> list[dict]:
+    """Cut `out` after the `want`-th USABLE result (blocked rows between stay)."""
+    if want is None:
+        return out
+    n = 0
+    for i, r in enumerate(out):
+        if not r.get("blocked"):
+            n += 1
+            if n >= want:
+                return out[: i + 1]
+    return out
 
 
 def serp_image_search(query: str, *, want: int = 5, gl: str | None = None,
@@ -264,7 +316,7 @@ def _scaleserp_images(query, want, gl, hl, timeout) -> list[dict]:
     return out
 
 
-def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
+def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) -> list[dict]:
     key = os.getenv("SERPAPI_KEY")
     if not key:
         return []
@@ -281,17 +333,13 @@ def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
         if data is None:   # page exhausted retries / non-transient error → stop paging
             break
         org = data.get("organic_results") or []
-        for it in org:
-            link = it.get("link") or ""
-            if link and link not in seen:
-                seen.add(link)
-                out.append({"link": link, "title": it.get("title") or "", "rank": len(out) + 1})
-        if not org or (want is not None and len(out) >= want):
+        usable = _collect_page(org, out, seen, skip, label="serpapi", page=p + 1)
+        if not org or (want is not None and usable >= want):
             break
-    return out[:want] if want is not None else out
+    return _trim(out, want)
 
 
-def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
+def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) -> list[dict]:
     """Scale SERP (Traject Data). LOOP the 1-based `page` param (like SerpApi's
     `start`), one page per request, with early-stop at `want`. We don't use
     `max_page` — it's hard-capped at 10 (400 above) AND a 10-page server-side fetch
@@ -304,7 +352,12 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
     out: list[dict] = []
     seen: set[str] = set()
     for p in range(1, max(1, pages) + 1):
-        params = {"api_key": key, "q": query, "output": "json", "page": p}
+        # filter=0 = Google's "show omitted similar results". The SerpApi path
+        # always sent it; this one never did, and without it Google ends a dish
+        # query at ~page 7 (Panna Cotta 2026-10-12: p8 empty, no `next`; with
+        # filter=0 pages 8-11 are full). Invisible while blocked hosts were not
+        # spending the budget; decisive now that lines page deeper.
+        params = {"api_key": key, "q": query, "output": "json", "page": p, "filter": "0"}
         if gl:
             params["gl"] = gl
         if hl:
@@ -351,14 +404,37 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
                 # query whose page 2 came back empty went on to request pages
                 # 3..20, one billed credit each, for nothing (Pasta al Forno,
                 # 2026-09-18: 19 wasted credits per search line). Say so, stop.
-                if p == 1:
-                    # An empty FIRST page is not an ending, it is suspicious
-                    # (Apple Crumble, 2026-09-17: "0 URLs"). One more look.
-                    time.sleep(2.0)
+                # ...or the provider's intermittent empty success (the 09-17 fault),
+                # which the same request a moment later answers in full. Measured
+                # 2026-10-12 on 'Panna Cotta': three runs ended "no results" at p6,
+                # p7 and p8 while direct probes of p7-p9 minutes apart were full and
+                # p12 was the real end. `pagination.next` is NOT a reliable tell
+                # (the false ends came without one). So: an empty page is retried
+                # through the same budget transient errors get, and only an empty
+                # page on every try is an ending. Bounded waste: `attempts` credits
+                # per line at the true end, against half the candidates lost. Now
+                # that blocked hosts no longer spend the budget, lines page deeper
+                # and meet this more often.
+                has_next = bool((data.get("pagination") or {}).get("next"))
+                attempts, backoff = _serp_retry_cfg()
+                for extra in range(2, attempts + 1):
+                    print(f"  [scaleserp] page {p}: empty page (provider lists a next page: "
+                          f"{'yes' if has_next else 'no'}) — retry {extra}/{attempts} in {backoff}s")
+                    time.sleep(backoff)
                     data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
-                                          label="scaleserp", page=p)
-                    org = (data or {}).get("organic_results") or []
+                                          label="scaleserp", page=p) or {}
+                    org = data.get("organic_results") or []
+                    if org:
+                        break
+                    has_next = has_next or bool((data.get("pagination") or {}).get("next"))
                 if not org:
+                    if has_next:
+                        # Still empty, still "more to come": a LOST page, not an end.
+                        print(f"  [scaleserp] page {p}: empty on every try — page LOST, "
+                              f"paging on ({len(out)} collected)")
+                        _page_losses.append({"label": "scaleserp", "page": p, "query": query,
+                                             "error": "empty page with pagination.next"})
+                        continue
                     print(f"  [scaleserp] page {p}: no organic results — end of results "
                           f"({len(out)} collected)")
                     break
@@ -397,11 +473,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
                 _page_losses.append({"label": "scaleserp", "page": p, "query": query,
                                      "error": "off-topic results (provider served another query)"})
                 continue
-        for it in org:
-            link = it.get("link") or it.get("url") or ""
-            if link and link not in seen:
-                seen.add(link)
-                out.append({"link": link, "title": it.get("title") or "", "rank": len(out) + 1})
-        if want is not None and len(out) >= want:
+        usable = _collect_page(org, out, seen, skip, label="scaleserp", page=p)
+        if want is not None and usable >= want:
             break
-    return out[:want] if want is not None else out
+    return _trim(out, want)
