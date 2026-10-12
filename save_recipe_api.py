@@ -14897,17 +14897,34 @@ async def stage_image_endpoint(token: str, request: Request):
             raw = _b64.b64decode(raw_b64)
             from input.pipeline.screenshot_pipeline import (
                 _to_blob_jpeg, store_screenshot_blob, crop_above_fold)
-            # html2canvas hands back the WHOLE recipe element — often thousands of
-            # pixels tall — so crop to the same above-the-fold window a headless
-            # capture would have produced before the shared 800px/q65 encode.
-            # Same tile, same framing, whichever path took the picture.
-            blob = _to_blob_jpeg(crop_above_fold(raw))
+            # Two pictures can arrive. `page_b64` is the bookmarklet's capture
+            # of the PAGE TOP at viewport width in the headless 1500x800 shape -
+            # the same thing the server photographs, so it is adopted as-is
+            # (crop_above_fold is a no-op on it and only trims a taller one).
+            # `image_b64` is the whole recipe ELEMENT - column-wide, article-tall,
+            # kept for the image-extraction fallback. Cropping THAT to the above-
+            # fold aspect was the old path and it framed half a page: a 765px
+            # column became 765x408 = date, title, one paragraph, hero just below
+            # the cut (giallozafferano 2026-10-12, and every bookmarklet capture
+            # since 08-13). It stays only as the fallback when no page_b64 came
+            # (older loader, phone-width viewport, page-top capture failed).
+            page_b64 = payload.get("page_b64") or ""
+            blob = None
+            which = ""
+            if page_b64:
+                page_raw = _b64.b64decode(page_b64.split(",", 1)[1]
+                                          if page_b64.startswith("data:") else page_b64)
+                blob = _to_blob_jpeg(crop_above_fold(page_raw))
+                which = "page-top"
+            if not blob:
+                blob = _to_blob_jpeg(crop_above_fold(raw))
+                which = "element crop" + (" (page-top capture unusable)" if page_b64 else " (no page-top capture sent)")
             if blob:
                 norm = normalize_url(src_url) or src_url
                 shot = store_screenshot_blob(MEDIA_DB_PATH, norm, blob)
                 if shot:
                     entry["page_screenshot"] = shot
-                    print(f"[SCREENSHOT] adopted the browser-rendered capture "
+                    print(f"[SCREENSHOT] adopted the browser-rendered {which} capture "
                           f"({len(blob):,} bytes) as the page screenshot for {norm}")
     except Exception as e:
         # Never fail the upload over this — the vision-extraction fallback still

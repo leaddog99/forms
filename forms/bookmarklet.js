@@ -457,67 +457,35 @@ window.__bccPayloadStarted = true;
       '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">' +
       '<rect width="100%" height="100%" fill="#eee"/></svg>');
 
-    // Capture+encode helper — extracted so we can call it twice
-    // (once with the picked root, fallback with document.body if
-    // the first capture comes out suspiciously small). Returns
-    // { b64, canvasW, canvasH, outW, outH }.
-    async function captureAndEncode(target) {
-      const rect = target.getBoundingClientRect();
-      const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
-      const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
-
-      // WINDOW WIDTH DECIDES WHICH MEDIA QUERIES RUN, so it must match the layout
-      // the user is actually looking at. This passed
-      // max(targetW, document.body.scrollWidth), and scrollWidth is routinely
-      // inflated by an overflowing ad or embed — on a phone that laid the clone
-      // out at ~1900px, so DESKTOP css applied inside a 390px-wide capture: the
-      // article column rendered at a quarter width, the hero image clipped off
-      // the right, the text microscopic. It was always this broken; at 65-73px
-      // wide the result was simply too small to read as wrong (measured on two
-      // captures from 2026-08-13 01:59 and 02:05, before any change).
-      //
-      // innerWidth is the honest answer — the viewport the page is currently
-      // rendered for. Falling back to targetW keeps the element from being laid
-      // out narrower than the region we are about to capture.
-      const viewW = Math.max(window.innerWidth || 0, targetW);
-      const shotPromise = html2canvas(target, {
-        height: targetH,
-        width: targetW,
-        windowHeight: targetH,
-        windowWidth: viewW,
-        useCORS: true, allowTaint: false, logging: false,
-        backgroundColor: '#ffffff', imageTimeout: 8000,
-        onclone: function (d) {
-          d.querySelectorAll('img').forEach(function (img) {
-            try {
-              const u = new URL(img.src, location.href);
-              if (u.origin !== location.origin) {
-                img.src = PLACEHOLDER;
-                img.removeAttribute('srcset');
-              }
-            } catch (e) { img.src = PLACEHOLDER; }
-          });
-          d.querySelectorAll('[style*="background-image"]').forEach(function (el) {
-            const s = el.getAttribute('style') || '';
-            if (/url\(/.test(s)) el.style.backgroundImage = 'none';
-          });
-          d.querySelectorAll('*').forEach(function (el) {
-            try {
-              const cs = getComputedStyle(el);
-              PROPS.forEach(function (p) {
-                const v = cs[p];
-                if (v && BAD.test(v)) el.style[p] = FB[p];
-              });
-            } catch (e) { }
-          });
-        }
+    // Shared by both captures (the recipe element and the page top): strip
+    // cross-origin images, inline background images and the colour functions
+    // html2canvas cannot parse.
+    function sanitizeClone(d) {
+      d.querySelectorAll('img').forEach(function (img) {
+        try {
+          const u = new URL(img.src, location.href);
+          if (u.origin !== location.origin) {
+            img.src = PLACEHOLDER;
+            img.removeAttribute('srcset');
+          }
+        } catch (e) { img.src = PLACEHOLDER; }
       });
-      const canvas = await Promise.race([
-        shotPromise,
-        new Promise(function (_, rej) {
-          setTimeout(function () { rej(new Error('screenshot timed out')); }, 45000);
-        })
-      ]);
+      d.querySelectorAll('[style*="background-image"]').forEach(function (el) {
+        const s = el.getAttribute('style') || '';
+        if (/url\(/.test(s)) el.style.backgroundImage = 'none';
+      });
+      d.querySelectorAll('*').forEach(function (el) {
+        try {
+          const cs = getComputedStyle(el);
+          PROPS.forEach(function (p) {
+            const v = cs[p];
+            if (v && BAD.test(v)) el.style[p] = FB[p];
+          });
+        } catch (e) { }
+      });
+    }
+
+    function encodeCanvas(canvas) {
       // Client-side downscale + JPEG encoding before upload.
       //
       // CAP THE WIDTH, NOT THE LONG EDGE. A recipe capture is a tall ribbon, so
@@ -562,6 +530,87 @@ window.__bccPayloadStarted = true;
                outW: outW, outH: outH };
     }
 
+    // Capture+encode helper — extracted so we can call it twice
+    // (once with the picked root, fallback with document.body if
+    // the first capture comes out suspiciously small). Returns
+    // { b64, canvasW, canvasH, outW, outH }.
+    async function captureAndEncode(target) {
+      const rect = target.getBoundingClientRect();
+      const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
+      const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
+
+      // WINDOW WIDTH DECIDES WHICH MEDIA QUERIES RUN, so it must match the layout
+      // the user is actually looking at. This passed
+      // max(targetW, document.body.scrollWidth), and scrollWidth is routinely
+      // inflated by an overflowing ad or embed — on a phone that laid the clone
+      // out at ~1900px, so DESKTOP css applied inside a 390px-wide capture: the
+      // article column rendered at a quarter width, the hero image clipped off
+      // the right, the text microscopic. It was always this broken; at 65-73px
+      // wide the result was simply too small to read as wrong (measured on two
+      // captures from 2026-08-13 01:59 and 02:05, before any change).
+      //
+      // innerWidth is the honest answer — the viewport the page is currently
+      // rendered for. Falling back to targetW keeps the element from being laid
+      // out narrower than the region we are about to capture.
+      const viewW = Math.max(window.innerWidth || 0, targetW);
+      const shotPromise = html2canvas(target, {
+        height: targetH,
+        width: targetW,
+        windowHeight: targetH,
+        windowWidth: viewW,
+        useCORS: true, allowTaint: false, logging: false,
+        backgroundColor: '#ffffff', imageTimeout: 8000,
+        onclone: sanitizeClone
+      });
+      const canvas = await Promise.race([
+        shotPromise,
+        new Promise(function (_, rej) {
+          setTimeout(function () { rej(new Error('screenshot timed out')); }, 45000);
+        })
+      ]);
+      return encodeCanvas(canvas);
+    }
+
+    // THE PAGE SCREENSHOT is a different picture from the element capture
+    // above. The element capture is the whole recipe container, as wide as
+    // its column and as tall as the article - that is what the image-
+    // extraction fallback needs. But the page screenshot the server shows
+    // next to every other recipe is a VIEWPORT-wide view of the TOP of the
+    // page (masthead, title, hero, intro) in the 1500x800 shape the headless
+    // capture produces, and cropping the element capture to that aspect
+    // kept ~half the content: a 765px article column cropped to 765x408 is
+    // the date, the title and one paragraph, hero just below the cut
+    // (giallozafferano, 2026-10-12; every bookmarklet capture since 08-13).
+    // So take a second, cheap capture of the page top at viewport width and
+    // the server's aspect, from document origin (x/y/scroll 0 so a sticky
+    // masthead sits where it does on a fresh load). Both paths then
+    // photograph the same thing.
+    const PAGE_ASPECT_H_PER_W = 800 / 1500;
+    const PAGE_MIN_VIEW_W = 900;   // phone-width layouts stay out of scope
+    async function capturePageTop() {
+      const viewW = window.innerWidth || 0;
+      if (viewW < PAGE_MIN_VIEW_W) {
+        console.log('[recipe-bookmarklet] page-top capture skipped: viewport ' + viewW + 'px');
+        return null;
+      }
+      const topH = Math.round(viewW * PAGE_ASPECT_H_PER_W);
+      const shotPromise = html2canvas(document.body, {
+        x: 0, y: 0, scrollX: 0, scrollY: 0,
+        width: viewW, height: topH,
+        windowWidth: viewW, windowHeight: Math.max(window.innerHeight || 0, topH),
+        useCORS: true, allowTaint: false, logging: false,
+        backgroundColor: '#ffffff', imageTimeout: 8000,
+        onclone: sanitizeClone
+      });
+      const canvas = await Promise.race([
+        shotPromise,
+        new Promise(function (_, rej) {
+          setTimeout(function () { rej(new Error('page-top capture timed out')); }, 20000);
+        })
+      ]);
+      return encodeCanvas(canvas);
+    }
+
     // First attempt — the picked root (typically the recipe-content
     // container). Whole-body screenshots include comments / ads /
     // footer / related-recipe rails, which on long pages produce
@@ -602,10 +651,25 @@ window.__bccPayloadStarted = true;
       }
     }
 
+    let pageTop = null;
+    try {
+      pageTop = await capturePageTop();
+      if (pageTop) {
+        console.log('[recipe-bookmarklet] screenshot[page-top] encoded:',
+                    pageTop.canvasW + 'x' + pageTop.canvasH + ' -> ' +
+                    pageTop.outW + 'x' + pageTop.outH +
+                    ' | b64 chars: ' + pageTop.b64.length);
+      }
+    } catch (pageErr) {
+      console.log('[recipe-bookmarklet] page-top capture failed:', pageErr && pageErr.message);
+    }
+
+    const uploadBody = { image_b64: captured.b64 };
+    if (pageTop && pageTop.b64) uploadBody.page_b64 = pageTop.b64;
     const uploadRes = await fetch(API + '/stage-image/' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_b64: captured.b64 })
+      body: JSON.stringify(uploadBody)
     });
     console.log('[recipe-bookmarklet] screenshot uploaded:', uploadRes.status);
   }
