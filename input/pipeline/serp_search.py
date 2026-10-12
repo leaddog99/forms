@@ -322,6 +322,7 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) 
         return []
     out: list[dict] = []
     seen: set[str] = set()
+    empty_streak = 0   # see _scaleserp: Google leaves dead pages mid-results
     for p in range(max(1, pages)):
         params = {"engine": "google", "q": query, "num": _PAGE_SIZE,
                   "start": p * _PAGE_SIZE, "filter": 0, "api_key": key}
@@ -333,8 +334,18 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) 
         if data is None:   # page exhausted retries / non-transient error → stop paging
             break
         org = data.get("organic_results") or []
+        if not org:
+            empty_streak += 1
+            if empty_streak < 2:
+                print(f"  [serpapi] page {p + 1}: empty page — Google's dead page, stepping "
+                      f"over it ({len(out)} collected)")
+                continue
+            print(f"  [serpapi] page {p + 1}: second empty page in a row — end of results "
+                  f"({len(out)} collected)")
+            break
+        empty_streak = 0
         usable = _collect_page(org, out, seen, skip, label="serpapi", page=p + 1)
-        if not org or (want is not None and usable >= want):
+        if want is not None and usable >= want:
             break
     return _trim(out, want)
 
@@ -351,6 +362,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
         return []
     out: list[dict] = []
     seen: set[str] = set()
+    empty_streak = 0   # consecutive empty pages; Google leaves DEAD pages mid-results
     for p in range(1, max(1, pages) + 1):
         # filter=0 = Google's "show omitted similar results". The SerpApi path
         # always sent it; this one never did, and without it Google ends a dish
@@ -428,16 +440,20 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                         break
                     has_next = has_next or bool((data.get("pagination") or {}).get("next"))
                 if not org:
-                    if has_next:
-                        # Still empty, still "more to come": a LOST page, not an end.
-                        print(f"  [scaleserp] page {p}: empty on every try — page LOST, "
-                              f"paging on ({len(out)} collected)")
-                        _page_losses.append({"label": "scaleserp", "page": p, "query": query,
-                                             "error": "empty page with pagination.next"})
+                    # Google leaves DEAD pages in the middle of a result set: 'Panna
+                    # Cotta' p8 is empty on BOTH providers, twice each, while p9 and
+                    # p11 are full (2026-10-12). One dead page is stepped over (not a
+                    # loss to alert on — it is Google's answer); two in a row is the
+                    # end. Bounded waste: one extra credit per line at the true end.
+                    empty_streak += 1
+                    if empty_streak < 2:
+                        print(f"  [scaleserp] page {p}: empty on every try — Google's dead "
+                              f"page, stepping over it ({len(out)} collected)")
                         continue
-                    print(f"  [scaleserp] page {p}: no organic results — end of results "
-                          f"({len(out)} collected)")
+                    print(f"  [scaleserp] page {p}: second empty page in a row — end of "
+                          f"results ({len(out)} collected)")
                     break
+        empty_streak = 0
         if _off_topic_page(query, org):
             # A stranger's results. Ask again; a page that stays off-topic is
             # DROPPED (its ten URLs never enter the pool) and recorded as a lost
