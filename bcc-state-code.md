@@ -11217,3 +11217,36 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   source fragment|poll, UA) → server log; (2) coalesce concurrent extractions of the same staged
   markdown so a duplicate splash attaches instead of re-running.
 * **Open:** carried items + the 109-dish re-refresh decision (27 of them in this batch).
+
+## Session log — 2026-10-12 (evening) — the batch resumed and finished; the bookmarklet screenshot was half a page
+
+* **Catch-up:** the 27-dish re-run (previous session's runner, a child of that chat's shell) had
+  died at 15:11 on dish 16, Beef Stock, with the chat; its `finally` never ran, so
+  `serp_provider` was left on **serpapi**. The curator's accidental BCC restart at 15:58 reaped the
+  orphan job #2513 ("owning process is gone"). Nothing lost: dishes 1-15 all saved.
+* **Resumed 16:07 from a detached runner** (`CREATE_BREAKAWAY_FROM_JOB`, outside the chat's
+  process tree and outside the service tree, so neither a chat ending nor `bcc_restart.bat`
+  touches it). All 12 remaining dishes saved (#2514-#2525: Beef Stock, Chicken Stock, Vegetable
+  Stock, Honey Garlic Chicken, Candied Pecans, Gazpacho, Chocolate Pudding, Popovers, Shakshuka,
+  Dutch Baby Pancake, Monkey Bread, Shorabet Adas (Lentil Soup)); **ALL DONE 17:18, provider
+  restored to scaleserp** (verified in system_config). The 27-dish batch is complete; the other
+  82 of the 109 shallow-pool dishes remain the curator's call. Lesson: a long runner launched
+  from the chat's shell dies with the chat - launch batch runners detached.
+* **Bookmarklet page screenshot = half a page (SHIPPED 3ce3b41, service restarted 17:31).**
+  Curator: "the screenshot size is not working well" (giallozafferano fagottini, run from the
+  bookmarklet on a normal-size Windows window; the page read in English because Chrome had
+  auto-translated it - irrelevant to the size). Cause: the bookmarklet photographs the recipe
+  ELEMENT (pickBestRoot → article column, 765 px wide, article-tall) and the server cropped that
+  to the headless 1500:800 aspect assuming a viewport-wide capture → 765×408 = date, title, one
+  paragraph, hero just under the cut. Every bookmarklet capture since 08-13 (15 of 13,126 stored
+  since 08-01) had the defect; the Milk Street ragu of 09-27 is the same 765×408. The element
+  capture also feeds the image-extraction fallback, so it could not simply become a page shot.
+  Fix: `uploadScreenshot` takes a SECOND cheap capture of the page top at viewport width in the
+  1500:800 shape from document origin (`capturePageTop`, skipped under 900 px viewport) and sends
+  it as `page_b64`; `stage_image_endpoint` adopts it as the page screenshot and falls back to the
+  element crop only when none came. Shared `sanitizeClone` / `encodeCanvas`. Loader one-liner
+  unchanged (it injects the file cache-busted) - no re-install. **Verified live in Chrome at
+  1408 px:** element 770×10781, page-top 1408×751 (+4 s), upload 200, stored 800×427 with
+  masthead/nav/date/title/intro - the same framing the headless path gives this page.
+* **Open:** iPad splash reload (beacon + coalescing, agreed) · the 82 remaining shallow-pool
+  dishes · carried items.
