@@ -11148,4 +11148,32 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Curator note (TO-DO, parked):** "show related recipes" lacks domain source + scores and
   sortable columns like the dishes list — "a really powerful feature that looks like an
   afterthought". Wait for the mega design pass (f2n-style). Memory project_related_recipes_ui.
-* **Open:** carried items + the 109-dish re-refresh decision.
+* **CORRECTION (afternoon, curator pushed back: "i dont believe it's a google search change").**
+  The daily ledger shows YouTube at **0.0 % every day through 09-16, 0.8 % on 09-17, 16.5 % on
+  09-18** — the exact day the exclusions went off. There is NO evidence of an early-September
+  Google layout change; the `-site:` operators had been hiding YouTube all along (it was in
+  Google's organic list the whole time). The bullet above that says "since ~09-10 Google returns
+  videos as organic" is wrong on the date; the mechanism (videos in the organic list, consuming
+  the budget) is right.
+* **Why the exclusions cannot come back, measured on SerpApi 2026-10-12 (operators reach Google
+  verbatim — `google_url` shows `q=Panna+Cotta+-site%3Ayoutube.com+-site%3Afacebook.com`; the
+  syntax is Google's documented repeated-operator form, there is no list form):**
+  (1) Google serves TWO layouts per request at random — a clean 10-link page where `-site:`
+  holds, and a page with its video-index results interleaved (every such entry carries a
+  `duration` field) where `-site:` is ignored. Six fresh fetches of one identical query: p2
+  YouTube = 1, 0, 1, 0, 10, 1. SerpApi's 1-hour cache pins a query to whichever layout its first
+  fetch caught — that is why the playground showed the curator a clean page and a trailing space
+  (new cache key) showed a messy one. (2) Pagination dies as operators grow: 2 hosts paginate;
+  4+ hosts or 2 hosts + `-roundup` → p2 and p3 empty, line ends with 1-9 usable (the 09-17
+  fault, reproduced on SerpApi, so it is Google's). (3) Even the 2-host form that paginates is
+  WORSE on cost: 'panna cotta recipes' plain = 16 pages → 37 usable; with
+  `-site:youtube.com -site:facebook.com` = 20 pages (cap) → 18 usable. Google serves fewer
+  usable web links per page with the operators present.
+* **Decision stands:** blocked hosts do not spend the budget; pages are paid to Google's video
+  layout, which no query syntax removes. `serp_exclude_blocklist` stays false. A `duration`-based
+  pre-fetch flag was considered and REJECTED by the curator: recipe pages with embedded videos
+  must not be touched; video-only pages fall out at is-recipe ("no recipe structure").
+* **Re-run batch (27 dishes, 10-11 + 10-12, SerpApi temporarily):** running since 12:15; runner
+  restores `serp_provider=scaleserp` at the end. Tortilla Soup saved 15/15 (66 fetched); Chilaquiles
+  saved 15 with 11 rejects at save (to look at).
+* **Open:** carried items + the 109-dish re-refresh decision (27 of them in this batch).
