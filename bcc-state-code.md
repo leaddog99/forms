@@ -11200,4 +11200,20 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   vs 10-12; saved 10/10.
 * **Carried TO-DO (curator):** the new v4 bookmarklet did not transition cleanly to the
   edit-recipe page target earlier today — check the importing/stage-capture logs.
+* **JSON-LD lenient reader (SHIPPED, curator: "extraction error on the paula deen domain extract").**
+  Every pauladeen.com recipe page closes its Recipe block with `};` — invalid JSON — and extruct
+  raises on the PAGE, so one bad block hid the good one too and all 179 pages lost structured
+  data (kept by phrase structure, slower extract path). `extract_recipe_jsonld` now falls back to
+  `_lenient_jsonld_blocks`: per <script> block, `raw_decode` takes the first JSON value and
+  ignores trailing junk; non-JSON blocks are skipped. Verified live: both Paula Deen pages yield
+  the Recipe (name + ingredients); synthetic garbage block skipped. The job the curator saw was
+  cancelled by hand; re-run it. **Service restart needed for the in-app extract path** (jobs pick
+  the fix up on their own).
+* **Bookmarklet (iPad, this morning) — diagnosis so far:** server log shows the splash RELOADED
+  mid-extraction (Pho: 3 loads at 07:40:21/:36/:41:18, each starting a new extraction of the same
+  markdown; 3rd → 500 "no result"; Shorabet: 2 loads in one second). Chrome repro on the same
+  page completed normally (the 23 s pause was the sign-in dialog). Cause of the reload on iPadOS
+  not determinable server-side. AGREED build after the batch: (1) splash beacon (nav type, token
+  source fragment|poll, UA) → server log; (2) coalesce concurrent extractions of the same staged
+  markdown so a duplicate splash attaches instead of re-running.
 * **Open:** carried items + the 109-dish re-refresh decision (27 of them in this batch).

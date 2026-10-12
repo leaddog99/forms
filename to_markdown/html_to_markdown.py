@@ -988,7 +988,8 @@ def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:
                                uniform=True)
     except ValueError as e:
         # Encoding-declaration case is recoverable: strip the leading <?xml ?>
-        # and retry once. Anything else → JSON-LD is optional, return [].
+        # and retry once. Anything else → the LENIENT block-by-block reader
+        # below; only if that finds nothing is JSON-LD treated as absent.
         if "encoding declaration" in str(e).lower():
             try:
                 data = extruct.extract(_XML_DECL_RE.sub("", html, count=1).lstrip(),
@@ -996,13 +997,11 @@ def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:
                                        uniform=True)
             except Exception as e2:
                 print(f"[jsonld] parse failed after decl-strip for {base_url!r}: {e2}")
-                return []
+                data = {"json-ld": _lenient_jsonld_blocks(html, base_url, str(e2))}
         else:
-            print(f"[jsonld] parse failed for {base_url!r}: {e}")
-            return []
+            data = {"json-ld": _lenient_jsonld_blocks(html, base_url, str(e))}
     except Exception as e:
-        print(f"[jsonld] parse failed for {base_url!r}: {e}")
-        return []
+        data = {"json-ld": _lenient_jsonld_blocks(html, base_url, str(e))}
     out: list[dict] = []
     for item in data.get("json-ld", []) or []:
         if _is_recipe_type(item.get("@type")):
@@ -1027,6 +1026,54 @@ def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:
             print(f"[jsonld] recovered {len(usable)} Recipe block(s) from a "
                   f"<meta name='application/ld+json'> tag: {base_url}")
         out.extend(usable)
+    return out
+
+
+_LDJSON_SCRIPT_RE = re.compile(
+    r'<script\b[^>]*\btype\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _lenient_jsonld_blocks(html: str, base_url: str, why: str) -> list[dict]:
+    """Block-by-block JSON-LD when the strict parser refuses the PAGE.
+
+    extruct parses every <script type=application/ld+json> and raises on the
+    first bad one, so one malformed block hides every good one. pauladeen.com
+    (2026-10-12, every recipe page): the WordPress recipe plugin closes its
+    Recipe block with `};` — a stray semicolon after valid JSON — so 179 recipe
+    pages lost their structured data and the whole harvest fell back to the
+    phrase scorer. Here each block is read with `raw_decode`, which takes the
+    first complete JSON value and ignores whatever trails it; a block that is not
+    JSON at all is skipped, not fatal. Returns the same shape extruct's
+    uniform=True gives: a list of top-level dicts (an array block contributes
+    its dict members)."""
+    out: list[dict] = []
+    dec = json.JSONDecoder()
+    n_blocks = 0
+    for m in _LDJSON_SCRIPT_RE.finditer(html):
+        raw = html_lib.unescape(m.group(1)).strip()
+        if not raw:
+            continue
+        n_blocks += 1
+        try:
+            obj, _end = dec.raw_decode(raw)
+        except Exception:
+            # Common commented-out form: <!-- {...} -->
+            inner = raw.strip("<!->").strip()
+            try:
+                obj, _end = dec.raw_decode(inner)
+            except Exception:
+                continue
+        if isinstance(obj, dict):
+            out.append(obj)
+        elif isinstance(obj, list):
+            out.extend(x for x in obj if isinstance(x, dict))
+    if out:
+        print(f"[jsonld] strict parse failed ({why[:70]}) — lenient reader recovered "
+              f"{len(out)} block(s) of {n_blocks} for {base_url}")
+    else:
+        print(f"[jsonld] parse failed for {base_url!r}: {why}")
     return out
 
 
