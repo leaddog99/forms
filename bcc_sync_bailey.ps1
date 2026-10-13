@@ -35,6 +35,12 @@ Write-Host "== code + assets (incremental) =="
 # --no-update-dir-modtime (2026-09-12): Windows sftp-server refuses SetModTime on
 # directories the running service holds open -> rclone reported 1 error every run
 # and SKIPPED ALL DELETIONS on BAILEY. Directory mtimes carry nothing we need.
+# 2026-10-13: git writes pack and commit-graph files READ-ONLY, and the SFTP
+# copy carries that mode to BAILEY, where Windows then refuses to delete them.
+# When MARLEY's git repacks (10-10 did), rclone fails to delete the stale pair
+# on BAILEY and, as on 09-12, SKIPS ALL DELETIONS for the run - three nights of
+# alerts and a tree that only grew. Clear the attribute under .git first.
+& $ssh -o BatchMode=yes john@BAILEY "cmd /c attrib -R /S C:\Users\john\PycharmProjects\forms\.git\*.*" | Out-Null
 & $rc sync $src $dst --stats-one-line --no-update-dir-modtime `
   --exclude "recipes.db" --exclude "recipes.db-wal" --exclude "recipes.db-shm" `
   --exclude "page_cache.db" --exclude "media.db" --exclude "training.db" `
