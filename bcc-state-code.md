@@ -11250,3 +11250,27 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   masthead/nav/date/title/intro - the same framing the headless path gives this page.
 * **Open:** iPad splash reload (beacon + coalescing, agreed) · the 82 remaining shallow-pool
   dishes · carried items.
+
+## Session log — 2026-10-13 — the BAILEY mirror's code half had failed three nights running
+
+* **Curator: "what is the status of the daily mirror backup to Bailey."** The DB half was fine
+  (BAILEY serving the 10-13 03:09 snapshot, 12,677 recipes, service up, bailey.tbotb.com 200).
+  The CODE half had failed 10-11, 10-12 and 10-13 (`bailey sync exit code: 1`, the 07:00
+  watcher mailing every morning). Cause: git writes pack and commit-graph files READ-ONLY, the
+  SFTP copy carries that mode to BAILEY, and when MARLEY's git repacked on 10-10 rclone could
+  not delete the stale pair on BAILEY - and, as on 09-12, one failed delete makes rclone SKIP
+  ALL DELETIONS for the run ("not deleting directories as there were IO errors"), so BAILEY's
+  tree only grew. The 10-12 backup-verify row-count mismatch was transient (10-13 clean).
+* **Fixed (curator: "go ahead and fix it and rerun the sync"; b6b3331, pushed).** Cleared the
+  attribute under BAILEY's `.git` over ssh, then made it a pre-step in `bcc_sync_bailey.ps1`
+  (`attrib -R /S ...\.git\*.*` on BAILEY before the forms code sync) so the next repack cannot
+  block deletions again. Code-only sync re-run twice (both exit 0, "== sync done =="). Verified on
+  BAILEY: the stale `commit-graphs` dir is gone (neither host has one), `forms/bookmarklet.js`
+  carries MARLEY's 10-12 16:17 timestamp, the patched sync script is there, site 200. BAILEY's
+  running service picks the code up at the nightly stop/start (~03:40).
+* **Tonight's 03:00 run is the first unattended proof** - expect `bailey sync exit code: 0` and
+  no watcher mail. Still failing, NOT touched: the two Google Drive stages (forms mirror,
+  media/training copy) on rclone's shared client ID (403 rateLimitExceeded; retiring 2026) -
+  owed our own client ID.
+* **Open:** own rclone Drive client ID · DHCP reservation for BAILEY · iPad splash reload
+  (beacon + coalescing) · the 82 remaining shallow-pool dishes · carried items.
