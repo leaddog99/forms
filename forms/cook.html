@@ -155,6 +155,13 @@
   .media .play::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7);}
   .step-read{margin-top:12px;border:0;background:none;cursor:pointer;color:var(--clay-deep);font-family:inherit;font-size:13.5px;font-weight:600;padding:6px 0 0;display:inline-flex;align-items:center;gap:6px;}
   .step-read:hover{color:var(--clay);}
+  /* Foot row (2026-10-13): done box + label at the bottom of the card, read button at the right. */
+  .step-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
+  .step-foot .sbox{margin-top:0;}
+  .sbox-label{font-size:14px;font-weight:600;color:var(--clay-deep);cursor:pointer;user-select:none;}
+  .step.done .sbox-label{color:var(--sea);}
+  .step-foot .step-read{margin-top:0;padding:0;margin-left:auto;}
+  .sub-ings{color:var(--ink-soft);}
 
   .finish-box{margin:24px 0 0;padding:16px 18px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);}
   .finish-box .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);margin:0 0 6px;}
@@ -651,27 +658,48 @@
     var bodyHtml;
     if((step.substeps||[]).length){
       bodyHtml = '<ol class="substeps">' + step.substeps.map(function(ss, i){
-        var txt = (ss.screen!=null && ss.screen!=='') ? expandInstr(step, ss.screen) : E(tidyText(ss.voice||''));
+        var hasScreen = (ss.screen!=null && ss.screen!=='');
+        var txt = hasScreen ? expandInstr(step, ss.screen) : E(tidyText(ss.voice||''));
+        txt += missingIngChips(step, ss, hasScreen ? ss.screen : '');
         return '<li class="substep" data-sub="'+i+'"><span class="sub-n">'+(i+1)+'</span>'
              + '<span class="sub-txt">'+txt+'</span></li>';
       }).join('') + '</ol>';
     } else {
       bodyHtml = '<p class="instr">'+expandInstr(step)+'</p>';
     }
-    div.innerHTML='<span class="sbox" role="button" aria-label="Mark step '+step.number+' done"></span>'
-      + '<div class="sbody">'
+    // 2026-10-13: the done box moved from the card's top-left to a FOOT row — the
+    // cook's eye is at the bottom of a step when it's finished, and the next step
+    // is right below ("the check box should move to the bottom of the step").
+    div.innerHTML='<div class="sbody">'
       + '<div class="num-row"><div class="num">'+step.number+'</div><div class="step-name">'+E(step.name)
       +   (sched?' <span class="step-sched">'+E(sched)+'</span>':'')+'</div></div>'
       + eqHtml
       + bodyHtml
       + attHtml
-      + '<button class="step-read" title="Read this step aloud">🔊 Read step</button>'
+      + '<div class="step-foot">'
+      +   '<span class="sbox" role="button" aria-label="Mark step '+step.number+' done"></span>'
+      +   '<span class="sbox-label">Done — next step</span>'
+      +   '<button class="step-read" title="Read this step aloud">🔊 Read step</button>'
+      + '</div>'
       + '</div>';
-    // check toggles done + advances
+    // check toggles done + advances (the label is the same control, bigger target)
     var box=div.querySelector('.sbox');
     box.addEventListener('click', function(){ toggleStep(div, step); });
+    div.querySelector('.sbox-label').addEventListener('click', function(){ toggleStep(div, step); });
     div.querySelector('.step-read').addEventListener('click', function(e){ e.stopPropagation(); speak(spokenText(step)); markCurrent(step.number); });
     return div;
+  }
+  // 2026-10-13: a sub-step line is the model's `screen` fragment (amount chips via
+  // {ingN}) or, when that's empty, the bare `voice` line — written terse for the ear,
+  // no amounts. Step 3 of the vodka sauce read "Stir in the spices one minute" with
+  // the ¼ tsp / 1½ tsp nowhere on the card ("forcing a look back"). Whatever the
+  // line omits of the ingredients it COVERS (ss.ingredients, 1-based) is appended.
+  function missingIngChips(step, ss, frag){
+    var shown={}; String(frag||'').replace(/\{ing(\d+)\}/g, function(m,n){ shown[parseInt(n,10)]=1; return m; });
+    var chips=(ss.ingredients||[]).filter(function(n){ return !shown[n] && (step.ingredients||[])[n-1]; })
+      .map(function(n){ var si=step.ingredients[n-1]; var a=amtStr(si.amount);
+        return '<b>'+E((a?a+' ':'')+stripArticle(si.label||''))+'</b>'; });
+    return chips.length ? ' <span class="sub-ings">— '+chips.join(', ')+'</span>' : '';
   }
   function renderSteps(){
     var c=document.getElementById('steps'); c.innerHTML='';
@@ -1382,7 +1410,25 @@
       return;
     }
     btn.textContent = '⏳ Starting…'; btn.disabled = true;
+    // 2026-10-13: the start path failed SILENTLY — a mic/AudioContext error printed
+    // one status line and a console.error; nothing in the voice log, nothing on the
+    // server ("voice mode seems to do nothing", iPhone; "no prompt", a desktop with
+    // no mic). Now every stage is named, a failure is logged AND auto-saved to
+    // /cook/voice-log, and a watchdog unsticks "Starting…" if a stage never returns.
+    var _stage = 'audio-context';
+    var _wd = setTimeout(function(){ if(hf) return;
+      vlog('error', 'start watchdog: stuck at ' + _stage + ' after 20s · ' + (navigator.userAgent || '').slice(0, 64));
+      saveVoiceLog('start-watchdog'); _teardownAudio();
+      btn.disabled = false; btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on');
+      setVoiceStatus('', '🎙️ The mic never came up (stuck at ' + _stage + '). Reload and try again.');
+    }, 20000);
     try{
+      // The AudioContext is created INSIDE the tap, before the mic prompt: iOS only
+      // lets a context start from a user gesture, and the awaited permission prompt
+      // ends the gesture — created afterwards it could stay suspended for good.
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      if (AC.state === 'suspended') { try{ AC.resume(); }catch(_r){} }
+      _stage = 'mic-permission';
       // Our own stream so we can force echo cancellation (Chef shouldn't hear
       // herself). autoGainControl ON: a desktop/laptop mic at arm's length is far
       // too quiet with AGC off — speech sat below the energy threshold and nothing
@@ -1390,8 +1436,10 @@
       // boosts it to a consistent level; the adaptive noiseFloor still gates.
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
-      AC = new (window.AudioContext || window.webkitAudioContext)();
-      if (AC.state === 'suspended') await AC.resume();
+      _stage = 'audio-context-resume';
+      if (AC.state === 'suspended') await Promise.race([AC.resume(), new Promise(function(r){ setTimeout(r, 3000); })]);
+      vlog('session', 'mic opened · context ' + AC.state);
+      _stage = 'vad';
       capRate = AC.sampleRate;
       srcNode = AC.createMediaStreamSource(micStream);
       sinkNode = AC.createGain(); sinkNode.gain.value = 0;          // mute: never route mic to speakers
@@ -1415,7 +1463,7 @@
         srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
       }
       capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
-      hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
+      hf = true; clearTimeout(_wd); btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
         ' · VAD:' + _vadVia + ' · ' + (navigator.userAgent || '').slice(0, 64));
@@ -1434,8 +1482,12 @@
       prefetchAllSteps();          // warm TTS for every step so "next" plays instantly
     }catch(e){
       console.error('[voice] start failed', e);
+      clearTimeout(_wd);
       btn.disabled = false; btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on');
       var nm = (e && e.name) ? e.name : 'Error';
+      vlog('error', 'start failed at ' + _stage + ': ' + nm + ' — ' + ((e && e.message) || '') +
+        ' · ' + (navigator.userAgent || '').slice(0, 64));
+      saveVoiceLog('start-failed');   // land it on the server so the dev sees it without a Save tap
       var hint = nm === 'NotAllowedError' ? 'mic permission blocked — allow it via the address-bar mic icon AND Windows Settings ▸ Privacy ▸ Microphone (let desktop apps / your browser use the mic).'
                : nm === 'NotFoundError'   ? 'no microphone was found.'
                : nm === 'NotReadableError'? 'the mic is in use or blocked by another app.'
@@ -1877,6 +1929,23 @@
       markEnded: function(){ ended = true; if(!playing && !queue.length) finish(); }
     };
   }
+  // What the SCREEN shows right now, handed to Chef with every question (2026-10-13,
+  // "the chef dialog doesn't see the cook view"): done steps, the sub-step being
+  // spoken, units, ingredients ticked off in the mise, voice state. Best-effort.
+  function cookViewState(){
+    var st={};
+    try{
+      st.current_step = window.cookView.currentNumber();
+      st.done_steps = [].slice.call(document.querySelectorAll('.step.done')).map(function(el){ return parseInt(el.getAttribute('data-step'),10); });
+      st.units = units;
+      if(_subs.length) st.current_substep = { index:_subIdx+1, of:_subs.length, text:_subs[_subIdx] };
+      if(_miseIdx >= 0) st.in_mise_walkthrough = true;
+      var ck=Object.keys(checked).filter(function(k){ return checked[k]; }).map(function(id){ return (IDX.ing[id]||{}).name || id; });
+      if(ck.length) st.ingredients_checked_off = ck;
+      st.hands_free = !!hf; st.speaking_steps_aloud = !!talk;
+    }catch(e){}
+    return st;
+  }
   // Non-streaming fallback (the prior, proven path) — used if SSE streaming isn't
   // available or the stream errors, so Chef never goes mute on us.
   function askChefOnce(question){
@@ -1884,7 +1953,7 @@
     setVoiceStatus('thinking', 'Chef is thinking…');
     var cur = window.cookView.currentNumber();
     fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, allow_actions:true }) })
+      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, view:cookViewState(), allow_actions:true }) })
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
         stopThinking();                    // fallback answer is here — stop the wait-filler loop
@@ -1909,7 +1978,7 @@
     var cur = window.cookView.currentNumber();
     var player = null, terminated = false, fullText = '';
     fetch('/cook/ask-stream', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, view:cookViewState() }) })
       .then(function(r){
         if(!r.ok || !r.body || !r.body.getReader){ throw new Error('no-stream'); }
         var reader = r.body.getReader(), dec = new TextDecoder(), sbuf = '';
@@ -2066,18 +2135,23 @@
   // ====================================================================== //
   //  CONTROLS
   // ====================================================================== //
+  // Ship the voice log to logs/<day>_cook_voice.log. The Save button calls it; so do
+  // the start-failure paths (2026-10-13), so a remote device's failure is on the
+  // server without anyone finding the panel.
+  function saveVoiceLog(reason){
+    var msg=document.getElementById('vlogMsg');
+    if(!_vlog.length){ if(msg) msg.textContent='Nothing to save'; return; }
+    fetch('/cook/voice-log', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ recipe_id:RECIPE_ID, recipe_name:(RECIPE&&RECIPE.name)||'', reason:reason||'', entries:_vlog }) })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if(msg) msg.textContent = j.ok ? ('Saved '+j.written+' → '+j.file) : ('Save failed: '+(j.error||'')); })
+      .catch(function(){ if(msg) msg.textContent='Save failed (offline?)'; });
+  }
   function wireVlog(){
     var save=document.getElementById('vlogSave'), copy=document.getElementById('vlogCopy'),
         clr=document.getElementById('vlogClear'), msg=document.getElementById('vlogMsg');
     function toText(){ return _vlog.map(function(e){ return '['+e.t+'] '+e.kind+': '+e.text; }).join('\n'); }
-    if(save) save.addEventListener('click', function(){
-      if(msg) msg.textContent='Saving…';
-      fetch('/cook/voice-log', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ recipe_id:RECIPE_ID, recipe_name:(RECIPE&&RECIPE.name)||'', entries:_vlog }) })
-        .then(function(r){ return r.json(); })
-        .then(function(j){ if(msg) msg.textContent = j.ok ? ('Saved '+j.written+' → '+j.file) : ('Save failed: '+(j.error||'')); })
-        .catch(function(){ if(msg) msg.textContent='Save failed (offline?)'; });
-    });
+    if(save) save.addEventListener('click', function(){ if(msg) msg.textContent='Saving…'; saveVoiceLog('manual'); });
     if(copy) copy.addEventListener('click', function(){
       try{ navigator.clipboard.writeText(toText()).then(function(){ if(msg) msg.textContent='Copied'; },
         function(){ if(msg) msg.textContent='Copy blocked — select the text'; }); }
@@ -2161,7 +2235,7 @@
       send.disabled=true;
       var cur=window.cookView.currentNumber();
       fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+        body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, view:cookViewState() }) })
         .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
         .then(function(res){
           if(!res.ok){ ans.textContent = (res.j && res.j.detail) ? res.j.detail : 'Sorry — Chef is unavailable right now.'; return; }

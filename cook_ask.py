@@ -94,6 +94,14 @@ CHEF_SYSTEM = (
     "raw meat/eggs/seafood, preserving), be accurate and do not hand-wave.\n"
     "- The cook can ask you anything at any moment; the app itself handles step "
     "navigation, so you don't need to recite the whole recipe.\n"
+    "- `cooks_own_notes` are the cook's OWN notes on this recipe, in their words — "
+    "what they changed, learned, or asked before. Treat them as the cook's wishes and "
+    "refer to them when relevant.\n"
+    "- `cook_view_now` is what the cook's screen shows at this moment: which steps are "
+    "checked done, the sub-step being spoken, the units in use, which mise items are "
+    "ticked off. Use it for 'where am I', 'what's left', 'did I already add the salt' "
+    "— answer from that state, don't guess. `plan_decisions_vs_author` lists where the "
+    "cook plan deliberately departs from the author and why.\n"
     "- If the cook ONLY greets you, says your name, or says something with no clear "
     "question or request (e.g. just 'hey Chef'), do NOT describe the current step or "
     "what to do next — simply reply with a short 'I'm here — what can I do for you?' "
@@ -135,7 +143,7 @@ def _expand_instruction(step: dict) -> str:
     return text.strip()
 
 
-def build_context(recipe: dict, current_step: Optional[int]) -> str:
+def build_context(recipe: dict, current_step: Optional[int], view: Optional[dict] = None) -> str:
     """A compact, model-readable snapshot of the recipe being cooked. Prefers the
     `_cook` block (the reworked, step-anchored truth); falls back to the faithful
     schema fields when a recipe somehow lacks one."""
@@ -183,6 +191,16 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
         ctx["finish"] = ck.get("finish")
         ctx["cooks_note"] = ck.get("cooks_note")
         ctx["good_to_know"] = [a.get("text") for a in (ck.get("tips") or [])]
+        # 2026-10-13 ("what does Chef see?"): the rework's own DECISIONS and the
+        # equipment list were missing — Chef could not explain why the plan
+        # departs from the author, nor name the pan.
+        ctx["plan_decisions_vs_author"] = ck.get("technique_changes")
+        def _eq(e: dict) -> str:
+            sz = e.get("size")
+            if isinstance(sz, dict):          # {imperial, metric, convertible}
+                sz = sz.get("imperial") or sz.get("metric")
+            return f"{e.get('name')} ({sz})" if sz else str(e.get("name") or "")
+        ctx["equipment"] = [_eq(e) for e in (ck.get("equipment") or [])]
         # The author's ORIGINAL wording rides along even when a `_cook` exists.
         # The rework is derived and can drift (the John's Pesto incident: it
         # silently turned "Pecorino in chunks, pounded" into "finely grated",
@@ -201,8 +219,22 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
             (s.get("text") if isinstance(s, dict) else str(s)) for s in instrs
         ]
 
+    # The COOK'S OWN words on this recipe (the Chef's Notes field — their notes,
+    # past Q&As, what they changed last time). Never seen by Chef before 2026-10-13.
+    notes = (recipe.get("notes") or "").strip()
+    if notes:
+        ctx["cooks_own_notes"] = notes[:4000]
+    if (recipe.get("servingSuggestions") or "").strip():
+        ctx["serving_suggestions"] = recipe["servingSuggestions"].strip()[:1000]
+
     if current_step is not None:
         ctx["cook_is_currently_on_step"] = current_step
+    # What the cook's SCREEN shows right now (sent by the cook view with each
+    # question): done steps, the sub-step being spoken, units, ingredients ticked
+    # off in the mise, voice state. Lets "where am I / what's left / what have I
+    # done" answer from the real state instead of a guess.
+    if view:
+        ctx["cook_view_now"] = {k: v for k, v in view.items() if v not in (None, [], "", {})}
 
     # Drop empty keys to keep the prompt tight.
     ctx = {k: v for k, v in ctx.items() if v not in (None, [], "", {})}
@@ -235,7 +267,8 @@ def _with_history(history: Optional[list], user: str) -> list:
 
 def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
         usage_log: Optional[list] = None, operation: str = "cook_ask",
-        history: Optional[list] = None) -> str:
+        history: Optional[list] = None,
+        view: Optional[dict] = None) -> str:
     """Answer `question` as Chef, grounded in `recipe`. Returns plain text
     suitable for TTS. `operation` is the billing/journal label — the cook view
     uses the default "cook_ask"; the Chef's-Notes chat passes "notes_chat" so its
@@ -248,7 +281,7 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
     if not question:
         return "What would you like to know?"
 
-    context = build_context(recipe, current_step)
+    context = build_context(recipe, current_step, view)
     user = (
         "Here is the recipe I'm cooking right now, as structured context:\n\n"
         f"{context}\n\n"
@@ -266,7 +299,8 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
 
 
 def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = None,
-               usage_log: Optional[list] = None, history: Optional[list] = None) -> dict:
+               usage_log: Optional[list] = None, history: Optional[list] = None,
+        view: Optional[dict] = None) -> dict:
     """Voice-loop entry: ONE Sonnet call that either ANSWERS the cook's question
     or, when the utterance is clearly navigation phrased conversationally
     ("okay I'm done, move on" / "take me back one"), returns a structured
@@ -279,7 +313,7 @@ def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = Non
     if not question:
         return {"kind": "answer", "text": "What would you like to know?"}
 
-    context = build_context(recipe, current_step)
+    context = build_context(recipe, current_step, view)
     user = (
         "Here is the recipe I'm cooking right now, as structured context:\n\n"
         f"{context}\n\n"
@@ -313,17 +347,18 @@ def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = Non
     return {"kind": "answer", "text": text}
 
 
-def _grounding_context(recipe: dict, current_step: Optional[int]) -> str:
+def _grounding_context(recipe: dict, current_step: Optional[int], view: Optional[dict] = None) -> str:
     """The recipe-domain grounding string handed to the generic voice engine."""
     return (
         "Here is the recipe I'm cooking right now, as structured context:\n\n"
-        + build_context(recipe, current_step)
+        + build_context(recipe, current_step, view)
         + "\n\nThe cook just said:"
     )
 
 
 def ask_or_act_stream(recipe: dict, question: str, *, current_step: Optional[int] = None,
-                      usage_log: Optional[list] = None, history: Optional[list] = None):
+                      usage_log: Optional[list] = None, history: Optional[list] = None,
+        view: Optional[dict] = None):
     """STREAMING voice variant — delegates the LLM/streaming/tool/journaling
     mechanics to the generic `voice_agent` engine, supplying only the recipe
     domain specifics (Chef persona, recipe grounding, step-navigation tool). A
@@ -335,7 +370,7 @@ def ask_or_act_stream(recipe: dict, question: str, *, current_step: Optional[int
     This is the recipe ADAPTER over voice_agent.stream_grounded; a future
     person/product voice app writes its own adapter the same way."""
     import voice_agent
-    ctx = _grounding_context(recipe, current_step)
+    ctx = _grounding_context(recipe, current_step, view)
     for ev in voice_agent.stream_grounded(
         system=CHEF_SYSTEM, context=ctx, question=question, model=MODEL,
         max_tokens=_MAX_TOKENS, tools=[_NAVIGATE_TOOL], operation="cook_ask",

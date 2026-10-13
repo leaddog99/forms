@@ -368,9 +368,10 @@ onion" · "mince the garlic" · "heat the oil" = three sub-steps); keep one tigh
 as a single sub-step ("whisk constantly WHILE pouring in the hot stock" = one). Cap each sub-step \
 at ~3 things the cook must hold at once (a temp + a time + a doneness cue). Each sub-step: `voice` \
 = the TERSE spoken action (just the verb + object; speech vanishes, so keep it short and DON'T \
-recite every quantity — the screen shows the numbers); `screen` (optional) = a fuller fragment \
-with the measurements via {{ingN}}/{{amt}} tokens; `ingredients` = the 1-based indices into THIS \
-step's `ingredients` deployed in the sub-step. Every step ingredient MUST appear in some sub-step \
+recite every quantity — the screen shows the numbers); `screen` = a fuller fragment with the \
+measurements via {{ingN}}/{{amt}} tokens — REQUIRED whenever the sub-step deploys an ingredient \
+(the screen is the only place the amount appears), optional for a sub-step with none; \
+`ingredients` = the 1-based indices into THIS step's `ingredients` deployed in the sub-step. Every step ingredient MUST appear in some sub-step \
 (none left unspoken). A genuinely single-action step needs no substeps (or one).
 - Copy: plain, specific, no clichés. Headnote, a real finish (plate/vessel/temp/"serve at \
 once"/what NOT to add), one earned cook's note.

@@ -92,6 +92,10 @@ trigger_signals, ingredient_classes, equipment, scope) against what the step act
 When in doubt, leave it out: a sparse, correct set beats a dense, loose one.
 - Reword each entry's `knowledge` for THIS recipe, following its `render_hint`: name the actual \
 ingredient / equipment / stage. One or two tight sentences. Never contradict the step.
+- The plan has already made DECISIONS (`decisions_already_made`, `finish`, `cooks_note`). \
+Never attach an entry that contradicts one — if the plan says not to reserve the pasta water, \
+the reserve-pasta-water entry stays out, however well its tags match. A conflicting entry is \
+simply left out; you do not argue with the plan.
 - If an entry lists variants, pick the ONE that matches this recipe and ignore the rest.
 - A step-scoped entry goes in `step_augments` (by step number); a recipe-scoped entry that \
 applies to the whole dish goes in `recipe_tips`. At most {_MAX_PER_STEP} per step and \
@@ -123,6 +127,12 @@ def _recipe_view(cook: CookMetadata, recipe_name: Optional[str]) -> dict:
         "ingredients": [i.name for i in cook.ingredients],
         "equipment": [e.name for e in cook.equipment],
         "steps": steps,
+        # 2026-10-13: the rework's DECISIONS ride along. Without them this pass
+        # attached "reserve the pasta water" to a plan whose finish line said
+        # "don't save the pasta water" (vodka sauce) — two models, two answers.
+        "decisions_already_made": list(cook.technique_changes or []),
+        "finish": cook.finish or "",
+        "cooks_note": cook.cooks_note or "",
     }
 
 

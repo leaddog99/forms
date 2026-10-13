@@ -333,6 +333,9 @@ def v_substeps(cook: CookMetadata) -> List[str]:
     """The voice-pacing sub-step split (v2) is well-formed — fires ONLY for steps
     that HAVE substeps, so steps/reworks without them are untouched (back-compat):
       • every sub-step carries a non-empty `voice` line (the spoken action);
+      • a sub-step that DEPLOYS ingredients carries a `screen` fragment too (the
+        voice line is terse by design; the screen is where the amounts live —
+        without it the card shows "stir in the spices" and no quantity, 2026-10-13);
       • every `ingredients` index points at a real parent step ingredient (1-based);
       • COVERAGE — every parent step ingredient is deployed in some sub-step, so a
         split never silently drops an ingredient the cook needs to hear.
@@ -347,6 +350,10 @@ def v_substeps(cook: CookMetadata) -> List[str]:
         for j, ss in enumerate(s.substeps, 1):
             if not (ss.voice or "").strip():
                 out.append(f"step {s.number} sub-step {j}: empty voice line")
+            if ss.ingredients and not (ss.screen or "").strip():
+                out.append(f"step {s.number} sub-step {j}: deploys ingredient(s) {list(ss.ingredients)} "
+                           f"but has no `screen` fragment — the amounts must be on screen "
+                           f"(use {{ingN}} tokens)")
             for idx in ss.ingredients:
                 if idx < 1 or idx > n_ing:
                     out.append(f"step {s.number} sub-step {j}: ingredient index {idx} "

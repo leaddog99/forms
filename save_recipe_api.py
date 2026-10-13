@@ -1828,6 +1828,7 @@ def cook_ask_endpoint(payload: dict = Body(...)):
     recipe_id = (payload.get("recipe_id") or "").strip()
     question = (payload.get("question") or "").strip()
     current_step = payload.get("current_step")
+    view = payload.get("view") if isinstance(payload.get("view"), dict) else None   # what the cook's screen shows (2026-10-13)
     # The voice loop sets allow_actions=true: a wake-gated utterance becomes ONE
     # call that either answers OR returns a navigate action (conversational nav
     # like "I'm done, move on"). The typed "Ask Chef" box leaves it off (the user
@@ -1860,12 +1861,12 @@ def cook_ask_endpoint(payload: dict = Body(...)):
         if allow_actions:
             from cook_ask import ask_or_act
             result = ask_or_act(recipe, question, current_step=current_step,
-                                usage_log=usage_log, history=history)
+                                usage_log=usage_log, history=history, view=view)
         else:
             from cook_ask import ask as chef_ask
             result = {"kind": "answer",
                       "text": chef_ask(recipe, question, current_step=current_step,
-                                       usage_log=usage_log, history=history)}
+                                       usage_log=usage_log, history=history, view=view)}
     except Exception as e:
         print(f"[ERROR] /cook/ask({recipe_id}): {e}")
         raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.") from e
@@ -1897,6 +1898,7 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
     recipe_id = (payload.get("recipe_id") or "").strip()
     question = (payload.get("question") or "").strip()
     current_step = payload.get("current_step")
+    view = payload.get("view") if isinstance(payload.get("view"), dict) else None   # what the cook's screen shows (2026-10-13)
     try:
         user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
     except (TypeError, ValueError):
@@ -1926,7 +1928,7 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
             # before the flush. The shared list survives. _journal_usage writes it below.
             from cook_ask import ask_or_act_stream
             for ev in ask_or_act_stream(recipe, question, current_step=current_step,
-                                        usage_log=usage_log, history=history):
+                                        usage_log=usage_log, history=history, view=view):
                 if ev.get("type") == "sentence" and ev.get("text"):
                     spoken.append(ev["text"])
                 yield ev
@@ -2008,6 +2010,7 @@ def cook_voice_log(payload: dict = Body(...)):
         rid = (payload.get("recipe_id") or "").strip()
         name = (payload.get("recipe_name") or "").strip()
         entries = payload.get("entries") or []
+        reason = (payload.get("reason") or "").strip()   # manual | start-failed | start-watchdog (2026-10-13)
         if not entries:
             return {"ok": True, "written": 0}
         os.makedirs("logs", exist_ok=True)
@@ -2015,7 +2018,7 @@ def cook_voice_log(payload: dict = Body(...)):
         fname = f"{day}_cook_voice.log"   # date-first so logs/ lists chronologically
         with open(os.path.join("logs", fname), "a", encoding="utf-8") as f:
             f.write(f"\n==== voice log {datetime.now().astimezone().isoformat()} · {name or rid} "
-                    f"({len(entries)} entries) ====\n")
+                    f"({len(entries)} entries{(' · ' + reason) if reason else ''}) ====\n")
             for e in entries[-500:]:
                 t = str(e.get("t") or "")
                 kind = str(e.get("kind") or "")
