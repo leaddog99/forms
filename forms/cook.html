@@ -1054,9 +1054,16 @@
     try { localStorage.setItem('cook:requireWake', on ? '1' : '0'); } catch(e){}
     var b = document.getElementById('wakebtn');
     if(b){
-      b.classList.toggle('on', !!on);
-      b.textContent = on ? '🗣️ Hey Chef: on' : '🗣️ Hey Chef: off';
-      b.title = on ? 'Commands need “hey chef” first (noisy-room safe). Tap to allow bare commands.'
+      // 2026-10-13: while the mic is OFF this button read "Hey Chef: on" (the
+      // persisted default) — so the cook saw "on", said "hey chef", and nothing
+      // listened (iPhone + the HP all-in-one; no mic session on the server since
+      // 09-08). Off-mic it is now a START button; the on/off modifier shows only
+      // once hands-free is actually running.
+      var live = (typeof hf !== 'undefined' && hf);
+      b.classList.toggle('on', live && !!on);
+      b.textContent = !live ? '🗣️ Hey Chef' : (on ? '🗣️ Hey Chef: on' : '🗣️ Hey Chef: off');
+      b.title = !live ? 'Start listening — “hey chef” is the wake word'
+              : on ? 'Commands need “hey chef” first (noisy-room safe). Tap to allow bare commands.'
                    : 'Bare “next / back” work. Tap to require “hey chef” before commands.';
     }
     if(typeof hf !== 'undefined' && hf) setVoiceStatus('listening', _listenHint());
@@ -1464,6 +1471,7 @@
       }
       capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
       hf = true; clearTimeout(_wd); btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
+      setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // the wake button now shows its on/off modifier
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
         ' · VAD:' + _vadVia + ' · ' + (navigator.userAgent || '').slice(0, 64));
@@ -1518,6 +1526,7 @@
     hf = false; _armedWaiting = false; setAwaiting(false); setAsking(false); _tipOffer = null; _lastTipOfferStep = null; capturing = false; stopSpeaking();
     _teardownAudio();   // release the mic; the spoken sign-off below plays via the independent <audio>
     var btn = document.getElementById('handsfree'); if(btn){ btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on'); }
+    setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // back to the plain "Hey Chef" start button
     // A VOICE-initiated stop has no visible cue (the cook isn't looking at the button),
     // so confirm out loud. A tap/click already shows the button reset → stay silent.
     if(spoken){ setVoiceStatus('', '👋 Stopped — tap Start to cook again'); speak(_stopAck()); }
@@ -2189,7 +2198,9 @@
     document.getElementById('touchmode').addEventListener('click', function(){ setTouchMode(!touchMode); });
     document.getElementById('talkbtn').addEventListener('click', function(){ setTalk(!talk); });
     var _wb = document.getElementById('wakebtn');
-    if(_wb){ _wb.addEventListener('click', function(){ setRequireWake(!REQUIRE_WAKE_FOR_COMMANDS); }); }
+    if(_wb){ _wb.addEventListener('click', function(){
+      if(!hf){ setRequireWake(true); startHandsFree(); return; }   // mic off → this IS the start (2026-10-13)
+      setRequireWake(!REQUIRE_WAKE_FOR_COMMANDS); }); }
     setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // sync button label/state to the persisted default
     loadCookMessages();                          // pull cook_ack + cook_wait spoken lines from the DB message store
     wireTouchPad();
