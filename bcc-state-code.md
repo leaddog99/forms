@@ -11274,3 +11274,46 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   owed our own client ID.
 * **Open:** own rclone Drive client ID · DHCP reservation for BAILEY · iPad splash reload
   (beacon + coalescing) · the 82 remaining shallow-pool dishes · carried items.
+
+## Session log — 2026-10-13 (evening) — the vodka-sauce cook: "voice does nothing" was a button, not a mic
+
+* **Curator cooked Ina Garten's vodka sauce (alexandracooks, master `953101b6`) with the cook
+  view and reported four things:** voice did nothing on the iPhone (and, mid-session, on the
+  rebuilt HP all-in-one) — "hey chef does nothing despite being on"; the plan contradicted
+  itself (finish line: don't save the pasta water; step 6/9 tips: reserve it); some step lines
+  carried no quantity ("forcing a look back"); the done box belonged at the BOTTOM of the step.
+  Plus: "the chef dialog doesn't see any user content nor the cook view — what does it see?"
+* **Voice — root cause (fb89a98 + 0b0b564).** Server log: three page loads, 193 `/cook/speak`
+  (= the ~50-per-load TTS prefetch, not reads), NO `vad-worklet.js` fetch, no `/cook/listen`,
+  no failure — the mic start was never ATTEMPTED; the last real mic session from the house was
+  **09-08**. The "🗣️ Hey Chef" button is only the require-wake modifier, persisted default ON,
+  so every fresh load read **"Hey Chef: on" while nothing listened**; the mic lives behind the
+  separate "🎙️ Hands-free" button. Fix: with the mic off the button reads plain "Hey Chef" and
+  tapping it STARTS hands-free (wake required); the on/off modifier shows only while listening.
+  Also hardened the start path, which until now failed silently (status line + console only):
+  stages named (audio-context → mic-permission → audio-context-resume → vad), failure vlog'd AND
+  auto-POSTed to `/cook/voice-log` (reason start-failed / start-watchdog), 20 s watchdog unsticks
+  "Starting…", AudioContext created inside the tap before the awaited mic prompt (iOS rule).
+  Verified in Chrome on MARLEY (no mic → NotFoundError now lands in logs/<day>_cook_voice.log)
+  and **live: the HP fetched the worklet and is posting `/cook/listen` clips** ("seems to work
+  on desktop"). iPhone to re-test; any failure now writes its reason to the server.
+* **Contradiction = two models.** cook_rework (opus) decided "don't reserve pasta water"
+  (finish + technique_changes); cook_augment (sonnet) saw only name/ingredients/equipment/steps
+  and attached `reserve_pasta_water` + `finish_pasta_in_its_sauce`. The augment view now carries
+  `decisions_already_made` / `finish` / `cooks_note` with a never-contradict rule. This recipe's
+  two attachments removed from the stored plan (master_recipes, 1 row).
+* **Missing quantities.** With sub-steps the card shows ONLY the sub-step lines; an empty
+  `screen` fragment fell back to the terse `voice` line (no amounts) — step 3 read "Stir in the
+  spices one minute" with the ¼ tsp / 1½ tsp nowhere. Renderer appends the amount chips a line
+  omits for the ingredients it covers; `v_substeps` now requires a `screen` fragment on any
+  ingredient-deploying sub-step; rework prompt says so (was "optional").
+* **Done box → foot row** ("Done — next step" label is the same control; Read step at right).
+* **What Chef sees — before:** name/description, plan ingredients, mise bundles, put-asides,
+  steps + attached tips, finish, cook's note, author's original ingredients/steps, current step
+  number, last 5 exchanges. **Not:** the Chef's Notes field, technique decisions, equipment, or
+  anything on screen. **Now also:** `cooks_own_notes` (the notes field), `plan_decisions_vs_author`,
+  equipment with sizes, and `cook_view_now` sent by the client with every question (done steps,
+  current sub-step, units, ticked mise items, voice state) + system-prompt rules for each.
+  Verified by capturing the request body. BCC restarted 19:37 (server half live).
+* **Open:** iPhone voice re-test · iPad splash reload · the 82 shallow-pool dishes · own rclone
+  Drive client ID · DHCP reservation for BAILEY.
