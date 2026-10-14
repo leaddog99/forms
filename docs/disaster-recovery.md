@@ -171,9 +171,31 @@ password manager (keys — if maintained, see G3).
   history offsite exists only for the 14 dump days.
 - **G3 — `.env` off-site = the password manager**, by declared policy. That copy
   is maintained by a human, not by any job. Keep it true.
-- **G4 — rclone's shared Google client_id retires "during 2026".** The nightly
-  sync will start failing with a clear NOTICE when it happens; fix = personal
-  OAuth client_id (5 min in Google Cloud Console) + `rclone config update`.
+- **G4 — rclone's shared Google client_id retires "during 2026"**, and it is why
+  the forms-mirror cloud stage fails `403 rateLimitExceeded` most nights (every
+  rclone user shares one project's per-minute quota). Fix = our own OAuth client
+  + `bcc_rclone_client_id.ps1` (2026-10-14). NOT a plain `config update`: the
+  remote's `drive.file` scope ties each file to the client that created it, so a
+  new client cannot see the old folder — the script seeds a second remote first,
+  then renames it into place. Console checklist (one-time, ~10 min, as the same
+  Google account rclone was authorized with):
+  1. console.cloud.google.com → new project (e.g. "BCC Backups").
+  2. APIs & Services → Library → "Google Drive API" → Enable.
+  3. Google Auth Platform → Overview → Get started: app name, support email,
+     audience **External**, contact email → Create.
+  4. Google Auth Platform → Clients → Create client → type **Desktop app** →
+     copy the Client ID (`…apps.googleusercontent.com`) and Client secret.
+  5. Google Auth Platform → Audience → **Publish app**. A project left in
+     "Testing" expires its refresh tokens after 7 days and the nightly would
+     break weekly. `drive.file` is a non-sensitive scope: no verification needed,
+     the one-time "unverified app" screen is passed with Advanced → continue.
+  6. On MARLEY, in your own PowerShell window: `.\bcc_rclone_client_id.ps1`
+     (prompts for ID + secret, opens the browser, seeds ~7 GB, renames the remote).
+  7. Trash the OLDER `BCC-Backups` folder in drive.google.com (the new client
+     cannot see it; it still counts against storage), then
+     `rclone config delete gdrive-shared`.
+  Proof = the next 03:00 run: no "shared client_id" NOTICE, `cloud mirror exit
+  code: 0`, and the 07:00 check's E line still finds last night's dump.
 - **G5 — CLOSED 2026-08-24: playbook C was executed for real**, restoring the
   full system onto BAILEY (bare Windows 11 + git only) from backups alone,
   driven over SSH. **~35 minutes wall including three discovered defects; a

@@ -27,7 +27,9 @@ REM restore-VERIFIED .sql.gz dumps, and only those, go to Google Drive —
 REM rolling 14 days (~1GB). The fat .db copies and env.backup (PLAINTEXT
 REM API keys — must never leave ADAM unencrypted) are excluded by the
 REM include filter. rclone remote 'gdrive' = drive.file scope, authorized
-REM 2026-08-24; config in %%APPDATA%%\rclone\rclone.conf.
+REM 2026-08-24; config in %%APPDATA%%\rclone\rclone.conf. Own OAuth client
+REM ID via bcc_rclone_client_id.ps1 (2026-10-14; the shared one is rate-
+REM limited nightly and retires in 2026) - see docs/disaster-recovery.md G4.
 "C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\recipes-db" "gdrive:BCC-Backups/recipes-db" --include "recipes_*.sql.gz" --max-age 14d --delete-excluded --stats-one-line >> backup.log 2>&1
 echo cloud sync exit code: %ERRORLEVEL% >> backup.log
 REM Project-directory MIRROR (2026-08-24 DR audit): everything the other
