@@ -11448,3 +11448,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open:** own rclone Drive client ID (the only remaining nightly failure) · DHCP reservation for
   BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload · the 82
   shallow-pool dishes.
+* **"Set up our own rclone Drive client ID" — prepared, awaiting the curator's console step (6fb7cf1).**
+  Not a `config update`: the `drive.file` scope ties each file to the OAuth client that created it,
+  so a new client cannot see the shared client's `BCC-Backups` at all. `bcc_rclone_client_id.ps1`
+  creates a second remote `gdrive-own` (prompts for ID + secret, browser sign-in), seeds it from ADAM
+  with the nightly's exact three filters (~7 GB) while the old remote still works, then renames
+  `gdrive-own` → `gdrive` and parks the old section as `gdrive-shared` (rename logic dry-run on a
+  scratch copy: 3 sections in, 3 out). Deliberately does NOT delete the old folder (the curator
+  trashes the older `BCC-Backups` in Drive, then `rclone config delete gdrive-shared`). Console
+  checklist in docs/disaster-recovery.md G4 — the app must be **published**, a Testing project expires
+  tokens after 7 days. Proof = next 03:00 run without the NOTICE and `cloud mirror exit code: 0`.
