@@ -11429,3 +11429,22 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   cancelled harvest is ever seen to keep paging.
 * **"Is the chefs extract ready to test?"** No — only the design (docs/chef-collections.md,
   commit f113967); no code, no endpoint, no `chefs` table yet.
+
+## Session log — 2026-10-14 (morning) — "how did the Bailey clone do last night"
+
+* **First unattended proof of the 10-13 fix passed.** The 03:00 run: `bailey sync exit code: 0`,
+  both code stages clean (no rclone ERROR lines — the read-only `.git` pack pair that blocked
+  deletions three nights running is gone), service stopped, the four DB copies laid in
+  size-verified, sidecars cleared, service started, 200. `backup_check.py --no-email` at 06:12:
+  A ok (recipes_2026-10-14_031145 set, 3.0 h old, opens: 12,754 master / 472 personal) · B ok for
+  BAILEY ("sync section clean, reached 'sync done'") · C ok (task result 0) · **D ok — BAILEY serves
+  the snapshot exactly, 12,754 recipes, newest change 2026-10-14T03:19:55** · E ok (11 dumps on
+  Drive). Checked over ssh too: BAILEY's cook.html and serp_search.py carry MARLEY's 10-13 23:07
+  and 23:40 timestamps (last night's two commits), bailey.tbotb.com 200 in 0.15 s.
+* **Still failing, unchanged:** the Google Drive forms-mirror stage (403 rateLimitExceeded on
+  rclone's shared client ID) — the 07:00 watcher will mail about that one line. The media/training
+  Drive stage passed this time. The dump verifier's dish_rejects 842/845 is the known "rows
+  written while the backup ran" note (the watcher classes it as a note, not an alarm).
+* **Open:** own rclone Drive client ID (the only remaining nightly failure) · DHCP reservation for
+  BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload · the 82
+  shallow-pool dishes.
