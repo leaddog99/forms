@@ -70,6 +70,20 @@ _COMMANDS = {
 }
 _CMD_NSP_MAX = 0.8
 _CMD_ALP_MIN = -1.8
+# 'stop stop stop stop ...' (compression-ratio hallucination on a SHORT clip) is what
+# base.en made of the cook's actual 'stop' nine times on 2026-10-13, and the repetition
+# backstop threw every one away. When EVERY token of the clip is the same SAFE command
+# word, that word is the utterance. Navigation words (next/back) stay excluded: a false
+# 'stop' costs one tap, a false 'next' loses the cook's place.
+_STANDDOWN_REP = {"stop", "halt", "quit", "exit", "cancel", "pause", "wait"}
+
+
+def _repeated_standdown(raw: str):
+    toks = re.findall(r"[a-z']+", (raw or "").lower())
+    if len(toks) >= 2 and len(set(toks)) == 1 and toks[0] in _STANDDOWN_REP:
+        return toks[0]
+    return None
+
 _PHANTOMS = {
     "you", "thank you", "thanks for watching", "please subscribe", "bye", "boom",
     "okay", "ok", "oh", "so", "the", "uh", "um", "hmm", "mm", "yeah", "you know",
@@ -173,6 +187,9 @@ def transcribe(audio_bytes: bytes) -> str:
     if not out and raw and _norm(raw) in _COMMANDS \
             and worst_nsp <= _CMD_NSP_MAX and worst_alp >= _CMD_ALP_MIN:
         out, reason = raw, "command-pass"     # the whole clip IS a command word — let it through
+    elif not out and raw and _repeated_standdown(raw) \
+            and worst_nsp <= _CMD_NSP_MAX and worst_alp >= _CMD_ALP_MIN:
+        out, reason = _repeated_standdown(raw), "command-pass-rep"   # 'stop stop stop…' -> 'stop'
     if not out:
         reason = "gated" if raw else "empty"
     elif _looks_repetitive(out):

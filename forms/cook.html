@@ -982,6 +982,23 @@
   // noise → eaten as a question, commands dead), and a skipped _onSpeakEnd left
   // _asking stuck true (follow-ups dead). These force-clear both so the loop can
   // never get permanently stuck. setAwaiting()/clearAsking() are the only writers.
+  // Idle auto-stop (2026-10-13): the mic stayed open from 19:46 to 22:41 after the cook
+  // ended - 977 clips of household talk and TV were transcribed into the server log
+  // (privacy). Nothing addressed to Chef (command, wake, question, screen tap) for
+  // IDLE_STOP_MS -> one spoken warning a minute before, then the mic closes itself.
+  var IDLE_STOP_MS = 10 * 60 * 1000, IDLE_WARN_MS = 9 * 60 * 1000;
+  var _lastIntent = 0, _idleWarned = false, _idleTimer = null;
+  function noteIntent(){ _lastIntent = _now(); _idleWarned = false; }
+  function _idleTick(){
+    if(!hf) return;
+    var quiet = _now() - _lastIntent;
+    if(quiet >= IDLE_STOP_MS){ vlog('session', 'idle auto-stop (' + Math.round(quiet / 60000) + ' min quiet)'); stopHandsFree({idle:true}); return; }
+    if(quiet >= IDLE_WARN_MS && !_idleWarned && !_speaking && !_asking){
+      _idleWarned = true; vlog('session', 'idle warning');
+      speak('Still cooking? Say, hey chef, or I will stop listening in a minute.');
+    }
+  }
+  document.addEventListener('pointerdown', function(){ if(hf) noteIntent(); }, true);
   var _awaitTimer = null, _askTimer = null;
   var AWAIT_MS = 12000, ASK_WATCHDOG_MS = 30000;
   function setAwaiting(on){
@@ -1501,7 +1518,7 @@
         srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
       }
       capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
-      hf = true; clearTimeout(_wd); btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
+      hf = true; clearTimeout(_wd); noteIntent(); if(_idleTimer) clearInterval(_idleTimer); _idleTimer = setInterval(_idleTick, 15000); btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
       setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // the wake button now shows its on/off modifier
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
@@ -1553,14 +1570,16 @@
   }
   function stopHandsFree(opts){
     flushVadDrops(); vlog('session', 'STOP');
-    var spoken = !!(opts && opts.spoken);
+    var spoken = !!(opts && opts.spoken), idle = !!(opts && opts.idle);
+    if(_idleTimer){ clearInterval(_idleTimer); _idleTimer = null; }
     hf = false; _armedWaiting = false; setAwaiting(false); setAsking(false); _tipOffer = null; _lastTipOfferStep = null; capturing = false; stopSpeaking();
     _teardownAudio();   // release the mic; the spoken sign-off below plays via the independent <audio>
     var btn = document.getElementById('handsfree'); if(btn){ btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on'); }
     setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // back to the plain "Hey Chef" start button
     // A VOICE-initiated stop has no visible cue (the cook isn't looking at the button),
     // so confirm out loud. A tap/click already shows the button reset → stay silent.
-    if(spoken){ setVoiceStatus('', '👋 Stopped — tap Start to cook again'); speak(_stopAck()); }
+    if(idle){ setVoiceStatus('', '💤 Stopped listening after 10 quiet minutes — tap Start to cook again'); speak('It has been quiet for a while, so I have stopped listening. Tap Start when you want me back.'); }
+    else if(spoken){ setVoiceStatus('', '👋 Stopped — tap Start to cook again'); speak(_stopAck()); }
     else { hideVoiceStatus(); }
   }
   // Per-frame RMS energy → adaptive-threshold VAD with a silence hang for endpointing.
@@ -1735,6 +1754,9 @@
     window.cookView.read(window.cookView.stepByNumber(n));
   }
 
+  // The stand-down vocabulary. Also tested FIRST in routeUtterance (short utterances),
+  // before the wake gate, the pending-question and the follow-up branches.
+  var _STOP_RE = /\b(stop cooking|stop listening|end session|turn (it |the mic |the microphone )?off|go off|switch off|shut (it )?off|mic off|microphone off|i'?m (done|finished)( cooking)?|we'?re (done|finished)|that'?s (all|it)( for now)?|that'?s enough chef|all done|done cooking|stand down|go to sleep|shut ?down|power down|stop chef|chef stop|bye chef|goodbye chef|thanks chef|thank you chef|that'?ll do|sign off|log off|good ?night|go away|leave me alone)\b|^(stop|halt|exit|quit|goodbye|bye|bye bye|sleep|end|finished|finish|off)$/;
   var _CMD_RULES = [
     { name:'where',   re:/\b(where (was|am) i|where are we|what step (am i|are we) (on|at)|which step (am i|are we)|remind me where)\b/, act:function(){ whereWasI(); } },
     { name:'mise',    re:/\b(mise|read the mise|the mise|what do i need|what's in the mise|set ?up|read the setup|what are the ingredients|list the ingredients)\b/, act:function(){ window.cookView.startMise(); } },
@@ -1753,7 +1775,7 @@
     // Stand-down (2026-10-13): the cook tried "that's all", "stop", "quit" and got
     // nothing — the SERVER gate dropped the one-word clips as noise (cook_stt now passes
     // a clean command word). The vocabulary is widened too: every natural sign-off.
-    { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'?m (done|finished)( cooking)?|we'?re (done|finished)|that'?s (all|it)( for now)?|all done|done cooking|stand down|go to sleep|shut ?down|power down|stop chef|chef stop|bye chef|goodbye chef|thanks chef|thank you chef|that'?ll do|sign off|log off)\b|^(stop|halt|exit|quit|goodbye|bye|bye bye|sleep|end|finished|finish)$/, act:function(){ stopHandsFree({spoken:true}); } }
+    { name:'stop',    re:_STOP_RE, act:function(){ stopHandsFree({spoken:true}); } }
   ];
   function matchCommand(cmd){
     var wc = cmd.split(' ').filter(Boolean).length;
@@ -1808,6 +1830,19 @@
     vlog('heard', text);
     var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
 
+    // STAND-DOWN FIRST (2026-10-13): "stop" must work in EVERY state. Strict wake mode
+    // demanded "hey chef" before it (a bare "stop" only painted a status line), and a
+    // sign-off spoken inside the follow-up window went to Chef as a question ("go off"
+    // -> "I'm not sure how to answer that"). Short utterances only (<= 3 words): a
+    // deliberate sign-off is short; a TV sentence that merely contains "all done"
+    // still needs the wake word in strict mode.
+    var sd = t.replace(_WAKE_G, ' ').replace(/\s+/g, ' ')
+              .replace(/^(ok|okay|um|uh|hey|please|now|and|so|well|alright)\s+/, '')
+              .replace(/\s+(please|now|chef)$/, '').trim();
+    if(sd && sd.split(' ').length <= 3 && _STOP_RE.test(sd)){
+      vlog('command', 'stop (stand-down first) ← “' + sd + '”'); stopHandsFree({spoken:true}); return;
+    }
+
     // Armed-but-not-started (START_ON_GO): the button cued "ready"; the cook's go-word
     // launches step 1. Forgiving synonyms (base.en mangles "go"). "stop/cancel" aborts.
     // Anything else → keep waiting quietly (don't read until they say go).
@@ -1815,7 +1850,7 @@
       var gw = t.replace(_WAKE_G, ' ').replace(/\s+/g, ' ').trim();
       if(/\b(go|start|begin|ready|cook|let'?s (go|cook|start)|i'?m ready|go ahead|start cooking|first step|read it)\b/.test(gw)
          || /^(go|start|begin|ready|cook|ok|okay|yep|yes)$/.test(gw)){
-        _armedWaiting = false; vlog('command', 'go (start) ← “' + gw + '”'); window.cookView.read(); return;
+        _armedWaiting = false; noteIntent(); vlog('command', 'go (start) ← “' + gw + '”'); window.cookView.read(); return;
       }
       if(/\b(stop|quit|exit|cancel|never ?mind)\b/.test(gw)){ stopHandsFree({spoken:true}); return; }
       vlog('ignored', '(armed — waiting for “go”)'); setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return;
@@ -1851,7 +1886,7 @@
       // Commands STILL win while awaiting — so "stop" / "cancel" / "next" act instead
       // of being sent to Chef as a question (the "stop doesn't work" bug).
       var awRule = matchCommand(aq);
-      if(awRule){ setAwaiting(false); vlog('command', awRule.name + ' (while awaiting)'); awRule.act(aq); return; }
+      if(awRule){ setAwaiting(false); noteIntent(); vlog('command', awRule.name + ' (while awaiting)'); awRule.act(aq); return; }
       setAwaiting(false); vlog('ask', aq); askChef(aq); return;
     }
 
@@ -1874,7 +1909,7 @@
     // 1. deterministic keyword command — INSTANT (no LLM). Wake optional.
     if(!REQUIRE_WAKE_FOR_COMMANDS || hadWake){
       var rule = matchCommand(cmd);
-      if(rule){ vlog('command', rule.name + ' ← “' + cmd + '”'); rule.act(cmd); return; }
+      if(rule){ noteIntent(); vlog('command', rule.name + ' ← “' + cmd + '”'); rule.act(cmd); return; }
     }
 
     // 2. wake word → deliberately addressed Chef. Could be a question OR conversational
@@ -1887,7 +1922,7 @@
                .replace(/^(ok|okay|um|uh|hey|hi|yo|hello|so|and|a|an|the|he's|hes|hay|may|my|well|please|now)\s+/, '')
                .replace(/\s+(please|now)$/, '').trim();
       if(!q || _BARE_WAKE_RESIDUE.test(q)){
-        setAwaiting(true); vlog('wake', '(bare wake — confirming)');
+        setAwaiting(true); noteIntent(); vlog('wake', '(bare wake — confirming)');
         speak(_wakeAck()); return;   // short ack — minimizes the mic-deaf window before your question
       }
       vlog('ask', q); askChef(q); return;
@@ -2014,6 +2049,7 @@
   // Streamed ask: sentences play as they arrive; an action navigates. Falls back
   // to askChefOnce if the browser/stream can't deliver SSE.
   function askChef(question){
+    noteIntent();
     setAsking(true);
     setVoiceStatus('thinking', 'Chef is thinking…');
     stopSpeaking();                       // cancel any current speech/stream (bumps _streamSeq)

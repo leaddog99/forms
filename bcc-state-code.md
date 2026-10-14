@@ -11365,3 +11365,44 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   machine, to the Chef LLM.
 * **Open:** run audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload ·
   the 82 shallow-pool dishes · own rclone Drive client ID · DHCP reservation for BAILEY.
+
+## Session log — 2026-10-13 (later) — stand-down, the open mic, and the 100-line dish form
+
+* **"It said it didn't understand" — reconstructed from logs/cook_stt.log + the token journal.**
+  Four `cook_ask` calls at 20:24–20:29. 20:24:09 bare "hey chef" → ack; 20:24:17 "should I mix
+  the pasta right into the sauce?" → a real answer. 20:24:44 the cook said a sign-off that
+  base.en heard as **"go off"**; it fell inside the 25 s follow-up window, so the page sent it
+  to Chef as a question and Chef answered in 19 tokens — its "I'm not sure how to answer that —
+  could you rephrase?" line. 20:29 two household sentences containing the word "chef" also went
+  to Chef. Later (21:12–21:14) "stop" was said ~14 times: four single clips were gated as noise
+  (fixed last session: `command-pass`), **nine came back as "stop stop stop stop…" (cr=48)** —
+  base.en's compression hallucination on a SHORT clip — and the repetition backstop threw every
+  one away; the one "stop" that did pass (21:13:40) hit strict wake mode, where a bare command
+  without "hey chef" only paints a status line. "bye bye" (20:21:47) passed but was not in the
+  stop vocabulary. So THREE holes: the follow-up window, the repetition backstop, strict wake.
+* **Fixes.** (1) cook.html `routeUtterance`: STAND-DOWN FIRST — a ≤3-word utterance matching
+  `_STOP_RE` (now one shared regex; adds go off / turn (it|the mic) off / switch off / shut off /
+  mic off / good night / go away / leave me alone / bye bye / `^off$`) stops hands-free in EVERY
+  state, before the wake gate, the pending-question branch and the follow-up window. Longer
+  sentences keep the strict-mode wake requirement (a TV line containing "all done" must not kill
+  the session). (2) cook_stt `_repeated_standdown`: a clip whose every token is the same SAFE
+  command word (stop/halt/quit/exit/cancel/pause/wait — never next/back) collapses to that word,
+  reason `command-pass-rep`. (3) `_STOP_RE` is also the table rule, so "hey chef, that's all"
+  still works through the normal path.
+* **THE OPEN MIC (privacy, found while reading the log).** The session that started at 19:46
+  was never stopped: clips kept arriving until **22:41** — 977 clips, 445 transcribed, household
+  conversation and the TV, all appended to logs/cook_stt.log on the server. Stand-down failing
+  is exactly how a mic stays open. New **idle auto-stop**: nothing addressed to Chef (command,
+  wake, question, or a screen tap) for 9 min → spoken "Still cooking? Say, hey chef, or I will
+  stop listening in a minute."; at 10 min the mic closes itself with a spoken notice and a 💤
+  status line (`stopHandsFree({idle:true})`; `noteIntent()` marks intent; 15 s tick). Ambient
+  chatter deliberately does NOT count as intent — that was the failure mode. Tonight's log
+  lines are household talk; prune by hand if wanted (`logs/cook_stt.log` 20:30–22:41).
+* **Dish form: "+ Add line" made ~100 lines.** forms/query-rows.js `init()` attached a click
+  AND an Enter handler to the same box on every call, and the new-dish form re-inits the box on
+  every name keystroke (syncLines). N inits → N rows per click, N² per Enter. Fix in the shared
+  component: listeners bind once per box element (`data-qr-bound`), handlers read the live
+  `_opts[boxId]`. Verified in Chrome: 4 extra keystrokes, then click = +1, Enter = +1.
+* **Restart needed** (cook_stt.py). cook.html / query-rows.js are reload-only.
+* **Open:** run audit_cooks over the remaining 57 (~$7) · iPhone voice re-test · iPad splash
+  reload · the 82 shallow-pool dishes · own rclone Drive client ID · DHCP reservation for BAILEY.

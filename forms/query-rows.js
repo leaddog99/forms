@@ -124,9 +124,16 @@
     // wraps into view instead of scrolling out of sight.
     const autosize = (el) => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
     list.querySelectorAll('.qr-q').forEach(autosize);
+    // Listeners bind ONCE per box element. init() is re-run on the SAME box whenever
+    // the rows are rewritten (the new-dish form re-fills the lines on every name
+    // keystroke), and each run used to stack another click + Enter handler - so one
+    // "+ Add line" tap inserted a row per run, and Enter a row per run SQUARED
+    // (2026-10-13: "about 100 lines instead of 1"). Handlers read the live options.
+    if (box.dataset.qrBound) return;
+    box.dataset.qrBound = '1';
     const dirty = () => box.dispatchEvent(new Event('input', {bubbles: true}));
     box.querySelector('.qrows-add').addEventListener('click', () => {
-      list.insertAdjacentHTML('beforeend', rowHtml({}, o));
+      list.insertAdjacentHTML('beforeend', rowHtml({}, _opts[boxId]));
       const q = list.lastElementChild.querySelector('.qr-q');
       autosize(q); q.focus();
       dirty();
@@ -152,7 +159,7 @@
     // 🌐 on demand — re-run after editing, or translate a line saved in English.
     box.addEventListener('click', (e) => {
       const xl = e.target.closest('.qr-xl'); if (!xl) return;
-      translateRow(xl.closest('.qrow'), o, dirty);
+      translateRow(xl.closest('.qrow'), _opts[boxId], dirty);
     });
     // Remember what the language select held before a change, so a FIRST pick
     // of a foreign language on English text translates by itself, while a
@@ -183,14 +190,14 @@
       const qEl = row.querySelector('.qr-q');
       if (isForeign(sel.value) && qEl.value.trim()){
         if (!isForeign(prev)){
-          translateRow(row, o, dirty);                 // first pick on English text
+          translateRow(row, _opts[boxId], dirty);                 // first pick on English text
         } else if ((row.dataset.qsrc || '').trim()){
           // Greek → Italian on a line the editor translated: go back to the
           // English it came from and translate THAT, so the box never holds
           // Greek under an Italian flag (curator, 2026-10-10). A line typed
           // natively has no origin and is left alone — 🌐 is there for it.
           qEl.value = row.dataset.qsrc;
-          translateRow(row, o, dirty);
+          translateRow(row, _opts[boxId], dirty);
         }
       }
       if (!isForeign(sel.value)){
