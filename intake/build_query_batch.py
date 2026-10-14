@@ -111,7 +111,7 @@ _SERPAPI_MAX_PAGES = _CFG_SERPAPI_MAX_PAGES  # safety cap from bcc_config.json
 
 
 def _serpapi_lookup(query: str, target_n: int,
-                    gl: str = "us", hl: str = "en") -> list[dict]:
+                    gl: str = "us", hl: str = "en", should_cancel=None) -> list[dict]:
     """SerpAPI Google engine, paginated until we hit target_n or run out
     of organic results. Returns [{url, title, google_rank, domain}].
 
@@ -201,7 +201,7 @@ def _serpapi_lookup(query: str, target_n: int,
     from input.pipeline.serp_search import serp_search, active_provider
     _blocked, _aggr = _blocked_root_domains()
     results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl=gl, hl=hl,
-                          skip_hosts=_blocked | _aggr)
+                          skip_hosts=_blocked | _aggr, should_cancel=should_cancel)
     out: list[dict] = []
     for r in results:
         url = r.get("link")
@@ -224,7 +224,8 @@ def _line_key(row: dict) -> str:
     return line_key(row)
 
 
-def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[dict]:
+def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int,
+                        should_cancel=None) -> list[dict]:
     """Run each query ROW through _serpapi_lookup, union the results, dedup
     by normalized URL. Each surviving entry carries `_queries` (the list
     of query strings that surfaced it — usually 1, but a URL appearing in
@@ -248,6 +249,9 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
     # dedupe correctly.
     by_norm: dict[str, dict] = {}
     for q_index, row in enumerate(query_rows):
+        if should_cancel and should_cancel():
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled(f"cancelled before query {q_index + 1}/{len(query_rows)}")
         query = row["q"]
         want = row.get("n") or top_n_per_query
         gl = row.get("gl") or "us"
@@ -255,7 +259,7 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
         locale_note = "" if (gl, hl) == ("us", "en") else f" [gl={gl} hl={hl}]"
         size_note = "" if not row.get("n") else f" [n={want}]"
         print(f"  [QUERY {q_index+1}/{len(query_rows)}] {query!r}{size_note}{locale_note}")
-        per_query_results = _serpapi_lookup(query, want, gl=gl, hl=hl)
+        per_query_results = _serpapi_lookup(query, want, gl=gl, hl=hl, should_cancel=should_cancel)
         added, merged = 0, 0
         for entry in per_query_results:
             key = normalize_url(entry["url"]) or entry["url"]
@@ -1811,7 +1815,13 @@ def build_batch(
     t0 = time.perf_counter()
     print(f"\n[1/7] SerpAPI lookup (verbatim queries): dish={dish!r} "
           f"queries={queries} target_n_per_query={top_n_serpapi}")
-    entries = _multi_query_lookup(query_rows, top_n_serpapi)
+    # Cancel is read between STAGES too (2026-10-13), not only between candidates:
+    # the search above, Moz scoring and ranking each ran to the end of a cancelled run.
+    def _cc(stage: str) -> None:
+        if should_cancel and should_cancel():
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled(f"cancelled before {stage}")
+    entries = _multi_query_lookup(query_rows, top_n_serpapi, should_cancel=should_cancel)
     serpapi_union = len(entries)
     print(f"      -> {serpapi_union} unique URLs across {len(queries)} "
           f"verbatim queries (paginated)")
@@ -1937,6 +1947,7 @@ def build_batch(
     print(f"      -> kept {len(entries)}, dropped {len(dropped_not_recipe)}")
 
     print(f"\n[4/7] Moz scoring on survivors")
+    _cc("Moz scoring")
     entries, dropped_moz = _moz_score(entries)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_moz)}")
 
@@ -2007,6 +2018,7 @@ def build_batch(
     # to top_n_final when a winner fails extract/save — "ensure 10 if available".
     _line_quotas = {_line_key(r): int(r.get("keep") or 0)
                     for r in (query_rows or []) if int(r.get("keep") or 0) > 0}
+    _cc("ranking")
     final, reserve = _rank_blended(entries, top_n_final, reserve_n=top_n_final,
                                    line_quotas=_line_quotas)
     print(f"      -> final batch: {len(final)} URLs (+{len(reserve)} reserve for backfill)")

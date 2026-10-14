@@ -11406,3 +11406,26 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Restart needed** (cook_stt.py). cook.html / query-rows.js are reload-only.
 * **Open:** run audit_cooks over the remaining 57 (~$7) · iPhone voice re-test · iPad splash
   reload · the 82 shallow-pool dishes · own rclone Drive client ID · DHCP reservation for BAILEY.
+
+## Session log — 2026-10-13 (night) — "cancel a dish run and it just keeps going"
+
+* **What happened.** Job #2550 (alla colatura): Cancel pressed during the search stage; the
+  run stopped at 23:37:40, four minutes after it started, with "cancelled after 0/49
+  candidates". The cancel IS honored — but only at the fetch loop (`_is_recipe_filter`),
+  which is the first place `should_cancel` was ever read. Everything before it ran blind:
+  `_multi_query_lookup` → `_serpapi_lookup` → `serp_search` → `_scaleserp` pages 1..7 per
+  line, each page with up to three retries and a 2 s back-off, plus off-topic re-asks. Moz
+  scoring and ranking after the fetch loop were blind too.
+* **Fix.** `serp_search(..., should_cancel=None)` threads the flag into both providers:
+  `_cancel_check()` before every page request and `_backoff()` (check, then sleep) before
+  every retry sleep, including the one inside `_serp_get_json`; raises `JobCancelled` like
+  the fetch loop. `build_query_batch`: `_multi_query_lookup`/`_serpapi_lookup` take and pass
+  `should_cancel`; a check before each query line; `_cc(stage)` before Moz scoring and
+  before ranking. The dish handler already catches JobCancelled and records a clean
+  cancelled run. Unit-proved: a set flag aborts `serp_search`, both providers and the
+  multi-query loop before any request. Cancel button text now says "search page or
+  candidate". The publisher harvest (collections_lib) still searches through its own path
+  (`serp_search(query, pages=pages, want=want)` with no flag) — same fix applies if a
+  cancelled harvest is ever seen to keep paging.
+* **"Is the chefs extract ready to test?"** No — only the design (docs/chef-collections.md,
+  commit f113967); no code, no endpoint, no `chefs` table yet.

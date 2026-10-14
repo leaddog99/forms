@@ -391,7 +391,7 @@
           <div class="ed-actions" style="margin:0 0 10px">
             <button type="button" class="ed-btn" id="refreshBtn" title="Run the dish query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
             <button type="button" class="ed-btn danger" id="cancelRefreshBtn" hidden
-                    title="Stop the running refresh — aborts after the current candidate">✋ Cancel</button>
+                    title="Stop the running refresh — aborts after the current search page or candidate">✋ Cancel</button>
             <span class="ed-save-hint" id="dishTopHint"></span>
           </div>
           <pre id="dishLog" style="display:none;max-height:340px;overflow:auto;margin:0 0 10px;padding:12px 14px;background:#1c1813;color:#e9e1d4;border-radius:10px;font-size:.76rem;line-height:1.45;white-space:pre-wrap;word-break:break-word"></pre>
@@ -1369,7 +1369,7 @@
         b.hidden = !on; b.disabled = !on; b.innerHTML = '&#9995; Cancel';
         b.onclick = on ? async () => {
           b.disabled = true; b.textContent = 'Cancelling…';
-          add('✋ Cancel requested — stops after the current candidate…');
+          add('✋ Cancel requested — stops after the current search page or candidate…');
           try { await fetch(`/jobs/${jobId}/cancel`, { method: 'POST' }); } catch (_){}
         } : null;
       };

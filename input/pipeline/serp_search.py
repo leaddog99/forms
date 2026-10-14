@@ -97,7 +97,25 @@ def _off_topic_page(query: str, org: list) -> bool:
     return True
 
 
-def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | None:
+def _cancel_check(should_cancel, label: str, page) -> None:
+    """Cooperative cancel INSIDE the paging loop (2026-10-13). A cancelled dish run
+    kept searching for four minutes - seven pages per line, each with up to three
+    retries and a back-off sleep - because the flag was only read at the fetch loop
+    that comes after the search. Checked before every page request and before
+    every retry sleep; raises JobCancelled like the fetch loop does."""
+    if should_cancel and should_cancel():
+        from input.pipeline.jobs import JobCancelled
+        raise JobCancelled(f"cancelled during search ({label} page {page})")
+
+
+def _backoff(seconds: float, should_cancel, label: str, page) -> None:
+    """Retry sleep that a cancel can cut short (checked before the sleep)."""
+    _cancel_check(should_cancel, label, page)
+    time.sleep(seconds)
+
+
+def _serp_get_json(endpoint, params, timeout, *, label: str, page,
+                   should_cancel=None) -> dict | None:
     """GET + parse JSON for one SERP page, with retries on TRANSIENT network errors
     (Timeout / ConnectionError). Returns the parsed dict, or None if the page exhausted
     its retries or hit a non-transient error — in which case the caller stops paging.
@@ -113,7 +131,7 @@ def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | Non
             if attempt < attempts:
                 print(f"  [{label}] page {page} {type(e).__name__} "
                       f"(attempt {attempt}/{attempts}) — retrying in {backoff}s")
-                time.sleep(backoff)
+                _backoff(backoff, should_cancel, label, page)
             else:
                 print(f"  [{label}] page {page} failed after {attempts} attempts: "
                       f"{type(e).__name__}: {e}")
@@ -168,7 +186,8 @@ def google_hl(hl: str | None, gl: str | None = None) -> str | None:
 def serp_search(query: str, pages: int = 7, *, want: int | None = None,
                 gl: str | None = None, hl: str | None = None,
                 provider: str | None = None, timeout: int = 60,
-                skip_hosts: set[str] | frozenset[str] | None = None) -> list[dict]:
+                skip_hosts: set[str] | frozenset[str] | None = None,
+                should_cancel=None) -> list[dict]:
     """Verbatim Google search. `pages` = how many 10-result pages to fetch; `want`
     early-stops once that many results are collected (truncates). `provider` forces
     a specific vendor (for the A/B); otherwise the configured one. Returns
@@ -187,8 +206,8 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
     hl = google_hl(hl, gl)
     skip = {h.lower() for h in (skip_hosts or ())}
     if prov in _SCALESERP_ALIASES:
-        return _scaleserp(query, pages, want, gl, hl, timeout, skip)
-    return _serpapi(query, pages, want, gl, hl, timeout, skip)
+        return _scaleserp(query, pages, want, gl, hl, timeout, skip, should_cancel=should_cancel)
+    return _serpapi(query, pages, want, gl, hl, timeout, skip, should_cancel=should_cancel)
 
 
 def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[str],
@@ -316,7 +335,8 @@ def _scaleserp_images(query, want, gl, hl, timeout) -> list[dict]:
     return out
 
 
-def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) -> list[dict]:
+def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
+             should_cancel=None) -> list[dict]:
     key = os.getenv("SERPAPI_KEY")
     if not key:
         return []
@@ -324,13 +344,15 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) 
     seen: set[str] = set()
     empty_streak = 0   # see _scaleserp: Google leaves dead pages mid-results
     for p in range(max(1, pages)):
+        _cancel_check(should_cancel, "serpapi", p + 1)
         params = {"engine": "google", "q": query, "num": _PAGE_SIZE,
                   "start": p * _PAGE_SIZE, "filter": 0, "api_key": key}
         if gl:
             params["gl"] = gl
         if hl:
             params["hl"] = hl
-        data = _serp_get_json(SERPAPI_ENDPOINT, params, timeout, label="serpapi", page=p + 1)
+        data = _serp_get_json(SERPAPI_ENDPOINT, params, timeout, label="serpapi", page=p + 1,
+                              should_cancel=should_cancel)
         if data is None:   # page exhausted retries / non-transient error → stop paging
             break
         org = data.get("organic_results") or []
@@ -350,7 +372,8 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) 
     return _trim(out, want)
 
 
-def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()) -> list[dict]:
+def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
+               should_cancel=None) -> list[dict]:
     """Scale SERP (Traject Data). LOOP the 1-based `page` param (like SerpApi's
     `start`), one page per request, with early-stop at `want`. We don't use
     `max_page` — it's hard-capped at 10 (400 above) AND a 10-page server-side fetch
@@ -364,6 +387,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
     seen: set[str] = set()
     empty_streak = 0   # consecutive empty pages; Google leaves DEAD pages mid-results
     for p in range(1, max(1, pages) + 1):
+        _cancel_check(should_cancel, "scaleserp", p)
         # filter=0 = Google's "show omitted similar results". The SerpApi path
         # always sent it; this one never did, and without it Google ends a dish
         # query at ~page 7 (Panna Cotta 2026-10-12: p8 empty, no `next`; with
@@ -374,7 +398,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
             params["gl"] = gl
         if hl:
             params["hl"] = hl
-        data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout, label="scaleserp", page=p)
+        data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout, label="scaleserp", page=p, should_cancel=should_cancel)
         if data is None:   # page exhausted retries / non-transient error → stop paging
             break
         org = data.get("organic_results") or []
@@ -398,9 +422,9 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                     for extra in range(2, attempts + 1):
                         print(f"  [scaleserp] page {p}: transient provider error "
                               f"({msg[:60]}) — retry {extra}/{attempts} in {backoff}s")
-                        time.sleep(backoff)
+                        _backoff(backoff, should_cancel, "scaleserp", p)
                         data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
-                                              label="scaleserp", page=p)
+                                              label="scaleserp", page=p, should_cancel=should_cancel)
                         org = (data or {}).get("organic_results") or []
                         if org:
                             break
@@ -432,9 +456,9 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                 for extra in range(2, attempts + 1):
                     print(f"  [scaleserp] page {p}: empty page (provider lists a next page: "
                           f"{'yes' if has_next else 'no'}) — retry {extra}/{attempts} in {backoff}s")
-                    time.sleep(backoff)
+                    _backoff(backoff, should_cancel, "scaleserp", p)
                     data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
-                                          label="scaleserp", page=p) or {}
+                                          label="scaleserp", page=p, should_cancel=should_cancel) or {}
                     org = data.get("organic_results") or []
                     if org:
                         break
@@ -470,9 +494,9 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
             for extra in range(2, attempts + 1):
                 print(f"  [scaleserp] page {p}: OFF-TOPIC results (none mention the query) "
                       f"- retry {extra}/{attempts} in {backoff}s")
-                time.sleep(backoff)
+                _backoff(backoff, should_cancel, "scaleserp", p)
                 data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
-                                      label="scaleserp", page=p)
+                                      label="scaleserp", page=p, should_cancel=should_cancel)
                 org = (data or {}).get("organic_results") or []
                 if org and not _off_topic_page(query, org):
                     break
