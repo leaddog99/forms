@@ -30,7 +30,6 @@ import os
 import re
 import threading
 from datetime import datetime
-from typing import Optional
 
 MODEL_SIZE = "base.en"          # English-only: faster + sharper for kitchen use
 _DEVICE = "cpu"
@@ -55,6 +54,22 @@ _COMPRESSION_MAX = 2.4     # compression_ratio above this -> repetition hallucin
 # and 'Boom.' in the 2026-06-18 log). NONE is a valid kitchen command, so dropping
 # an utterance that is ENTIRELY one of these is safe — and it removes the biggest
 # false-advance risk now that decoding is biased toward the command set.
+# Command words/phrases that PASS the statistical gates when the whole utterance IS
+# one of them (2026-10-13: the cook said "stop" four times, base.en heard 'stop' each
+# time at nsp≈0.45 / alp≈-1.3, and the gates dropped it as noise — nothing ever reached
+# the router). A one-word command is SHORT, so its no_speech_prob runs high and its
+# avg_logprob low by nature; the gates were tuned on chatter, not commands. Bounded by
+# _CMD_NSP_MAX / _CMD_ALP_MIN so a pure-noise clip the hotword bias turned into "stop"
+# still has to clear a looser bar, and the repetition backstop still applies.
+_COMMANDS = {
+    "stop", "halt", "quit", "exit", "next", "back", "previous", "repeat", "again", "pause",
+    "resume", "skip", "go", "start", "begin", "cancel", "tip", "tips", "done", "wait", "hold",
+    "hey chef", "chef", "next step", "go back", "stop listening", "stop cooking", "that's all",
+    "that's it", "all done", "i'm done", "we're done", "goodbye", "bye chef", "thanks chef",
+    "thank you chef", "stand down", "start over", "where was i", "read it", "never mind",
+}
+_CMD_NSP_MAX = 0.8
+_CMD_ALP_MIN = -1.8
 _PHANTOMS = {
     "you", "thank you", "thanks for watching", "please subscribe", "bye", "boom",
     "okay", "ok", "oh", "so", "the", "uh", "um", "hmm", "mm", "yeah", "you know",
@@ -155,6 +170,9 @@ def transcribe(audio_bytes: bytes) -> str:
 
     out = " ".join(kept).strip()
     reason = "ok"
+    if not out and raw and _norm(raw) in _COMMANDS \
+            and worst_nsp <= _CMD_NSP_MAX and worst_alp >= _CMD_ALP_MIN:
+        out, reason = raw, "command-pass"     # the whole clip IS a command word — let it through
     if not out:
         reason = "gated" if raw else "empty"
     elif _looks_repetitive(out):

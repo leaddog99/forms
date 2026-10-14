@@ -11317,3 +11317,51 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   Verified by capturing the request body. BCC restarted 19:37 (server half live).
 * **Open:** iPhone voice re-test · iPad splash reload · the 82 shallow-pool dishes · own rclone
   Drive client ID · DHCP reservation for BAILEY.
+
+## Session log — 2026-10-13 (late) — "duplicate words": nothing in the pipeline ever RENDERED the plan
+
+* **The complaint.** Step cards read "Add the 2½ cups onion + 3 cloves garlic Onion & garlic",
+  "Purée with the 2 Tbsp Fresh basil, for the purée until smooth", "a generous handful, grated
+  Grated cheese", "Season with to taste Kosher salt". The stored tokens had no doubled word;
+  the defect lives at the SEAM — the card expands `{ingN}` to AMOUNT + " " + LABEL and the
+  rework model was never told that. polish cleans each field, the gauntlet checks structure,
+  fidelity checks meaning: none of them render. Corpus: **51 of 58** stored plans had a seam
+  defect (290 blocker-grade, by the new mechanical check).
+* **cook_render.py** (new) — the ONE Python mirror of the page's expansion (`ing_phrase`,
+  `expand`, `step_lines`, `render_plan_text`). Carries the SEAM SAFETY NET, mirrored exactly in
+  cook.html `ingPhrase()`: qualifier amount → "kosher salt (to taste)"; label fully inside the
+  amount → amount alone; the amount's tail words the label repeats are cut; informal measure
+  takes "of"; "the a generous handful" → "a generous handful"; prose word + bold phrase starting
+  with the same word collapsed. Reload-only fix for all 58 plans; numbers never touched.
+* **cook_audit.py** (new) — THE AUDITOR. Mechanical findings over the RENDERED plan (amount
+  names the ingredient, prep word twice, label carries a clause, doubled word as rendered,
+  unexpanded token, ingredient sub-step with no screen fragment), then ONE Opus read of the
+  plan as the cook meets it (screen + voice lines, attachments, finish, tips) → `report_audit`:
+  grade/5, findings (blocker|polish), TARGETED EDITS (exact path → new text; prose fields
+  only, never quantities/steps/ingredients) + `remove_attachments` for a KB tip that
+  contradicts the plan. Code applies, re-polishes, re-checks; ≤2 rounds; a surviving blocker
+  fails the rework (fidelity's stance). Runs LAST in cook_rework (after augment, so it sees
+  the attachments); the gauntlet re-runs after the edits. Report persisted as `_cook.audit`.
+  Vodka sauce: grade 2/5 before, 24 edits, 0 blockers, $0.13.
+* **Rework prompt v2.4** — the RENDER CONTRACT paragraph (amount = measure only; label = bare
+  lowercase noun phrase, no clause; bundle unit = members with measures; to-taste form). Every
+  existing plan is now "stale" to rerework_cooks; the cheap path is `python -m
+  scripts.audit_cooks` (new: audit + repair persisted plans in place, ~$0.13 each, idempotent
+  on `_cook.audit.version`; `--dry-run` = mechanical only, `--render` = print the plan as seen;
+  fails only on gate failures the EDITS introduced — older plans carry pre-v2.3 gaps).
+  Not yet run on the other 57 (~$7).
+* **"Stop / quit / that's all did nothing."** logs/cook_stt.log: the cook said "stop" four
+  times, base.en heard `stop` each time (nsp≈0.45, alp≈-1.3) and the hallucination gates
+  dropped it as noise — nothing reached the router. One-word commands are short by nature, so
+  the gates tuned on chatter kill them. cook_stt now passes a clip whose WHOLE normalized text
+  is a known command (`_COMMANDS`) under looser bounds (nsp ≤ 0.8, alp ≥ -1.8; repetition
+  backstop still applies) — reason `command-pass` in the log. Router stop vocabulary widened
+  (that's it / we're done / bye chef / stand down / go to sleep / goodbye …). Needs a restart.
+* **Privacy (asked).** Nothing listens outside the cook page; the mic opens only after the
+  cook taps Hands-free / Hey Chef (browser permission prompt) and closes on Stop / leaving the
+  page. While live, every VAD-detected clip goes to OUR server (faster-whisper on the host,
+  not a cloud STT), the wake word is checked on the transcript, and transcripts (text, not
+  audio) are appended to logs/cook_stt.log. Only an explicit question ("hey chef …") leaves the
+  machine, to the Chef LLM.
+* **Open:** run audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload ·
+  the 82 shallow-pool dishes · own rclone Drive client ID · DHCP reservation for BAILEY.

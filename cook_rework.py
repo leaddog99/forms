@@ -18,7 +18,6 @@ optimization; this proves the loop end-to-end first.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from typing import Callable, Optional, Tuple
@@ -48,7 +47,12 @@ _MAX_TOKENS = 16000
 # "finely grated", changing the mouthfeel the recipe exists for). Plus single-deployment
 # (an ingredient enters the method once — prep lives in the mise OR a step, never both)
 # and an LLM source-fidelity gate after the mechanical gauntlet (cook_fidelity.py).
-REWORK_PROMPT_VERSION = "cook-rework-v2.3-2026-09-03"
+# v2.4: the RENDER CONTRACT — `{ingN}` expands to AMOUNT + LABEL on the card, and the
+# model was never told, so amounts named the ingredient ("2½ cups onion + 3 cloves
+# garlic" + "Onion & garlic") and prep words doubled ("¾ lb cooked" + "Cooked penne")
+# in 51 of 58 plans. The prompt now states how the seam renders; the auditor
+# (cook_audit) reads the RENDERED plan after augment and repairs it with targeted edits.
+REWORK_PROMPT_VERSION = "cook-rework-v2.4-2026-10-13"
 
 
 # --------------------------------------------------------------------------- #
@@ -309,7 +313,7 @@ _EMIT_COOK_TOOL = {
 # System prompt (the SKILL phases, condensed) + KB
 # --------------------------------------------------------------------------- #
 def _system_prompt() -> str:
-    return f"""\
+    return """\
 You are a master recipe developer + kitchen workflow designer. You turn a captured recipe \
 into a STEP-ANCHORED, mise-complete cook plan and return it by calling `emit_cook` exactly \
 once. Output nothing else.
@@ -317,7 +321,7 @@ once. Output nothing else.
 THREE BINDING RULES (resolve any ambiguity):
 1. No lookback — each step states its own gear + amounts + action; never "see the list above".
 2. No measuring mid-cook — EVERY ingredient (including the first into the pan) is pre-measured \
-in a bundle. The method only ACTS and refers BACK: "Add the {{ing1}}" with definiteness "the"/\
+in a bundle. The method only ACTS and refers BACK: "Add the {ing1}" with definiteness "the"/\
 "reserved"/"from-step"/"bundle" — never introduces a fresh amount.
 3. Decisions already made — chosen unit, form, and yield are written into the prose.
 
@@ -350,16 +354,28 @@ deployment.
 (combine_note = why); keep separate when combining early harms (excluded_reason). Put \
 everything else under a "Measured & ready" bundle so 100% of measuring is in the mise.
 - Put-asides: anything set aside and used later goes in `reserved` (created_step/consumed_step).
-- Precision: amount is the PREPARED state ("2 Tbsp minced"); raw count -> shopping_hint. No \
-bare informal measures (handful/ladle/drizzle) — a number is required.
+- Precision: amount is the PREPARED state; raw count -> shopping_hint. No bare informal \
+measures (handful/ladle/drizzle) — a number is required.
+- RENDER CONTRACT (how the cook's screen is built from your fields): a step-ingredient \
+token {ingN} renders as AMOUNT + space + LABEL — "Add the {ing1}" with amount "2 Tbsp" \
+and label "minced garlic" shows "Add the 2 Tbsp minced garlic". So: `amount` is the \
+MEASURE ONLY ("2 Tbsp", "¾ lb", "two 28-oz cans") — never the ingredient's name, never a \
+prep word; `label` is a bare LOWERCASE noun phrase carrying the form ("minced garlic", \
+"cooked penne", "Parmigiano") — no leading article, no clause (", for the purée"), no \
+parenthetical; proper nouns keep their capitals. A bundle deployed as ONE unit: amount \
+lists each member with its measure ("2½ cups onion + 3 cloves garlic") and the label is \
+the bundle's label (the card shows the amount alone). Seasoning to taste: amount "to \
+taste", label "kosher salt" (renders "kosher salt (to taste)"). Write every instruction \
+and screen fragment so it reads as one English sentence AFTER this expansion — no word \
+said twice, the ingredient never named in the prose when a token already carries it.
 - Equipment: list EVERY tool the method needs, not just the main pans. Capture tools IMPLIED \
 by a prep verb (grate -> grater/microplane, zest -> zester, whisk -> whisk, sieve/sift -> \
 sieve, purée -> blender, mash -> masher) and any tool NAMED in the source ingredients, steps, \
 or notes (a recipe that says "garlic, grated" needs a grater). Size the things where size \
 affects outcome (bowls/pots/pans), inferred from quantities; leave size off small tools; reuse \
 points back via reused_from_step.
-- Anchor each step: short imperative name; instruction with {{ingN}} tokens (ingredients in \
-order), {{amt:...}} for times/temps, {{bundle:ID}} for a bundle. One action per step. A step's \
+- Anchor each step: short imperative name; instruction with {ingN} tokens (ingredients in \
+order), {amt:...} for times/temps, {bundle:ID} for a bundle. One action per step. A step's \
 ingredient reference may be an ingredient id OR a bundle id (to deploy a pre-combined bundle as \
 one unit, with a label + combined amount) — both are in the mise.
 - Sub-steps (voice pacing): split each step into memory-sized `substeps` for hands-free cooking. \
@@ -369,7 +385,7 @@ as a single sub-step ("whisk constantly WHILE pouring in the hot stock" = one). 
 at ~3 things the cook must hold at once (a temp + a time + a doneness cue). Each sub-step: `voice` \
 = the TERSE spoken action (just the verb + object; speech vanishes, so keep it short and DON'T \
 recite every quantity — the screen shows the numbers); `screen` = a fuller fragment with the \
-measurements via {{ingN}}/{{amt}} tokens — REQUIRED whenever the sub-step deploys an ingredient \
+measurements via {ingN}/{amt} tokens — REQUIRED whenever the sub-step deploys an ingredient \
 (the screen is the only place the amount appears), optional for a sub-step with none; \
 `ingredients` = the 1-based indices into THIS step's `ingredients` deployed in the sub-step. Every step ingredient MUST appear in some sub-step \
 (none left unspoken). A genuinely single-action step needs no substeps (or one).
@@ -561,6 +577,26 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
         # Redundancy check before persist — strips repeated guidance/technique_changes.
         # Runs even if augment raised (still de-dupes the rework's own output).
         dedupe_annotations(cook, log)
+
+        # THE AUDITOR (cook_audit) — reads the plan AS RENDERED (amount+label seams,
+        # sub-step lines, attachments, finish) and repairs it with targeted field
+        # edits. Runs LAST so it sees the attachments too (a KB tip contradicting the
+        # plan is its call). A blocker that survives its rounds fails the rework; the
+        # gauntlet re-runs after the edits so a structural slip is caught, not trusted.
+        try:
+            from cook_audit import audit_cook
+            aud = audit_cook(cook, log, usages)
+            cook.audit = aud
+            report.ran.append("audit")
+            post = run_all(cook)
+            if not post.passed:
+                report.failures.extend(f"[after-audit] {f}" for f in post.failures)
+                report.passed = False
+            if not aud.get("passed", True):
+                report.failures.extend(f"[audit] {f}" for f in aud.get("residual", []))
+                report.passed = False
+        except Exception as e:  # noqa: BLE001 — an API failure must not sink a sound plan
+            log(f"[cook-rework] audit pass failed (non-fatal): {e}")
 
     # Cost summary — what this rework cost at the latest token prices, + volume projection.
     est = cook_costs.estimate(usages)

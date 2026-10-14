@@ -562,6 +562,33 @@
   // A use label should be a bare noun — the prose/definiteness supplies the article;
   // stripping a leading the/a/an/your kills the "Add the the garlic" duplication.
   function stripArticle(s){ return String(s||'').replace(/^(the|a|an|your)\s+/i,''); }
+  // SEAM SAFETY NET (2026-10-13) — AMOUNT + LABEL as one readable phrase. Mirrored
+  // EXACTLY in cook_render.ing_phrase() (the auditor renders with it); keep in lockstep.
+  // The vodka sauce read "¾ lb cooked Cooked penne", "2½ cups onion + 3 cloves garlic
+  // Onion & garlic", "Season with to taste Kosher salt": the model writes amount and
+  // label without knowing the card glues them. Rules: qualifier amount → "label (to
+  // taste)"; label fully inside the amount → amount alone; the amount's tail words the
+  // label repeats at its head are cut from the amount; an informal measure ("a pinch")
+  // takes "of". Numbers are never touched; the only word ever added is "of".
+  var _QUAL_RE=/^(to taste|as needed|as required|optional|if needed|for serving|for garnish)(?:[,\s]+(.+))?$/i;
+  var _INFORMAL_RE=/^(a|an|some)\b[^0-9]*$/i;
+  function _wordSpans(s){ var out=[], re=/[A-Za-z][A-Za-z'\-]*/g, m; while((m=re.exec(s))){ out.push({w:m[0].toLowerCase(), i:m.index}); } return out; }
+  // "Stir in the {ing2}" + an informal amount ("a generous handful") renders "the a
+  // generous handful" — the prose's article meets the amount's; keep the amount's.
+  // Works on the html too (the amount sits right after "<b>"). Mirrored in cook_render.
+  function articleClash(s){ return String(s).replace(/\b(the|your)\s+(<b>)?(a|an|some)\s+/gi, function(m,art,b,a){ return (b||'')+a+' '; }); }
+  function ingPhrase(amount, label){
+    var a=String(amount||'').trim(), lab=stripArticle(String(label||'').trim());
+    if(!a) return lab; if(!lab) return a;
+    var qm=_QUAL_RE.exec(a); if(qm){ var rest=(qm[2]||'').trim(); return (rest?rest+' ':'')+lab+' ('+qm[1].toLowerCase()+')'; }
+    var as=_wordSpans(a), ls=_wordSpans(lab), aw=as.map(function(x){return x.w;}), lw=ls.map(function(x){return x.w;});
+    if(lw.length && lw.every(function(w){ return aw.indexOf(w)>=0; })) return a;
+    var k=0; for(var n=Math.min(aw.length,lw.length); n>0; n--){ var ok=true;
+      for(var i=0;i<n;i++){ if(aw[aw.length-n+i]!==lw[i]){ ok=false; break; } } if(ok){ k=n; break; } }
+    if(k){ a=a.slice(0, as[as.length-k].i).replace(/[\s,;:\-–—]+$/,''); if(!a) return lab; }
+    if(_INFORMAL_RE.test(a) && !/\bof$/i.test(a)) return a+' of '+lab;
+    return a+' '+lab;
+  }
 
   // Expand {ingN}/{amt:..}/{bundle:ID} into DISPLAY html (bold). `text` defaults to
   // the whole instruction; a sub-step passes its own `screen` fragment (same token
@@ -570,12 +597,16 @@
     var html=E(tidyText(text!=null ? text : (step.instruction||'')));
     html=html.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return mm;
-      var a=amtStr(si.amount); return '<b>'+E((a?a+' ':'')+stripArticle(si.label||''))+'</b>'; });
+      return '<b>'+E(ingPhrase(amtStr(si.amount), si.label))+'</b>'; });
     html=html.replace(/\{amt:([^}]*)\}/g, function(mm,x){
       var parts=x.split('|'); var val = (units==='met'&&parts[1])?parts[1]:parts[0]; return '<b>'+E(val.trim())+'</b>'; });
     html=html.replace(/\{bundle:([^}]*)\}/g, function(mm,id){
       var b=IDX.bundle[id.trim()]; return '<b>'+E(b?b.label:id)+'</b>'; });
-    return html;
+    // Post-expansion dup across the bold seam: prose "grated {ing4}" + a phrase that
+    // starts "grated ..." read "grated grated" (tidyText runs BEFORE expansion and
+    // can't see it). Keep the bolded one. spokenFragment gets the same via tidyText after.
+    html=html.replace(/\b(\w+)\s+(<b>)\1\b/gi, '$2$1');
+    return articleClash(html);
   }
   // Expand {ingN}/{amt}/{bundle} in an ARBITRARY fragment into PLAIN, de-abbreviated
   // speech (for TTS / voice). `text` shares the step's token space ({ingN} indexes the
@@ -585,10 +616,10 @@
     var t=String(text||'');
     t=t.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return '';
-      var a=amtStr(si.amount); return (a?a+' ':'')+stripArticle(si.label||''); });
+      return ingPhrase(amtStr(si.amount), si.label); });
     t=t.replace(/\{amt:([^}]*)\}/g, function(mm,x){ var p=x.split('|'); return ((units==='met'&&p[1])?p[1]:p[0]).trim(); });
     t=t.replace(/\{bundle:([^}]*)\}/g, function(mm,id){ var b=IDX.bundle[id.trim()]; return b?b.label:id; });
-    return tidyText(deAbbrev(t));
+    return tidyText(deAbbrev(articleClash(t)));
   }
   // The whole step, spoken: name + full instruction (steps with no sub-steps, plus
   // "read step" and where-was-I).
@@ -697,8 +728,8 @@
   function missingIngChips(step, ss, frag){
     var shown={}; String(frag||'').replace(/\{ing(\d+)\}/g, function(m,n){ shown[parseInt(n,10)]=1; return m; });
     var chips=(ss.ingredients||[]).filter(function(n){ return !shown[n] && (step.ingredients||[])[n-1]; })
-      .map(function(n){ var si=step.ingredients[n-1]; var a=amtStr(si.amount);
-        return '<b>'+E((a?a+' ':'')+stripArticle(si.label||''))+'</b>'; });
+      .map(function(n){ var si=step.ingredients[n-1];
+        return '<b>'+E(ingPhrase(amtStr(si.amount), si.label))+'</b>'; });
     return chips.length ? ' <span class="sub-ings">— '+chips.join(', ')+'</span>' : '';
   }
   function renderSteps(){
@@ -1719,7 +1750,10 @@
     { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
     { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
     { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along|go ahead|go on|keep going|let'?s go)\b|^(next|forward|skip|go|start|check|checked|check it|check it off|check this off|check that off)$/, act:function(){ window.cookView.next(); } },
-    { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'm done cooking|that's all|all done)\b|^(stop|halt|exit|quit)$/, act:function(){ stopHandsFree({spoken:true}); } }
+    // Stand-down (2026-10-13): the cook tried "that's all", "stop", "quit" and got
+    // nothing — the SERVER gate dropped the one-word clips as noise (cook_stt now passes
+    // a clean command word). The vocabulary is widened too: every natural sign-off.
+    { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'?m (done|finished)( cooking)?|we'?re (done|finished)|that'?s (all|it)( for now)?|all done|done cooking|stand down|go to sleep|shut ?down|power down|stop chef|chef stop|bye chef|goodbye chef|thanks chef|thank you chef|that'?ll do|sign off|log off)\b|^(stop|halt|exit|quit|goodbye|bye|bye bye|sleep|end|finished|finish)$/, act:function(){ stopHandsFree({spoken:true}); } }
   ];
   function matchCommand(cmd){
     var wc = cmd.split(' ').filter(Boolean).length;

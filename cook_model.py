@@ -317,6 +317,10 @@ class CookMetadata(BaseModel):
     technique_changes: List[str] = Field(default_factory=list)
 
     validators: Optional[CookValidatorReport] = None
+    # The auditor's report (cook_audit): grade before edits, every targeted edit it
+    # applied, what still reads wrong. Stamped by the rework (and by
+    # scripts/audit_cooks.py on an already-persisted plan).
+    audit: Optional[dict] = None
     # Stamped by the rework job on persist — lets a stale rework (prompt changed,
     # or the recipe edited since) be detected + re-run.
     rework_prompt_version: Optional[str] = None
