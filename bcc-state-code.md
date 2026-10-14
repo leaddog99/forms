@@ -11458,3 +11458,15 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   trashes the older `BCC-Backups` in Drive, then `rclone config delete gdrive-shared`). Console
   checklist in docs/disaster-recovery.md G4 — the app must be **published**, a Testing project expires
   tokens after 7 days. Proof = next 03:00 run without the NOTICE and `cloud mirror exit code: 0`.
+* **The 82 shallow-pool dishes are re-running (curator: "pull the list of 82 and run them
+  detached"), started 06:29 as job #2551 Apple Crisp.** List = every dish whose LATEST successful
+  dish_refresh started between 09-18 and 10-12 12:15 local (the first post-fix run), from the
+  jobs table: 84, minus Boeuf Bourguignon (merged) and Piizza Sauce (not a dish) = **82 exactly**.
+  Detached runner (breakaway, outside the chat and service trees) in this session's scratchpad
+  (`rerun_shallow.py` + `shallow_dishes.json`, progress in `rerun_progress.txt`, one `.out` per
+  dish in `rerun_logs/`): sequential `python -m jobs run dish_refresh --dish NAME`, on the CURRENT
+  provider (scaleserp — the 10-14 03:03 alla Vodka run proved the budget fix on it; the 10-12
+  batch's SerpApi switch is not repeated), and it SKIPS a dish the hourly schedule or the curator
+  refreshes after the fix before its turn. Expect ~5-8 h (3.5-6 min a dish). Survives a BCC
+  restart; a reboot kills it (re-launch: `python launch.py` in that folder — the skip rule makes
+  it resumable).
