@@ -11470,3 +11470,29 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   refreshes after the fix before its turn. Expect ~5-8 h (3.5-6 min a dish). Survives a BCC
   restart; a reboot kills it (re-launch: `python launch.py` in that folder — the skip rule makes
   it resumable).
+
+## Session log — 2026-10-15 (late afternoon) — "did we have another chip failure": no; the 82-dish rerun resumed after a Windows Update restart
+
+* **No new crash.** Event 41 tally unchanged at **17**, last 2026-10-06 (crash #17). Every restart
+  since was a planned Windows Update restart clicked by the curator (Event 1074 from
+  MoNotificationUx): 10-14 13:31, and 10-15 14:46 + 14:50 — a feature upgrade, build 26200.9457 →
+  **26300.9711**. **Autologon's first live exercises passed on both boots**: Winlogon 7001 within a
+  minute of 6005, the lock task fired (13:33 / 14:52, "someone is here" both times), BCC + cloudflared
+  back by themselves, / = 200. No reboot pending.
+* **The 82-dish rerun (job #2551 onward, started 10-14 06:29) was killed by the 10-14 13:31 update
+  restart**, not a crash: 21 dishes saved, Conch Chowder #2581 mid-run → "interrupted — owning
+  process is gone", the other 60 exited 0xC000026B (session logoff) in one second. The hourly
+  schedule refreshed none of them since. **Relaunched 10-15 17:01** (`python launch.py` in the 10-14
+  session's scratchpad, breakaway pid 4488): skipped the 21 done, on Conch Chowder, **61 to go**,
+  scaleserp, ~4-6 h. Survives a BCC restart, not a reboot.
+* **10-15 03:00 backup:** green except the known Drive forms-mirror stage (`cloud mirror exit code: 1`,
+  shared client ID). A/C/D/E ok; BAILEY serves the 10-15 snapshot exactly (12,870). Own client ID
+  console step still owed (disaster-recovery G4).
+* **The two untracked SEMrush exports are already harvested:** foodnetwork.com #2565 (10-14,
+  stored 218 / extracted 50; #2564 was the cancelled first attempt) and tonysmarket.com #2593
+  (10-15, stored 58 / extracted 10). Committed with this entry.
+* **Stray:** publisher_refresh #2592 host "chef john" → DNS error. Chef collections is still design
+  only (docs/chef-collections.md) — no code, no endpoint, no `chefs` table.
+* **Open:** own rclone Drive client ID · DHCP reservation for BAILEY · audit_cooks over the
+  remaining 57 (~$7) · iPhone voice re-test · iPad splash reload (beacon + coalescing) · the
+  61 shallow-pool dishes (running) · Dell cut-over playbook · carried items.
