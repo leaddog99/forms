@@ -79,10 +79,13 @@ def set_if_nullish(obj, key, default):
         obj[key] = default
 
 def is_valid_video_object(obj: Any) -> bool:
+    # A VideoObject is only real when it POINTS somewhere (contentUrl or embedUrl);
+    # an all-empty shell is absence, not a video.
     return (
         isinstance(obj, dict)
         and obj.get("@type") == "VideoObject"
-        and isinstance(obj.get("contentUrl", None), str)
+        and any(isinstance(obj.get(k), str) and obj.get(k).strip()
+                for k in ("contentUrl", "embedUrl"))
     )
 
 def is_valid_aggregate_rating(obj: Any) -> bool:
@@ -246,15 +249,16 @@ def sanitize_recipe_data(data: dict) -> dict:
     set_if_nullish(sanitized, "notes", "")
     set_if_nullish(sanitized, "tags", [])
 
-    if not is_valid_video_object(sanitized.get("video")):
-        sanitized["video"] = {
-            "@type": "VideoObject",
-            "name": "",
-            "contentUrl": "",
-            "thumbnailUrl": "",
-            "uploadDate": datetime.now(timezone.utc).isoformat(),
-            "description": ""
-        }
+    # No video = None. This used to manufacture an empty VideoObject stamped
+    # with uploadDate=now() (8,323 of 12,967 master rows carried that shell on
+    # 2026-10-15), which is "absent is not zero" in the wrong direction: a
+    # fabricated date, and a Clear in the form could never store "no video".
+    # A bare URL string is kept (the model accepts Union[VideoObject, str]).
+    v = sanitized.get("video")
+    if isinstance(v, str) and v.strip():
+        sanitized["video"] = v.strip()
+    elif not is_valid_video_object(v):
+        sanitized["video"] = None
 
     set_if_nullish(sanitized, "servingSuggestions", "")
     set_if_nullish(sanitized, "cookingMethod", "")

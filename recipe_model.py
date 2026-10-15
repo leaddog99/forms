@@ -335,6 +335,11 @@ class VideoObject(BaseModel):
     type: str = Field(default="VideoObject", alias="@type")
     name: Optional[str] = ""
     contentUrl: Optional[str] = ""
+    # schema.org VideoObject.embedUrl — the player URL (youtube-nocookie.com/embed/<id>,
+    # player.vimeo.com/video/<id>). Publishers ship it in JSON-LD and the extractor was
+    # already absolutizing it, but it was dropped here. The recipe form renders an
+    # inline player from it (click-to-play); contentUrl stays the watch/page link.
+    embedUrl: Optional[str] = ""
     thumbnailUrl: Optional[str] = ""
     uploadDate: Optional[str] = ""
     description: Optional[str] = ""
@@ -343,7 +348,7 @@ class VideoObject(BaseModel):
     @classmethod
     def _v_text(cls, v): return _as_str(v)
 
-    @field_validator('contentUrl', 'thumbnailUrl', mode='before')
+    @field_validator('contentUrl', 'embedUrl', 'thumbnailUrl', mode='before')
     @classmethod
     def _v_url(cls, v): return _as_one(v)
 

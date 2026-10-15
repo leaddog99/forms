@@ -2349,25 +2349,19 @@
                      style="width:100%;display:block;aspect-ratio:3/2;object-fit:cover" />
               </a>
             </div>
-            <!-- Source how-to video (the page's schema.org VideoObject).
-                 Read-only: a thumbnail with a play overlay that opens the
-                 source video in a new tab. Hidden when the recipe has no
-                 video. Round-trips on save via payload.video. -->
-            <div id="videoBlock" style="margin-top:14px;display:none">
-              <label style="font-size:0.85em;color:var(--muted);display:block;margin-bottom:6px">
+            <!-- Video (schema.org VideoObject). Editable: the URL field shows the
+                 recipe's video link (extracted or typed), with the shared ↗/⧉/✕
+                 icons (attachUrlControls). A new/changed URL is resolved through
+                 GET /video-lookup (title, thumbnail, embed URL for YouTube/Vimeo)
+                 and previewed as a click-to-play player; ✕ clears the video.
+                 Saves via payload.video = currentVideo (see setVideo). -->
+            <div id="videoBlock" style="margin-top:14px">
+              <label for="videoUrl" style="font-size:0.85em;color:var(--muted);display:block;margin-bottom:6px">
                 Video
               </label>
-              <a id="videoLink" href="#" target="_blank" rel="noopener"
-                 title="Play the source video in a new tab"
-                 style="position:relative;display:block;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);text-decoration:none">
-                <img id="videoThumb" src="" alt=""
-                     style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover" />
-                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-                  <span style="width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center">
-                    <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-                  </span>
-                </span>
-              </a>
+              <input type="text" id="videoUrl" autocomplete="off"
+                     placeholder="https://www.youtube.com/watch?v=…" />
+              <div id="videoPreview" style="display:none;position:relative;margin-top:8px;width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#111"></div>
               <div id="videoCaption" style="font-size:0.8em;color:var(--muted);margin-top:4px"></div>
             </div>
           </div>
@@ -5762,41 +5756,7 @@
         }
       })();
 
-      // Source video — show the VideoObject as a clickable thumbnail
-      // (read-only; opens in a new tab). Hidden when absent. `video` is
-      // Union[VideoObject, str]; handle both.
-      (function showVideo() {
-        const block = document.getElementById('videoBlock');
-        const link = document.getElementById('videoLink');
-        const img = document.getElementById('videoThumb');
-        const cap = document.getElementById('videoCaption');
-        if (!block || !link || !img) return;
-        const v = r.video;
-        let url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
-        // A site-relative contentUrl resolves against OUR origin, so the play
-        // link 404s on our own host. Extraction absolutizes these now, but rows
-        // saved before that fix still carry one — fall back to the source page,
-        // which is where the video lives anyway and is a URL we know is good.
-        if (url && !/^(https?:)?\/\//i.test(url)) {
-          url = ((r._source && r._source.originalUrl) || '').trim();
-        }
-        const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
-        // Suppress the box unless a thumbnail actually LOADS. A broken/missing
-        // thumbnail (the "broken image" icon the user was seeing) is our best
-        // client-side signal that the source is unplayable (dead URL). Stay
-        // hidden until onload fires so there's no flash of a broken box. (A
-        // paywalled video with a valid thumbnail can't be detected client-side.)
-        img.onload = img.onerror = null;
-        block.style.display = 'none';
-        img.removeAttribute('src'); img.style.display = 'none';
-        if (!url || !thumb) return;          // no link, or no preview image -> stay hidden
-        link.href = url;
-        img.alt = (v && v.name) || r.name || 'Source video';
-        if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
-        img.onload = () => { img.style.display = 'block'; block.style.display = ''; };
-        img.onerror = () => { block.style.display = 'none'; img.removeAttribute('src'); };
-        img.src = thumb;                     // load -> onload shows the box; onerror keeps it hidden
-      })();
+      setVideo(r.video, r);   // the editable video field + click-to-play preview
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
       // and seed the scoring strip from the recipe's own _scoring (Moz +
@@ -6094,6 +6054,10 @@
         console.warn('[save] skipping rich passthrough — stashed recipe differs',
           { stashed: lastExtractedRecipeKey, saving: _saveKey });
       }
+      // The video comes from the editable field's state (setVideo), so an added,
+      // changed or cleared link saves even on a brand-new manual recipe. null =
+      // no video (the sanitizer no longer manufactures an empty VideoObject).
+      payload.video = currentVideo || null;
       if (lastExtractedRecipe && !_identityMismatch) {
         const r0 = lastExtractedRecipe;
         if (r0.provenance) {
@@ -6110,7 +6074,6 @@
         if (r0._measurements) payload._measurements = r0._measurements;
         if (r0.nutrition) payload.nutrition = r0.nutrition;
         if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
-        if (r0.video) payload.video = r0.video;
         // The step-anchored rework. The form has no UI to EDIT it (it's a
         // read-only panel), so without this passthrough a plain Save would drop
         // the whole _cook block — losing the entire enhancement pass. The rework
@@ -6332,7 +6295,7 @@
     // fine. extractUrlInput is deliberately NOT included: it lives in the styled
     // .url-row with the Extract button, and that is the extract path.
     if (window.LibraryShell && LibraryShell.attachUrlControls) {
-      LibraryShell.attachUrlControls(['originalUrl', 'bccPermalink']);
+      LibraryShell.attachUrlControls(['originalUrl', 'bccPermalink', 'videoUrl']);
     }
 
     document.getElementById("claimBtn").onclick = async () => {
@@ -6688,8 +6651,7 @@
             ? '/forms/recipe_form_styled.html' : window.location.pathname); }
       catch (e) { /* ignore */ }
       if (window.heroWell) heroWell.clear();   // empties the unified image well
-      const _videoBlock = document.getElementById('videoBlock');
-      if (_videoBlock) _videoBlock.style.display = 'none';
+      setVideo(null);                          // clears the video URL, preview and state
       // Image-gen tweak textarea — no `name` attribute so form.reset()
       // skips it in some browsers; clear explicitly.
       const _extraPrompt = document.getElementById('imageGenExtraPrompt');
@@ -7717,6 +7679,132 @@
     // the form has no UI for (provenance, classification, _scoring) instead
     // of dropping them on the floor.
     let lastExtractedRecipe = null;
+
+    // ── Video field ─────────────────────────────────────────────────────────
+    // ONE state (`currentVideo`, a schema.org VideoObject or null) feeds the URL
+    // input, the preview and the save payload. loadForm / populateFormFromRecipe /
+    // startNewRecord all go through setVideo; the input's change event (typing,
+    // paste, the shared ✕) goes through videoUrlChanged → GET /video-lookup.
+    // Legacy rows: 8.3k master rows carry an all-empty VideoObject shell (the old
+    // sanitizer placeholder) — that reads as "no video"; ~1.3k YouTube rows carry
+    // only contentUrl, so the embed/thumbnail are DERIVED client-side from the id.
+    let currentVideo = null;
+    const _ytId = (u) => {
+      const m = String(u || '').match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
+      return m ? m[1] : null;
+    };
+    const _vUrl = (v) => (v && (v.contentUrl || v.embedUrl) || '').trim();
+    const _vEmbed = (v) => {
+      if (!v) return '';
+      if (v.embedUrl) return v.embedUrl;
+      const id = _ytId(v.contentUrl);
+      return id ? `https://www.youtube-nocookie.com/embed/${id}` : '';
+    };
+    const _vThumb = (v) => {
+      if (!v) return '';
+      if (v.thumbnailUrl) return v.thumbnailUrl;
+      const id = _ytId(v.contentUrl || v.embedUrl);
+      return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '';
+    };
+    function _normVideo(v) {
+      if (!v) return null;
+      if (typeof v === 'string') return v.trim() ? { '@type': 'VideoObject', contentUrl: v.trim() } : null;
+      if (typeof v !== 'object') return null;
+      const o = { '@type': 'VideoObject', ...v };
+      delete o.provider;
+      return _vUrl(o) ? o : null;              // the empty shell = no video
+    }
+    function setVideo(v, r) {
+      currentVideo = _normVideo(v);
+      const input = document.getElementById('videoUrl');
+      if (input) {
+        input.value = _vUrl(currentVideo);
+        if (input.value) input.title = input.value; else input.removeAttribute('title');
+        // keep the shell's ↗/⧉ state in step with a programmatic write
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      renderVideoPreview('', r);
+    }
+    function renderVideoPreview(status, r) {
+      const box = document.getElementById('videoPreview');
+      const cap = document.getElementById('videoCaption');
+      if (!box || !cap) return;
+      box.innerHTML = ''; box.style.display = 'none';
+      const v = currentVideo;
+      if (!v) { cap.textContent = status || ''; return; }
+      let href = _vUrl(v);
+      // A site-relative contentUrl (pre-2026-06-29 rows) resolves against OUR
+      // origin; open the source page instead — that is where the video lives.
+      if (href && !/^(https?:)?\/\//i.test(href)) {
+        href = ((r && r._source && r._source.originalUrl) || (lastExtractedRecipe && lastExtractedRecipe._source && lastExtractedRecipe._source.originalUrl) || '').trim() || href;
+      }
+      const embed = _vEmbed(v);
+      const thumb = _vThumb(v);
+      const E = (x) => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const playBtn = '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
+        + '<span style="width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center">'
+        + '<svg viewBox="0 0 24 24" width="26" height="26" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span></span>';
+      // Caption = the title, plus a SHORT description ("by <channel>"); a
+      // publisher's paragraph-long VideoObject.description stays out of the way.
+      const _desc = (v.description || '').trim();
+      cap.textContent = status || [v.name, _desc.length <= 90 ? _desc : ''].filter(Boolean).join(' · ');
+      if (embed) {
+        // Click-to-play: the thumbnail first (cheap, no third-party frame until
+        // asked), the player on tap. autoplay=1 so the tap IS the play.
+        box.style.display = '';
+        box.innerHTML = `<a href="${E(href)}" target="_blank" rel="noopener" title="Play" style="position:absolute;inset:0;display:block;text-decoration:none">`
+          + (thumb ? `<img src="${E(thumb)}" alt="${E(v.name || 'Video')}" style="width:100%;height:100%;object-fit:cover;display:block">` : '')
+          + playBtn + '</a>';
+        const a = box.firstElementChild;
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const sep = embed.includes('?') ? '&' : '?';
+          box.innerHTML = `<iframe src="${E(embed + sep + 'autoplay=1&rel=0')}" title="${E(v.name || 'Video')}" style="position:absolute;inset:0;width:100%;height:100%;border:0" `
+            + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>';
+        });
+        return;
+      }
+      if (thumb) {
+        // Not embeddable (publisher players, mp4 CDNs): thumbnail that opens the
+        // link; shown only once the image actually loads (a dead thumbnail was
+        // the "broken image" box). The URL field itself already shows the link.
+        const img = new Image();
+        img.onload = () => {
+          box.style.display = '';
+          box.innerHTML = `<a href="${E(href)}" target="_blank" rel="noopener" title="Play the video in a new tab" style="position:absolute;inset:0;display:block">`
+            + `<img src="${E(thumb)}" alt="${E(v.name || 'Video')}" style="width:100%;height:100%;object-fit:cover;display:block">` + playBtn + '</a>';
+        };
+        img.src = thumb;
+      }
+    }
+    async function videoUrlChanged() {
+      const input = document.getElementById('videoUrl');
+      const u = (input.value || '').trim();
+      if (!u) { currentVideo = null; renderVideoPreview(''); return; }
+      if (currentVideo && (currentVideo.contentUrl === u || currentVideo.embedUrl === u)) return;
+      renderVideoPreview('Looking up the video…');
+      try {
+        const res = await fetch(`${API}/video-lookup?url=${encodeURIComponent(u)}`);
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error((d && d.detail) || res.statusText || 'lookup failed');
+        }
+        const v = await res.json();
+        if ((input.value || '').trim() !== u) return;   // the field moved on while we looked
+        setVideo(v);
+        if (v.provider === 'link') renderVideoPreview('Saved as a link — no preview for this site.');
+      } catch (e) {
+        if ((input.value || '').trim() !== u) return;
+        currentVideo = /^https?:\/\//i.test(u) ? { '@type': 'VideoObject', contentUrl: u } : null;
+        renderVideoPreview(currentVideo ? 'Saved as a link — ' + (e.message || e) : (e.message || String(e)));
+      }
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      const input = document.getElementById('videoUrl');
+      if (!input) return;
+      input.addEventListener('change', videoUrlChanged);
+      input.addEventListener('paste', () => setTimeout(videoUrlChanged, 0));
+    });
     // The recipe_id `lastExtractedRecipe` belongs to — stamped at every assignment.
     // The save passthrough is GUARDED on this: rich blocks (_cook/_scoring/…) are
     // only carried forward when this matches the recipe being saved, so a stale
@@ -8411,40 +8499,7 @@
         }
       })();
 
-      // Source video — same logic as loadForm (thumbnail links to the source
-      // video; hidden when absent; handles VideoObject or string).
-      (function showVideo() {
-        const block = document.getElementById('videoBlock');
-        const link = document.getElementById('videoLink');
-        const img = document.getElementById('videoThumb');
-        const cap = document.getElementById('videoCaption');
-        if (!block || !link || !img) return;
-        const v = r.video;
-        let url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
-        // A site-relative contentUrl resolves against OUR origin, so the play
-        // link 404s on our own host. Extraction absolutizes these now, but rows
-        // saved before that fix still carry one — fall back to the source page,
-        // which is where the video lives anyway and is a URL we know is good.
-        if (url && !/^(https?:)?\/\//i.test(url)) {
-          url = ((r._source && r._source.originalUrl) || '').trim();
-        }
-        const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
-        // Suppress the box unless a thumbnail actually LOADS. A broken/missing
-        // thumbnail (the "broken image" icon the user was seeing) is our best
-        // client-side signal that the source is unplayable (dead URL). Stay
-        // hidden until onload fires so there's no flash of a broken box. (A
-        // paywalled video with a valid thumbnail can't be detected client-side.)
-        img.onload = img.onerror = null;
-        block.style.display = 'none';
-        img.removeAttribute('src'); img.style.display = 'none';
-        if (!url || !thumb) return;          // no link, or no preview image -> stay hidden
-        link.href = url;
-        img.alt = (v && v.name) || r.name || 'Source video';
-        if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
-        img.onload = () => { img.style.display = 'block'; block.style.display = ''; };
-        img.onerror = () => { block.style.display = 'none'; img.removeAttribute('src'); };
-        img.src = thumb;                     // load -> onload shows the box; onerror keeps it hidden
-      })();
+      setVideo(r.video, r);   // same field as loadForm; a fresh extract's video is unsaved work
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
       // and seed the scoring strip from the recipe's own _scoring (Moz +

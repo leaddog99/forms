@@ -13180,6 +13180,21 @@ async def save_recipe(request: Request):
 # Read-only metadata lookup for the form's collapsible metadata section.
 # URL is passed as a query param to avoid edge cases with slashes in path
 # params, and is re-normalized server-side regardless of what the client sent.
+@app.get("/video-lookup")
+def video_lookup_endpoint(url: str):
+    """Recipe form: the curator typed/pasted a video link → the VideoObject to
+    store (title, thumbnail, embed URL for YouTube/Vimeo; a bare contentUrl for
+    anything else). One module, video_lookup.resolve_video, is the chokepoint."""
+    from video_lookup import resolve_video
+    try:
+        return resolve_video(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        print(f"[ERROR] video-lookup failed for {url!r}: {e}")
+        raise HTTPException(status_code=502, detail="video lookup failed") from e
+
+
 @app.get("/url-metadata")
 def get_url_metadata(url: str, request: Request = None):
     if not url:
