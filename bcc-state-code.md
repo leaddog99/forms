@@ -11496,3 +11496,44 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open:** own rclone Drive client ID · DHCP reservation for BAILEY · audit_cooks over the
   remaining 57 (~$7) · iPhone voice re-test · iPad splash reload (beacon + coalescing) · the
   61 shallow-pool dishes (running) · Dell cut-over playbook · carried items.
+
+## Session log — 2026-10-15 (evening) — the recipe form's video becomes an editable field
+
+* **Curator: "we need a way to add/change/delete a video link (youtube) to a recipe form… if we add
+  the video url we should capture the embed and display it."** Before: the form showed the
+  extracted VideoObject as a read-only thumbnail (hidden unless its thumbnail loaded), and the save
+  passed `r0.video` through untouched — no way to see the link, change it, add one, or remove one.
+* **SHIPPED (a636a15; BCC on MARLEY restarted 18:19 between batch dishes, worker 8352 → 11760).**
+  - **Form:** `videoUrl` input in the Video block with the shared ↗/⧉/✕ icons
+    (`attachUrlControls`, feedback_url_field_control). ONE state `currentVideo` (VideoObject or
+    null) feeds the input, the preview and `payload.video`; `setVideo()` is the single entry for
+    loadForm / populateFormFromRecipe / startNewRecord. The dirty tracker (DOM snapshot) picks the
+    field up on its own — Save lit on change and on ✕, verified in Chrome.
+  - **Lookup:** `GET /video-lookup?url=` → `video_lookup.resolve_video()` (new module, the one
+    chokepoint): YouTube (watch/youtu.be/shorts/embed/live ids) and Vimeo through their free oEmbed
+    for title + channel, embed URL and thumbnail DERIVED from the id (youtube-nocookie.com/embed,
+    i.ytimg.com hqdefault — hot-linked, never re-hosted); any other http(s) URL is kept as a bare
+    contentUrl ("Saved as a link — no preview"). Non-http → 400. Verified live: the banana-bread
+    link resolves to "Best Banana Bread Recipe · by Eating on a Dime", canonical watch URL written
+    back into the field.
+  - **Preview:** click-to-play — thumbnail + ▶ first (no third-party frame until asked), the
+    nocookie iframe with autoplay on tap. Non-embeddable publisher videos (jwplayer/jwplatform mp4,
+    2.6k rows) keep the thumbnail-that-opens-the-link, gated on the image loading as before.
+    ~1.3k legacy YouTube rows carry only contentUrl: embed + thumbnail derived client-side, so they
+    get the player with no re-save.
+  - **Model:** `VideoObject.embedUrl` added (schema.org property; markdown_to_recipe was already
+    absolutizing it from publishers' JSON-LD and the model silently dropped it).
+  - **Sanitizer:** `video` no longer manufactured. It used to write an all-empty VideoObject with
+    `uploadDate = now()` whenever a recipe had none — **8,323 of 12,967 master rows and 361 of 472
+    personal carry that shell** (a fabricated date; feedback_absent_not_zero). Now: a real
+    VideoObject (contentUrl or embedUrl non-empty) or a bare URL string is kept, anything else is
+    None — so ✕ + Save stores "no video". Existing shells read as "no video" in the form and are
+    replaced by null on that recipe's next save; no bulk rewrite.
+* **Not verified live:** a browser Save (the Chrome session was signed out). The save path is
+  `sanitize → RecipeModel → model_dump`, proved in-process to keep embedUrl and to null the shell;
+  curator: add a link to a recipe, Save, reload — the player should come back.
+* **Batch:** the 61-dish rerun kept going through the restart (dish 30, Five Spice Powder, was in
+  its SERP stage — no server calls); 29/82 done by 18:19.
+* **Open:** the Save round-trip check above · own rclone Drive client ID · DHCP reservation for
+  BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload ·
+  Dell cut-over playbook · carried items.
