@@ -68,11 +68,11 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(dishes)")}
     if "last_run_log_filename" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN last_run_log_filename TEXT")
-    # Migration (2026-05-27): add auto_enrich opt-in flag. Default 0
-    # (off) — dish refreshes save fast and cheap by default; user opts
-    # in per-dish to run enrich_recipe on every saved master row.
-    if "auto_enrich" not in cols:
-        conn.execute("ALTER TABLE dishes ADD COLUMN auto_enrich INTEGER NOT NULL DEFAULT 0")
+    # The per-dish auto_enrich flag (2026-05-27 .. 2026-10-16) is gone: a dish
+    # refresh never enriches at save time (enrichment is its own batch-shaped
+    # step), and the column was dropped with it.
+    if "auto_enrich" in cols:
+        conn.execute("ALTER TABLE dishes DROP COLUMN auto_enrich")
     # Migration (2026-05-27): per-run persistence for OU-fit and the
     # bar-to-beat. Rejects live in their own table (see
     # ensure_dish_rejects_table) — proper rows, indexable by URL,
@@ -743,7 +743,7 @@ def row_to_dict(row: tuple) -> dict:
     """
     (name, queries_json, top_n_serpapi, top_n_final, ttl_days,
      last_refreshed, last_run_status, last_run_count, notes,
-     created_at, updated_at, last_run_log_filename, auto_enrich,
+     created_at, updated_at, last_run_log_filename,
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name,
@@ -786,7 +786,6 @@ def row_to_dict(row: tuple) -> dict:
         "next_run_at": next_run_at(ttl_days, last_refreshed),
         "last_run_log_filename": last_run_log_filename,
         "last_run_log_url": f"/logs/{last_run_log_filename}" if last_run_log_filename else None,
-        "auto_enrich": bool(auto_enrich),
         "last_ou_fit": ou_fit,
         "last_run_bottom_ou": last_run_bottom_ou,
         "description": description,
@@ -833,7 +832,7 @@ def _decode_cook_notes(raw) -> dict:
 _SELECT_ALL_COLS = (
     "name, queries, top_n_serpapi, top_n_final, refresh_ttl_days, "
     "last_refreshed, last_run_status, last_run_count, notes, "
-    "created_at, updated_at, last_run_log_filename, auto_enrich, "
+    "created_at, updated_at, last_run_log_filename, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
     "competitiveness_pct, field_clout, display_name, source_language, aliases, "
@@ -1020,9 +1019,9 @@ def dish_limits():
     return max_serp, max_final
 
 
-def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], bool, Optional[str]]:
+def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], Optional[str]]:
     """Validate a POST /dishes body. Returns (name, queries, top_n_serpapi,
-    top_n_final, refresh_ttl_days, notes, auto_enrich, description).
+    top_n_final, refresh_ttl_days, notes, description).
     Raises ValueError on any problem; the endpoint converts that to a 400."""
     name = (payload.get("name") or "").strip()
     if not name:
@@ -1079,16 +1078,12 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
         raise ValueError("notes must be a string or null")
     notes = (notes or None) if notes is None else notes.strip() or None
 
-    # auto_enrich: optional bool, defaults to False (cheap fast saves
-    # during refresh; user opts in per-dish to run enrich on each row).
-    auto_enrich = bool(payload.get("auto_enrich", False))
-
     description = payload.get("description")
     if description is not None and not isinstance(description, str):
         raise ValueError("description must be a string or null")
     description = (description.strip() or None) if isinstance(description, str) else None
 
-    return name, queries, top_n_serpapi, top_n_final, ttl, notes, auto_enrich, description
+    return name, queries, top_n_serpapi, top_n_final, ttl, notes, description
 
 
 def create_dish(conn: sqlite3.Connection, *,
@@ -1098,7 +1093,6 @@ def create_dish(conn: sqlite3.Connection, *,
                 top_n_final: int = 10,
                 refresh_ttl_days: Optional[int] = 30,
                 notes: Optional[str] = None,
-                auto_enrich: bool = False,
                 description: Optional[str] = None) -> dict:
     """Insert a new dish. Raises sqlite3.IntegrityError on name
     collision (caller maps to 409). Returns the created dict.
@@ -1111,10 +1105,10 @@ def create_dish(conn: sqlite3.Connection, *,
     rows = normalize_query_rows(queries)
     conn.execute(
         "INSERT INTO dishes (name, queries, top_n_serpapi, top_n_final, "
-        "refresh_ttl_days, notes, created_at, updated_at, auto_enrich, description) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "refresh_ttl_days, notes, created_at, updated_at, description) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, json.dumps(rows, ensure_ascii=False), top_n_serpapi, top_n_final,
-         refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0, description),
+         refresh_ttl_days, notes, now, now, description),
     )
     conn.commit()
     created = get_dish(conn, name)  # round-trip so we return the canonical shape
@@ -1158,7 +1152,7 @@ _PATCHABLE = {
     # `queries` = the legacy array of strings; `query_rows` = the canonical
     # {q, n, gl, hl}. Both accepted, both write the same column.
     "queries", "query_rows", "top_n_serpapi", "top_n_final",
-    "refresh_ttl_days", "notes", "auto_enrich",
+    "refresh_ttl_days", "notes",
     "description", "display_name", "source_language", "aliases",
     "story", "ethnicity", "origin_region", "cook_notes",
 }
@@ -1249,10 +1243,6 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("notes = NULL")
-
-    if "auto_enrich" in patch:
-        sets.append("auto_enrich = ?")
-        params.append(1 if bool(patch["auto_enrich"]) else 0)
 
     if "description" in patch:
         d = patch["description"]

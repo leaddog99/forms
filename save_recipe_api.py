@@ -4150,7 +4150,7 @@ async def create_dish_endpoint(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     try:
-        name, queries, top_serp, top_final, ttl, notes, auto_enrich, description = \
+        name, queries, top_serp, top_final, ttl, notes, description = \
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -4183,7 +4183,6 @@ async def create_dish_endpoint(request: Request):
                 name=name, queries=queries,
                 top_n_serpapi=top_serp, top_n_final=top_final,
                 refresh_ttl_days=ttl, notes=notes,
-                auto_enrich=auto_enrich,
                 description=description,
             )
             # create_dish now auto-describes + embeds inside the write itself,
@@ -8948,11 +8947,11 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         if _f.get("site_restriction"):
             _cs["fieldScope"] = ", ".join(_f["site_restriction"])
         payload["_scoring"] = _cs
-        # Auto-enrich is opt-in per dish (defaults off). The save core
-        # reads this flag to decide whether to fan out the 3 enrich
-        # blocks (~$0.05 + ~10s per row). Without it, the dish refresh
-        # is fast + cheap; user can enrich later from the form.
-        payload["_skip_auto_enrich"] = not bool(dish.get("auto_enrich"))
+        # A dish refresh never enriches at save time: the three enrich blocks
+        # (~$0.05 + ~10s per row) are a separate, batch-shaped step. The
+        # per-dish opt-in that used to sit here was removed 2026-10-16 (3 of
+        # 461 dishes had it on; everyone enriched later by hand).
+        payload["_skip_auto_enrich"] = True
         try:
             await asyncio.to_thread(_save_recipe_core, payload)
             saved_count += 1
@@ -12794,12 +12793,10 @@ def _save_recipe_core(payload: dict) -> dict:
     # proceeds with whatever data we have. Token usage is appended to
     # save_usage_log so it can be journaled after the INSERT below.
     save_usage_log: list = []
-    # _skip_auto_enrich is set true by the dish refresh job when the
-    # dish's auto_enrich flag is off (the default). Lets batch saves
-    # avoid the ~$0.05 + ~10s enrich cost per row; user can run
-    # enrich manually later via the form's Enrich button. Live form
-    # saves (no _skip flag set) preserve the original auto-enrich
-    # behavior for master writes.
+    # _skip_auto_enrich is set true by the batch writers (dish refresh,
+    # publisher harvest): batch saves never pay the ~$0.05 + ~10s enrich
+    # cost per row; enrichment runs later as its own step. Live form saves
+    # (no _skip flag set) keep the auto-enrich behavior for master writes.
     # `_skip_auto_enrich` is the LEGACY boolean the batch jobs still send; `_enrich`
     # is the per-save control ("auto" | "always" | "never"). Both are honoured, and
     # an explicit `_enrich` wins, so nothing that sends the old flag changes.
