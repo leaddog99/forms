@@ -191,6 +191,20 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dishes ADD COLUMN ethnicity TEXT")
         conn.execute("ALTER TABLE dishes ADD COLUMN origin_region TEXT")
         conn.execute("ALTER TABLE dishes ADD COLUMN cook_notes TEXT")  # JSON
+    # EDITORIAL SOURCES (2026-10-16, dish_story.py): each of the four fields
+    # carries where it came from — 'curator' (typed/accepted in the editor,
+    # stamped by update_dish when the VALUE changes) or 'enrich' (dish_story.fill
+    # wrote it: after a refresh, on a save that left it blank, or the sweep).
+    # fill() never replaces a curator value. The values that existed before the
+    # column did were all curator-saved drafts -> stamped curator once, here.
+    if "story_source" not in cols:
+        for _f in ("story", "ethnicity", "origin_region", "cook_notes"):
+            conn.execute(f"ALTER TABLE dishes ADD COLUMN {_f}_source TEXT")
+            _cur = conn.execute(
+                f"UPDATE dishes SET {_f}_source = 'curator' "
+                f"WHERE {_f} IS NOT NULL AND TRIM({_f}) <> ''")
+            print(f"[MIGRATE] dishes.{_f}_source: {_cur.rowcount} existing value(s) stamped curator")
+        conn.execute("ALTER TABLE dishes ADD COLUMN editorial_enriched_at TEXT")
     # OPERATIONS profile (2026-09-01, four-channel matcher design): the
     # ACTION+OBJECT+QUALIFIER list the class-matching call extracts from
     # representative recipes, persisted per the derived-values rule
@@ -749,7 +763,8 @@ def row_to_dict(row: tuple) -> dict:
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name,
      source_language, aliases_json, story, ethnicity, origin_region,
-     cook_notes_json, preview_image) = row
+     cook_notes_json, preview_image, story_source, ethnicity_source,
+     origin_region_source, cook_notes_source, editorial_enriched_at) = row
     try:
         queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -817,6 +832,13 @@ def row_to_dict(row: tuple) -> dict:
         "ethnicity": ethnicity or "",
         "origin_region": origin_region or "",
         "cook_notes": _decode_cook_notes(cook_notes_json),
+        # Where each editorial field came from: 'curator' | 'enrich' | None (blank).
+        # See dish_story.py — fill() never replaces a curator value.
+        "story_source": story_source,
+        "ethnicity_source": ethnicity_source,
+        "origin_region_source": origin_region_source,
+        "cook_notes_source": cook_notes_source,
+        "editorial_enriched_at": editorial_enriched_at,
         "preview_image": preview_image,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
@@ -837,7 +859,9 @@ _SELECT_ALL_COLS = (
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
     "competitiveness_pct, field_clout, display_name, source_language, aliases, "
-    "story, ethnicity, origin_region, cook_notes, preview_image"
+    "story, ethnicity, origin_region, cook_notes, preview_image, "
+    "story_source, ethnicity_source, origin_region_source, cook_notes_source, "
+    "editorial_enriched_at"
 )
 
 
@@ -1274,14 +1298,21 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
             else:
                 sets.append("display_name = NULL")
 
+    # Editorial fields: the editor posts all four on every Save, so the source
+    # stamp moves only when the VALUE moves — an untouched enrich-written story
+    # stays 'enrich'; a typed or edited one becomes 'curator'; a cleared one
+    # loses its stamp (and is blank again for dish_story.fill to refill).
     for _f in ("story", "ethnicity", "origin_region"):
         if _f in patch:
             v = patch[_f]
             if v is None or (isinstance(v, str) and not v.strip()):
                 sets.append(f"{_f} = NULL")
+                sets.append(f"{_f}_source = NULL")
             elif isinstance(v, str):
                 sets.append(f"{_f} = ?")
                 params.append(v.strip())
+                if v.strip() != (existing.get(_f) or "").strip():
+                    sets.append(f"{_f}_source = 'curator'")
             else:
                 raise ValueError(f"{_f} must be a string or null")
 
@@ -1306,8 +1337,11 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
             if clean:
                 sets.append("cook_notes = ?")
                 params.append(json.dumps(clean, ensure_ascii=False))
+                if clean != (existing.get("cook_notes") or {}):
+                    sets.append("cook_notes_source = 'curator'")
             else:
                 sets.append("cook_notes = NULL")
+                sets.append("cook_notes_source = NULL")
 
     if "aliases" in patch:
         # Other names this dish answers to. Feeds name_index -> the matcher's

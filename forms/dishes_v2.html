@@ -487,10 +487,11 @@
 
         <section class="ed-block">
           <details class="ed-accordion" id="storyAcc" ${d.story || (d.cook_notes && Object.keys(d.cook_notes).length) ? 'open' : ''}>
-            <summary>Story &amp; cook's notes <span class="ed-pill" style="margin-left:6px">${d.story ? 'written' : 'empty'}</span></summary>
+            <summary>Story &amp; cook's notes <span class="ed-pill" style="margin-left:6px">${d.story ? (d.story_source === 'enrich' ? 'enriched' : 'written') : 'empty'}</span></summary>
             <p class="ed-notes-help" style="margin:10px 0 12px">Dish-level editorial — recipes will inherit it unless they override.<button type="button" class="info-dot" data-info-title="Story &amp; cook's notes" data-info="<b>✨ Draft</b> writes a grounded first pass from the dish&#39;s OWN cohort — the measured signals and the top winners&#39; method text — so tips and landmines come from where the recipes actually agree and disagree, not model folklore. Nothing saves until YOU press Save. Landmines = the ways this dish goes wrong; techniques = what it turns on.">i</button></p>
             <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
-              <button type="button" class="ed-btn" id="storyDraftBtn" title="Draft story + notes from the cohort (~one Sonnet call); fills the fields for review — nothing saves until you Save">✨ Draft</button>
+              <button type="button" class="ed-btn" id="storyDraftBtn" title="${d.story ? 'Regenerate' : 'Draft'} story + notes from the cohort (~one Sonnet call); fills the fields for review — nothing saves until you Save. Blank fields also fill themselves after each refresh.">✨ ${d.story ? 'Regenerate' : 'Draft'}</button>
+              ${d.editorial_enriched_at ? `<span class="muted" style="font-size:.78rem">enriched ${fmtDate(d.editorial_enriched_at)}${['story','ethnicity','origin_region','cook_notes'].some(k => d[k + '_source'] === 'curator') ? ' · curator edits kept' : ''}</span>` : ''}
               <span class="ed-save-hint" id="storyHint"></span>
             </div>
             <div class="ed-field"><label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:3px">Story</label>

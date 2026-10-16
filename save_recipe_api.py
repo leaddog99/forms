@@ -7634,70 +7634,21 @@ def dish_class_proposal_update_endpoint(request: Request, name: str, payload: di
 @app.post("/dishes/{name}/story-draft")
 def dish_story_draft_endpoint(request: Request, name: str):
     """✨ Draft the dish's story + ethnicity/region + cook's notes (tips /
-    techniques / landmines) — the domains deep-enrich pattern: one in-process
-    Sonnet call GROUNDED in the dish's own cohort (signals + winner method
-    text), returned as DRAFTS for the form. Saves NOTHING — the curator
-    reviews and Saves (feedback: LLM fills the form, never the row)."""
+    techniques / landmines) — one Sonnet call GROUNDED in the dish's own cohort
+    (signals + winner method text), returned as DRAFTS for the form. Saves
+    NOTHING — the curator reviews and Saves (LLM fills the form, never the row).
+    The same call fills BLANK fields on its own after a refresh / on save /
+    in the dish_story_fill sweep — see input/pipeline/dish_story.py."""
     _require_perm(request, "manage_dishes")
-    from intake.products.dish_class_proposals import _winner_methods
-    import llm
-    with _db() as conn:
-        d = dishes_lib.get_dish(conn, name)
-        if d is None:
-            raise HTTPException(status_code=404, detail="Dish not found")
-        sig = {}
-        try:
-            row = conn.execute("SELECT cohort_signals FROM dishes WHERE name = ?",
-                               (name,)).fetchone()
-            sig = json.loads(row[0]) if row and row[0] else {}
-        except Exception:
-            pass
-        methods = _winner_methods(conn, name, k=3, cap=1500)
-    terms = ", ".join(f"{r['term']} ({r['pct']}%/{r['lift']}x)"
-                      for r in (sig.get("ingredients") or [])[:15])
-    eq = ", ".join(r["term"] for r in (sig.get("equipment") or [])[:10])
-    prov = sig.get("provenance") or {}
-    meth = "\n".join(f"--- {m['name']}\n{m['method']}" for m in methods) or "(none)"
-    prompt = f"""Write dish-level editorial for a cooking site. GROUND every claim in the
-material below — the measured signals and the actual method text; where recipes
-disagree, that disagreement IS a landmine. No invented brands, no purple prose.
-
-DISH: {d['name']} (chapter: {d.get('chapter') or '?'})
-DESCRIPTION: {(d.get('description') or '')[:300]}
-MEASURED SIGNALS ({sig.get('cohort_n') or 0} recipes): {terms or '(none)'}
-EQUIPMENT: {eq or '(none)'}
-PROVENANCE: ethnicities={prov.get('ethnicities') or {}} regions={prov.get('regions') or {}}
-METHOD TEXT OF TOP RECIPES:
-{meth}
-
-Return STRICT JSON (no markdown, no quotes inside string values):
-{{"story": "120-180 words — what this dish is, where it comes from, why it works; a
-   reader-facing narrative in a warm, knowledgeable voice",
-  "ethnicity": "one word/phrase, or empty if genuinely mixed/unclear",
-  "origin_region": "region/country, or empty",
-  "tips": ["3-5 short, concrete, grounded in the methods"],
-  "techniques": ["2-4 named techniques the dish turns on, each with one sentence of why"],
-  "landmines": ["2-4 ways this dish actually goes wrong — prefer points where the
-                 cohort's recipes disagree or the methods warn"]}}"""
-    llm.enter(recipe_id=f"dish:{name}", user_id=0)
-    msg = llm.create(operation="dish_story_draft", model="claude-sonnet-5", max_tokens=6000,
-                     messages=[{"role": "user", "content": prompt}])
-    raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-    m = re.search(r"\{.*\}", raw, re.S)
-    if not m:
-        raise HTTPException(status_code=502, detail="model reply unusable — run again")
+    from input.pipeline import dish_story
     try:
-        out = json.loads(m.group(0))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502,
-                            detail=f"model reply unusable ({e}) — run again") from e
-    return {"dish": name, "draft": {
-        "story": (out.get("story") or "").strip(),
-        "ethnicity": (out.get("ethnicity") or "").strip(),
-        "origin_region": (out.get("origin_region") or "").strip(),
-        "cook_notes": {k: [str(x).strip() for x in (out.get(k) or []) if str(x).strip()]
-                       for k in ("tips", "techniques", "landmines")},
-    }}
+        with _db() as conn:
+            out = dish_story.draft(conn, name)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Dish not found") from None
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"dish": name, "draft": out}
 
 
 @app.delete("/dishes/{name}/class-proposals")
@@ -9056,6 +9007,17 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"[REFRESH-DISH] preview_image refresh failed (non-fatal): {e}")
 
+    # The cohort was just rebuilt: fill the dish's BLANK editorial fields
+    # (story / ethnicity / region / cook's notes) from it — one grounded Sonnet
+    # call, ~2c; curator-written fields are never touched. Never fatal.
+    if saved_count > 0:
+        try:
+            from input.pipeline import dish_story
+            with _db() as conn:
+                dish_story.fill(conn, canonical_name)
+        except Exception as e:  # noqa: BLE001
+            print(f"[REFRESH-DISH] dish story fill failed (non-fatal): {type(e).__name__}: {e}")
+
     print(f"[REFRESH-DISH] {canonical_name!r} done: "
           f"saved={saved_count} rejects={len(rejects)} "
           f"bottom_ou={bottom_ou}")
@@ -9211,6 +9173,51 @@ async def _handle_dish_signals_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("dish_signals", _handle_dish_signals_job)
+
+
+async def _handle_dish_story_fill_job(job: dict) -> dict:
+    """Fill blank dish editorial (story / ethnicity / region / cook's notes) for
+    one dish (params.dish_name) or, with no dish given, every dish that has a
+    cohort. params.force=true also redoes 'enrich'-written fields; a curator's
+    are never replaced. One grounded Sonnet call per dish that has something
+    blank (~2c); dishes with nothing blank cost nothing.
+    See input/pipeline/dish_story.py."""
+    from input.pipeline import dish_story
+    params = job.get("params") or {}
+    dish = (params.get("dish_name") or "").strip()
+    force = str(params.get("force") or "").lower() in ("1", "true", "yes")
+
+    def _run():
+        out = {"filled": 0, "nothing_blank": 0, "no_cohort": 0, "failed": 0, "dishes": {}}
+        with _db() as conn:
+            names = ([dish] if dish else
+                     [r[0] for r in conn.execute(
+                         "SELECT DISTINCT dish_effective FROM master_recipes "
+                         "WHERE dish_effective IS NOT NULL "
+                         "INTERSECT SELECT name FROM dishes ORDER BY 1")])
+            for n, name in enumerate(names, 1):
+                try:
+                    r = dish_story.fill(conn, name, force=force,
+                                        log=lambda m, _n=n, _t=len(names): print(f"{_n}/{_t} {m}"))
+                except Exception as e:  # noqa: BLE001
+                    print(f"[DISH-STORY] {n}/{len(names)} {name}: FAILED {type(e).__name__}: {e}")
+                    out["failed"] += 1
+                    continue
+                if r["filled"]:
+                    out["filled"] += 1
+                    out["dishes"][name] = r["filled"]
+                elif r["skipped"] == "nothing blank":
+                    out["nothing_blank"] += 1
+                else:
+                    out["no_cohort"] += 1
+        return out
+    summary = await asyncio.to_thread(_run)
+    if len(summary["dishes"]) > 40:
+        summary["dishes"] = {"(first 40)": dict(list(summary["dishes"].items())[:40])}
+    return summary
+
+
+jobs_lib.register_handler("dish_story_fill", _handle_dish_story_fill_job)
 
 
 async def _handle_dish_gap_report_job(job: dict) -> dict:
