@@ -45,7 +45,9 @@ _TOOL = {
         "additionalProperties": False,
         "required": ["story", "ethnicity", "origin_region", "tips", "techniques", "landmines"],
         "properties": {
-            "story": {"type": "string", "description": "120-180 words, reader-facing narrative."},
+            "story": {"type": "string",
+                      "description": "Two or three short paragraphs separated by a blank line; "
+                                     "120-200 words in all. Reader-facing narrative."},
             "ethnicity": {"type": "string", "description": "One word/phrase; empty if genuinely mixed or unclear."},
             "origin_region": {"type": "string", "description": "Region/country; empty if unknown."},
             # Flat strings, not arrays: with array parameters the model wrapped
@@ -116,8 +118,9 @@ METHOD TEXT OF TOP RECIPES:
 {meth}
 
 Call submit_dish_editorial with:
-- story: 120-180 words of narrative — what this dish is, where it comes from, why
-  it works, said through the specifics in the material
+- story: two or three SHORT paragraphs separated by a blank line, 120-200 words in
+  all — what this dish is, where it comes from, why it works, said through the
+  specifics in the material. One idea per paragraph; never one block of text
 - ethnicity: one word/phrase, or empty if genuinely mixed/unclear
 - origin_region: region/country, or empty
 - tips: 3-5 lines, each short, concrete, grounded in the methods
