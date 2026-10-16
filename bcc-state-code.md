@@ -11589,3 +11589,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open:** ledger repair above · the video field's browser Save round-trip · own rclone Drive client
   ID · DHCP reservation for BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad
   splash reload · Dell cut-over playbook · carried items.
+* **Addendum 07:30 — ledger repair RUN (curator: "run the repair", then "delete the dups"):** all 869
+  distinct wrappers resolved (869/869; Google still answers the July and September tokens).
+  Rewritten in place: run_candidates 507, acquisition_attempts 267 (url_normalized + domain +
+  root_domain), dish_run_data_points 3, dish_rejects 1. The remaining 200 run_candidates wrapper rows
+  were exact duplicates — the same run already held a real-URL row for the same page (Google served
+  it wrapped on one page and plain on another; 150 same outcome, 50 wrapper "dropped" vs twin
+  "kept") — deleted; copies in scratchpad `goto_deleted.json`, before-image `goto_before.json`.
+  Zero wrapper URLs remain anywhere in recipes.db. Poulet à la Moutarde re-run as job #2674:
+  40 real URLs, 29 is-recipe, 28 Moz, saved 10/10 + 10 reserve, per-dish OU fit used (n=28).
+  Tzatziki rerun 15/15 from a full pool; the runner is on Vanilla Cake.
