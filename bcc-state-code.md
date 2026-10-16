@@ -11537,3 +11537,55 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open:** the Save round-trip check above · own rclone Drive client ID · DHCP reservation for
   BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad splash reload ·
   Dell cut-over playbook · carried items.
+
+## Session 2026-10-16 (early morning) — Google's /goto result-link wrapper hollowed the dish refreshes
+
+* **Symptom (curator, 06:51):** a fresh dish refresh (Poulet à la Moutarde #2672, gl=fr) showed every
+  candidate as `https://www.google.com/goto?url=CAES…` and died with "ZERO candidates — likely a
+  SERP-provider outage". Not an outage, not the network.
+* **Cause:** Google now wraps organic result links in a `google.com/goto?url=<opaque token>` redirect
+  (tested from July, confirmed by Google 2026-08-26 as an anti-abuse measure). Scale SERP passes the
+  wrapper through verbatim; its `domain`/`displayed_link` fields name the host but not the path. The
+  token does not decode. Google answers the wrapper with a **302 whose Location is the publisher URL**,
+  with no consent wall, for any UA.
+* **When it started here:** a trickle since **09-08** (1–2 wrapped links per run: 09-08 x72 rows over
+  that day's runs, 09-18, 10-02, 10-12), and Baked Stuffed Shrimp (07-13, SerpApi days) once SELECTED
+  a wrapper with google.com's DA 100 / PA 55. Then **every link from Tzatziki #2662 (10-16 07:13Z)**:
+  2662–2670 got 58–114 wrappers per run (70–90 % of candidates), #2672 got 40/40.
+* **Damage:** downstream a wrapper is worthless. The URL-word pre-filter saw no words and skipped
+  **448 of 556** that morning; the fetcher followed the redirect and KEPT the page, but Moz has no row
+  for a google.com URL (49 `moz-unavailable`); the ledger filed them under google.com. Pools were
+  hollowed: Vegetable Lasagna #2665 and Poulet #2672 found ZERO, Yogurt saved 1/15, Vanilla Cake and
+  Vasilopita 6/15; Tzatziki/Welsh Rarebit/Yakisoba filled from the ~25 % real links only. **No saved
+  recipe carries a wrapper URL** (scanned every URL-ish column of recipes.db). Pre-filter learning
+  table clean (no `goto`/token words). No google.com domain row, so no technique stamp landed there.
+* **Fix (commit 18d95ef, pushed):** `serp_search._collect_page` — the chokepoint both providers feed —
+  now resolves wrappers before dedup/blocked-host logic: `unwrap_google_redirect()` reads the 302
+  Location WITHOUT following (one small request per wrapped link, no page body; two UAs because
+  Google's edge 403s the odd request), the legacy `/url?q=` form is read in the clear, a page's
+  wrappers resolve in parallel (≤6 threads), and a wrapper Google will not resolve is DROPPED with a
+  count on the page line: `[scaleserp] page 3: 9 of 9 links came as google.com/goto wrappers - 9
+  resolved to the publisher URL`. Verified on the saved French page (7/7) and live in the rerun
+  (every page, 100 % resolved so far). BCC on MARLEY restarted 06:58 (worker 11760 gone, endpoint
+  200) so server-launched refreshes carry the fix; `python -m jobs run` reads the file directly.
+* **Rerun:** the ten affected dishes (Tzatziki, Vanilla Cake, Vasilopita, Vegetable Lasagna,
+  Vinaigrette, Welsh Rarebit, Yakisoba, Yakisoba Sauce, Yogurt, Poulet à la Moutarde) relaunched
+  detached 07:02 (pid 2404) from this session's scratchpad `rerun/` (same runner as the 82-dish pass,
+  skip cutoff 2026-10-16T11:00Z). Progress: `rerun/rerun_progress.txt`.
+* **Owed — ledger repair (NOT run):** 707 run_candidates, 267 acquisition_attempts, 3
+  dish_run_data_points and 1 dish_rejects rows still hold wrapper URLs (556 of them from today).
+  `scratchpad/repair_goto_rows.py` resolves each (old tokens still redirect — tested 09-08 and 10-02
+  rows) and rewrites url / url_normalized / domain in place, update-only (a resolved URL that already
+  has a real row in the same run is left as is), with a before-image to `goto_before.json`. The
+  permission classifier blocked both attempts to run it against recipes.db; curator to run it or say
+  so. The 82-dish shallow-pool rerun finished 05:32 (ALL DONE) — its last nine dishes are the ones
+  being redone.
+* **Substack / Moz-less publishers:** design discussion only (fallowchefs #2607: 18 is-recipe passes,
+  all Moz-less, killed by the all-uncrawled guard's off-by-one). Recommendation on the table: a
+  per-domain authority source `moz | traffic` (traffic mode = no Moz spend, rank by SEMrush page
+  traffic, members stay authority-absent — no fabricated neutral PA), fix the guard to count against
+  URLs actually sent, rescope deep enrich so platform subdomains don't inherit substack.com's DA 92.
+  Awaiting the go-ahead.
+* **Open:** ledger repair above · the video field's browser Save round-trip · own rclone Drive client
+  ID · DHCP reservation for BAILEY · audit_cooks over the remaining 57 · iPhone voice re-test · iPad
+  splash reload · Dell cut-over playbook · carried items.
