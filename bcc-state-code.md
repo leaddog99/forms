@@ -11599,3 +11599,47 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   Zero wrapper URLs remain anywhere in recipes.db. Poulet à la Moutarde re-run as job #2674:
   40 real URLs, 29 is-recipe, 28 Moz, saved 10/10 + 10 reserve, per-dish OU fit used (n=28).
   Tzatziki rerun 15/15 from a full pool; the runner is on Vanilla Cake.
+
+## Session 2026-10-16 (midday) — dish-editor switch inventory; auto-enrich switch removed; restart loop
+
+* **Inventory (curator: "switches in the dish edit that never get used"):** measured over 461 dishes
+  and 397 refresh runs since 09-01. USED: search lines (949; per-line count 25, locale 35, reserve
+  seats 25 lines / fired in 24 runs), default results per line (924 lines rely on it), kept winners,
+  aliases (30 dishes, exact-alias matcher), class-proposal tiers (396 tiered, 48 approved), editors'
+  choice (4). DEAD or redundant: **Refresh TTL** (nothing reads it — no scheduled dish sweep exists, the
+  "due dishes agent" in dishes.py was never built; it only colours the is-due pill; 28 hand-edited),
+  **Sources in** (2 dishes; the per-line locale does the same job), **Auto-enrich on save** (3 dishes,
+  set May–Aug; everyone enriches later by hand), reject-triage dropdown (877 "new", 2 "recovered").
+  Parked: story / ethnicity / region / cook notes (~10 dishes each; ethnicity feeds signals + class
+  proposals; story and cook notes have no reader). System → Limits dish caps never clamped in any log.
+* **Prompt caching question:** the three enrich blocks send plain-string system/tools, journal shows 0
+  cache reads/writes over 2,833 calls (cook_augment and equipment_match DO cache). It would not
+  engage anyway: Haiku 4.5 needs a ≥4,096-token fixed prefix, the blocks' system+tool prefix is
+  ~720/950/1,290 tokens; equipment enrich (17,187 Sonnet calls since July, ~26M input) has a ~300-token
+  prefix. The lever for this batch-shaped work is the Message Batches API (50 % on every token).
+* **Auto-enrich removed (f0faf87 + a38cc54, pushed):** form field + PATCH/POST payloads, dish library
+  (validate/create/patch/select), the refresh handler always sets `_skip_auto_enrich=True` (dish refresh
+  never enriches at save; enrichment is its own step). `_auto_enrich_applies` / `_enrich` mode in the
+  save core (user-tier path) untouched. Column `dishes.auto_enrich` dropped by a one-off with
+  sqlite-vec loaded (3 rows lost the flag: Asparagus Au Gratin, Jambalaya, Beef and Broccoli).
+* **Incident — restart loop 12:0x–12:15:** the first cut dropped the column inside
+  `ensure_dishes_table` at startup. ALTER TABLE re-validates `trg_dish_vec_cleanup` (references
+  `dishes_vec`, a vec0 virtual table) and on the plain schema-ensure connection that is "no such module:
+  vec0" → "Database initialization error" → worker exit → nssm restart, repeat (python PIDs rolling,
+  nothing LISTENING on 8009, ~10 min). Also: the self-elevating bcc_restart.bat's UAC prompt
+  (consent.exe) was dismissed/timed out once and Start-Process failed — the curator ran the restart.
+  **Rule:** any ALTER TABLE on a table with a vec cleanup trigger (dishes, master_recipes) needs
+  `vector_store.enable_vec(conn)` first (memory project_vec_delete_triggers covers deletes; it covers
+  ALTER too). Fixed by moving the drop to a one-off; service back 12:15:31, endpoint + editor 200.
+* **Ethnicity at save time (curator question):** YES, and the data favours it. Recipe-level
+  provenance.ethnicity exists on 510 of 13,045 master rows (301 via enrich) and scatters within a dish
+  (Asparagus Au Gratin 16 enriched rows, 3 ethnicities). Dish-level ethnicity is set on 9 dishes; of
+  their 120 member recipes exactly 1 carries any ethnicity — nothing copies it down. The save path
+  already stamps `_master.dish` (`_stamp_dish_match`), so copying dishes.ethnicity + origin_region into
+  provenance when the recipe has none is a no-model-call stamp; store with a source marker
+  (`provenance.ethnicitySource = "dish"`) so enrich-written values are never overwritten and a changed
+  dish ethnicity re-stamps exactly its inherited rows; one backfill fills the 119. Coverage is the
+  limit (9 dishes): story-draft already returns ethnicity/region; majority-of-enriched-recipes is a fair
+  proposed default. Awaiting go-ahead.
+* **Open:** TTL + Sources-in removal (curator to pick) · ethnicity stamp + backfill · the Substack
+  authority-source switch (domain form) · Yogurt saves 1/15 with skip-thin×15 (own problem) · carried.
