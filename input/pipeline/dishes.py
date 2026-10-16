@@ -70,9 +70,10 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dishes ADD COLUMN last_run_log_filename TEXT")
     # The per-dish auto_enrich flag (2026-05-27 .. 2026-10-16) is gone: a dish
     # refresh never enriches at save time (enrichment is its own batch-shaped
-    # step), and the column was dropped with it.
-    if "auto_enrich" in cols:
-        conn.execute("ALTER TABLE dishes DROP COLUMN auto_enrich")
+    # step). The column is dropped by a one-off with sqlite-vec loaded, NOT
+    # here: ALTER TABLE re-validates trg_dish_vec_cleanup, and on a plain
+    # connection that is "no such module: vec0" - which took the service down
+    # in a restart loop on 2026-10-16. Nothing reads the column any more.
     # Migration (2026-05-27): per-run persistence for OU-fit and the
     # bar-to-beat. Rejects live in their own table (see
     # ensure_dish_rejects_table) — proper rows, indexable by URL,
