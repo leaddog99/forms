@@ -210,15 +210,94 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
     return _serpapi(query, pages, want, gl, hl, timeout, skip, should_cancel=should_cancel)
 
 
+# Google's result-link wrapper (rolled out 2026-08-26, confirmed by Google as an
+# anti-abuse measure): organic `link`s arrive as google.com/goto?url=<opaque token>
+# instead of the publisher URL, and our SERP provider passes them through verbatim.
+# Intermittent since 09-08, then EVERY link of every dish refresh from Tzatziki
+# #2662 (2026-10-16 07:13Z) on - the French 'Poulet à la Moutarde' #2672 got 40/40.
+# Downstream a wrapper is worthless: the URL-word pre-filter sees no words and
+# skips it (448 of 556 that morning), the fetcher follows the redirect and KEEPs
+# the page but Moz has no row for a google.com URL (the rest), and the ledger files
+# the candidate under google.com. The token does not decode; Google answers the
+# wrapper with a 302 whose Location IS the publisher URL, so one HEAD-sized request
+# (no page body) recovers it. The legacy google.com/url?q=<url> form carries the
+# URL in the clear.
+_GOOGLE_WRAPPER = re.compile(r"^https?://(?:www\.)?google\.[a-z.]{2,8}/(goto|url)\?", re.I)
+_RESOLVE_UAS = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.4 Safari/605.1.15",
+)
+
+
+def is_google_wrapper(link: str) -> bool:
+    return bool(link) and bool(_GOOGLE_WRAPPER.match(link))
+
+
+def unwrap_google_redirect(link: str, timeout: float = 10.0) -> str | None:
+    """The publisher URL behind a google.com/goto (or /url) wrapper, or None when
+    Google would not say (non-3xx, or a Location that is not an http(s) URL off
+    google.com). Reads the redirect's Location WITHOUT following it. Two user
+    agents, because Google's edge answers the odd request with a 403 for a given
+    UA and 302 for the next (seen in the fetch ladder's escalations on these links)."""
+    from urllib.parse import parse_qs, unquote, urlsplit
+    if not is_google_wrapper(link):
+        return link
+    sp = urlsplit(link)
+    if sp.path.rstrip("/").endswith("/url"):
+        q = parse_qs(sp.query)
+        for k in ("q", "url"):
+            v = (q.get(k) or [""])[0]
+            if v.startswith(("http://", "https://")):
+                return unquote(v)
+    for ua in _RESOLVE_UAS:
+        try:
+            r = requests.get(link, allow_redirects=False, timeout=timeout,
+                             headers={"User-Agent": ua, "Accept-Language": "en"})
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            continue
+        loc = (r.headers.get("Location") or "").strip()
+        if (300 <= r.status_code < 400 and loc.startswith(("http://", "https://"))
+                and not is_google_wrapper(loc)
+                and "google." not in urlsplit(loc).netloc.lower()):
+            return loc
+        if r.status_code in (301, 302, 303, 307, 308):
+            break                    # a redirect to somewhere useless - another UA won't change it
+    return None
+
+
+def _unwrap_page(org: list[dict]) -> tuple[list[str | None], int, int]:
+    """Resolve a page's wrapped links in parallel (one small request each). Returns
+    the per-item link list (None = wrapper Google would not resolve) plus the
+    (wrapped, unresolved) counts for the page line."""
+    from concurrent.futures import ThreadPoolExecutor
+    links = [(it.get("link") or it.get("url") or "") for it in org]
+    idx = [i for i, l in enumerate(links) if is_google_wrapper(l)]
+    if not idx:
+        return links, 0, 0
+    with ThreadPoolExecutor(max_workers=min(6, len(idx))) as ex:
+        resolved = list(ex.map(unwrap_google_redirect, [links[i] for i in idx]))
+    out: list[str | None] = list(links)
+    for i, r in zip(idx, resolved):
+        out[i] = r
+    return out, len(idx), sum(1 for r in resolved if r is None)
+
+
 def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[str],
                   *, label: str, page: int) -> int:
     """Append one page's organic results to `out` (deduped, ranked in arrival order),
     flagging `skip`-host results `blocked`. Returns the number of USABLE results in
-    `out` so far. Prints the page's usable/blocked split when anything was blocked."""
+    `out` so far. Prints the page's usable/blocked split when anything was blocked,
+    and the wrapper split when Google wrapped any link (see _GOOGLE_WRAPPER)."""
     from input.pipeline.url_utils import root_domain
     n_blocked, hosts = 0, {}
-    for it in org:
-        link = it.get("link") or it.get("url") or ""
+    links, n_wrapped, n_unresolved = _unwrap_page(org)
+    if n_wrapped:
+        print(f"  [{label}] page {page}: {n_wrapped} of {len(org)} links came as google.com/goto "
+              f"wrappers - {n_wrapped - n_unresolved} resolved to the publisher URL"
+              + (f", {n_unresolved} Google would not resolve (dropped)" if n_unresolved else ""))
+    for it, link in zip(org, links):
         if not link or link in seen:
             continue
         seen.add(link)
