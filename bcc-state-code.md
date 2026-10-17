@@ -11705,8 +11705,20 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   **Needs the pending restart** (the rebuild happens then; old code's 4-weight bm25 still runs on the
   6-column index, verified).
 
-* **Restart pending (curator):** BCC on MARLEY still runs pre-1897517 code; my restart attempt lost
-  the UAC prompt. The ladder and the search tier both need it. Verify PID ≠ 1920, 8009 answering.
+* **New desktop + Postgres — sequence DECIDED (curator approved):** move first, convert later.
+  The new box becomes an exact SQLite clone of MARLEY (same user `john`, same paths — eleven
+  scripts hard-code them), soaks on its own tunnel hostname with the MARLEY→standby sync, takes
+  over (write-freeze → final consistent copy → row-count compare → tunnel token moved → four
+  tasks + autologon → backup run by hand = RESTORE OK), MARLEY frozen a week as rollback, THEN
+  PostgreSQL 18 + the ETL on the new box — never on MARLEY (sick hardware, PG 17 → 18 only).
+  Playbook with the full moving-parts inventory read off MARLEY today:
+  `docs/new-host-cutover-playbook.md`. Inventory doc step 4 "cutover on MARLEY" marked
+  superseded. Verified on the way: **f2n on BAILEY IS on Postgres 18** (F2N service, psycopg
+  URL to 127.0.0.1:5432/f2n, connection established); recipes on BAILEY is the SQLite mirror;
+  EDB PEM httpd listens on BAILEY :8080 on all interfaces (came with Postgres; not ours).
+
+* **Restart done (curator, ~14:10):** new worker PID 36420, FTS index rebuilt with six columns, 13,217
+  rows; ten live searches verified (tiers monotone across 415 rows, author/site prefixes, operators).
 * **Open:** dish-story prose verdict → commit → sweep on go · Buttercream cohort pass · live
   bookmarklet test on the Fallow video after reinstall · TTL + Sources-in · Substack authority switch ·
   ethnicity stamp + backfill · carried.

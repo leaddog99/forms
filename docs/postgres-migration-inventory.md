@@ -108,8 +108,13 @@ standby box. The rehearsal IS the safety:
    step-0 factory; drive the real surfaces (save, dish batch, cook, search).
 3. Diff the two-engine search results and the list-endpoint orderings
    (bcc_sortkey, ts_rank) against SQLite ground truth.
-4. Cutover on MARLEY when the diffs are boring. Keep recipes.db frozen as the
-   rollback for a week.
+4. ~~Cutover on MARLEY~~ **SUPERSEDED 2026-10-17 (curator-approved sequence):** the
+   recipes app moves to the new desktop as an exact SQLite clone FIRST
+   (`docs/new-host-cutover-playbook.md`), runs there a week, then PostgreSQL 18 is
+   installed on that box and the ETL runs there - never on MARLEY (sick hardware,
+   and its PG is 17; a 17 dump restores into 18, not back). MARLEY's frozen
+   recipes.db and BAILEY are the comparison engines for step 3. Keep recipes.db
+   frozen as the rollback for a week.
 
 ## Decisions the curator owns
 
