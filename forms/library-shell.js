@@ -982,6 +982,9 @@
     // demand-side keywords + the corpus-side weakest-link holes (dish_gap_report).
     { page: 'dish-coverage', label: 'Coverage & Holes', href: '/forms/dish_coverage.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', perm: 'edit_master', group: 'admin', section: 'Corpus' },
+    // The video-platform counterpart of Domains: a creator's channel record
+    // (docs/video-recipes-lane.md §5). Keyed by the platform's own id.
+    { page: 'channels',  label: 'Channels',  href: '/forms/channels.html', perm: 'edit_master', group: 'admin', section: 'Corpus' },
     { page: 'acquisition', label: 'Acquisition', href: '/forms/acquisition.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
     { page: 'training',  label: 'Labeling', href: '/forms/training.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
     { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },

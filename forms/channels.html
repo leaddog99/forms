@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Channels</title>
+  <!-- Channel editor on the shared master/detail editor shell. A CHANNEL is the
+       video-platform counterpart of a domain: the creator behind a YouTube recipe,
+       keyed by YouTube's own stable UC… id (handles rename; the id does not). Rows
+       appear on the first SAVE of a video recipe from the channel (the save chokepoint
+       touches the row) or by hand here from a pasted URL / @handle. The curator's
+       judgement lives here (never admit / always seat); the measured standing is
+       stamped by the video lane's rank step and shown absent until then.
+       Cloned from product_collections.html per memory/feedback_editor_template_not_runtime;
+       the recipe pickers are the domain editor's. docs/video-recipes-lane.md §5. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260813b">
+  <style>
+    .ch-form .ed-field { margin-bottom: 10px; }
+    .ch-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .ch-form input, .ch-form textarea, .ch-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .ch-form textarea { min-height: 70px; resize: vertical; }
+    .ch-form input[type=checkbox] { width: auto; margin-right: 6px; vertical-align: middle; }
+    .ch-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ch-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .ch-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .ch-check { display: flex; align-items: center; gap: 4px; font-size: .9rem; padding: 8px 0; }
+    .ch-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: .9rem; align-items: baseline; }
+    .ch-facts dt { color: var(--ed-ink-soft); font-size: .78rem; font-weight: 600; }
+    .ch-facts dd { margin: 0; }
+    .ch-absent { color: var(--ed-ink-soft); font-style: italic; }
+    .ch-prose { line-height: 1.55; white-space: pre-wrap; }
+    .ed-pill.never { background: #f6e3d6; color: #96552a; border-color: #c98d5f; }
+    .ed-pill.pinned { background: #fbf1d4; color: #96700c; border-color: #d9b44a; }
+    .muted { color: var(--ed-ink-soft); }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Channels <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="Add a channel" aria-label="Add a channel">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search name or @handle…">
+        <select id="sort" aria-label="Sort channels">
+          <option value="name">Sort: name (A–Z)</option>
+          <option value="recipes">Sort: most recipes</option>
+          <option value="recent">Sort: recently seen</option>
+          <option value="judged">Sort: judged first</option>
+        </select>
+      </div>
+      <div class="ed-legend">
+        <span><i class="d ok"></i>pinned</span>
+        <span><i class="d none"></i>open</span>
+        <span><i class="d warn"></i>never admit</span>
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260831b"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'channels' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Channels', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash, urlField, urlControl } = LibraryShell;
+
+    let rows = [], byId = {};
+    let selected = null, term = '', sortBy = 'name';
+    let mode = 'view';            // 'view' | 'add' | 'edit'
+
+    const label = (c) => c.display_name || (c.handle ? '@' + c.handle : c.channel_id);
+    const total = (c) => (c.master_recipe_count || 0) + (c.user_recipe_count || 0);
+    const flag = (c) => Number(c.harvestable) === 0 ? 'warn' : (Number(c.pinned) === 1 ? 'ok' : 'none');
+    // "Not yet measured" is a state of its own, never shown as 0 (memory/feedback_absent_not_zero).
+    const measured = (v, fmt) => (v === null || v === undefined || v === '')
+      ? '<span class="ch-absent">not yet measured</span>' : escapeHtml(fmt ? fmt(v) : String(v));
+
+    async function load(keep){
+      try {
+        const r = await fetch('/channels');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        rows = await r.json();
+        byId = Object.fromEntries(rows.map(c => [c.channel_id, c]));
+        $('#count').textContent = rows.length ? `(${rows.length})` : '';
+        if (keep && byId[keep]) selected = keep;
+        // Editor standard: the first row is selected on load, never a splash.
+        if (!selected || !byId[selected]) { const first = sortedRows()[0]; if (first) selected = first.channel_id; }
+        renderList(); await renderDetail();
+      } catch(e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; }
+    }
+
+    /* ---------------- list ---------------- */
+    function sortedRows(){
+      const t = term.trim().toLowerCase();
+      const list = rows.filter(c => !t || (label(c) + ' ' + (c.handle||'') + ' ' + (c.display_name||'') + ' ' + c.channel_id).toLowerCase().includes(t));
+      const by = {
+        name:    (a,b) => label(a).localeCompare(label(b)),
+        recipes: (a,b) => total(b) - total(a) || label(a).localeCompare(label(b)),
+        recent:  (a,b) => (b.last_seen_at||'').localeCompare(a.last_seen_at||''),
+        judged:  (a,b) => (Number(b.pinned) + (1 - Number(b.harvestable))) - (Number(a.pinned) + (1 - Number(a.harvestable))) || label(a).localeCompare(label(b)),
+      }[sortBy] || ((a,b) => label(a).localeCompare(label(b)));
+      return [...list].sort(by);
+    }
+
+    function renderList(){
+      const list = sortedRows();
+      $('#list').innerHTML = list.length ? list.map(c => `
+        <li class="ed-item ${c.channel_id===selected?'selected':''}" data-id="${escapeHtml(c.channel_id)}">
+          <div class="ed-item-top"><i class="d ${flag(c)}"></i><span class="ed-item-name">${escapeHtml(label(c))}</span></div>
+          <div class="ed-item-meta">${c.handle ? '@' + escapeHtml(c.handle) + ' · ' : ''}${c.master_recipe_count||0} master · ${c.user_recipe_count||0} user${
+            Number(c.harvestable)===0 ? ' · never admit' : ''}${Number(c.pinned)===1 ? ' · pinned' : ''}</div>
+        </li>`).join('') : '<li class="ed-empty">No channels yet — one appears when a video recipe is saved, or ＋ to add.</li>';
+      $('#list').querySelectorAll('li[data-id]').forEach(li =>
+        li.addEventListener('click', async () => {
+          selected = li.dataset.id; mode = 'view';
+          renderList(); await renderDetail(); nav.afterSelect();
+        }));
+    }
+
+    /* ---------------- detail ---------------- */
+    async function renderDetail(){
+      if (mode === 'add') return renderForm(null);
+      if (mode === 'edit' && selected) return renderForm(byId[selected]);
+      if (!selected || !byId[selected]) return renderIntro();
+      const c = byId[selected];
+      const url = c.url || '';
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="back">← Channels</button></div>
+        <h1 class="ed-title">${escapeHtml(label(c))}</h1>
+        <div class="ed-status-strip">
+          <span class="ed-pill"><i class="d"></i>${escapeHtml(c.platform || 'youtube')}</span>
+          ${c.handle ? `<span class="ed-pill"><i class="d"></i>@${escapeHtml(c.handle)}</span>` : ''}
+          <span class="ed-pill"><i class="d"></i>${c.master_recipe_count||0} master · ${c.user_recipe_count||0} user</span>
+          ${Number(c.harvestable)===0 ? '<span class="ed-pill never"><i class="d"></i>never admit</span>' : ''}
+          ${Number(c.pinned)===1 ? '<span class="ed-pill pinned"><i class="d"></i>always seat</span>' : ''}
+          ${c.last_seen_at ? `<span class="ed-pill"><i class="d"></i>seen ${escapeHtml(fmtDate(c.last_seen_at))}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="ed-btn primary" id="editBtn">Edit</button>
+          ${url ? urlControl(url, { display: false }) : ''}
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
+        </div>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Identity<button type="button" class="info-dot" data-info-title="Channel identity"
+            data-info="Keyed by the platform's own stable id (YouTube's <code>UC…</code>), which survives a rename; the @handle and the name are what the watch page said when the channel was last seen. A channel is the video counterpart of a domain: the domains table is keyed by host, and every YouTube recipe shares one host, so a creator needs a record of their own.">i</button></h3>
+          <dl class="ch-facts">
+            <dt>Channel</dt><dd>${url ? urlControl(url) : '<span class="ch-absent">no URL</span>'}</dd>
+            <dt>Id</dt><dd><code>${escapeHtml(c.channel_id)}</code></dd>
+            <dt>Country · language</dt><dd>${escapeHtml(c.country || '—')} · ${escapeHtml(c.language || '—')}</dd>
+            <dt>Known for</dt><dd>${c.known_for ? escapeHtml(c.known_for) : '<span class="ch-absent">—</span>'}</dd>
+            <dt>First seen</dt><dd>${c.first_seen_at ? escapeHtml(fmtDate(c.first_seen_at)) : '<span class="ch-absent">created by hand</span>'}</dd>
+          </dl>
+          ${c.story ? `<p class="ch-prose" style="margin-top:10px">${escapeHtml(c.story)}</p>` : ''}
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Standing<button type="button" class="info-dot" data-info-title="How a channel is ranked"
+            data-info="Video recipes rank in their own lane: by the video's place in the dish's search results first, then its measured page traffic, then the channel's standing — how many dishes it has ranked for and at what mean position. Never by views, likes or subscribers. These numbers are stamped by the lane's rank step when a dish refresh admits the channel's videos; until then they are absent, not zero.">i</button></h3>
+          <dl class="ch-facts">
+            <dt>Dishes ranked</dt><dd>${measured(c.dishes_ranked)}</dd>
+            <dt>Mean position</dt><dd>${measured(c.mean_position, v => Number(v).toFixed(1))}</dd>
+            <dt>Standing</dt><dd>${measured(c.standing, v => Number(v).toFixed(2))}${c.standing_method ? ` <span class="muted">(${escapeHtml(c.standing_method)}${c.standing_at ? ', ' + escapeHtml(fmtDate(c.standing_at)) : ''})</span>` : ''}</dd>
+          </dl>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Already in the corpus from this channel</h3>
+          <div class="ch-row2">
+            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
+              <select id="masterPicker"><option value="">Loading…</option></select></div>
+            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
+              <select id="userPicker"><option value="">Loading…</option></select></div>
+          </div>
+          <p class="muted" style="font-size:.8rem;margin:4px 0 0">Pick one to open it. Each says where the recipe was found: the description, a comment or the transcript.</p>
+        </section>
+
+        ${c.notes ? `<section class="ed-block"><h3 class="ed-block-label">Notes</h3><p class="ch-prose">${escapeHtml(c.notes)}</p></section>` : ''}`;
+
+      $('#back').addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+      $('#editBtn').addEventListener('click', () => { mode = 'edit'; renderDetail(); });
+      wireDelete();
+      loadChannelRecipes(c.channel_id);
+    }
+
+    // The domain editor's browse pickers (forms/domains.html loadDomainRecipes),
+    // reading /channels/{id}/recipes; counts refresh on open.
+    const RUNG_WORDS = { description: 'from the description', comment: 'from a comment', transcript: 'from the transcript', link: 'linked page' };
+    async function loadChannelRecipes(id){
+      const mp = $('#masterPicker'), up = $('#userPicker');
+      if (!mp || !up) return;
+      const fill = (sel, bucket, noun) => {
+        const items = bucket.items || [];
+        sel.innerHTML = [`<option value="">${items.length ? `${items.length} ${noun}…` : `No ${noun}`}</option>`]
+          .concat(items.map(it => `<option value="${escapeHtml(it.recipe_id)}">${escapeHtml(it.name)}${it.rung ? ' — ' + (RUNG_WORDS[it.rung] || escapeHtml(it.rung)) : ''}</option>`)).join('');
+        sel.disabled = !items.length;
+      };
+      try {
+        const r = await fetch(`/channels/${encodeURIComponent(id)}/recipes`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        fill(mp, data.master || {}, 'master recipes');
+        fill(up, data.user || {}, 'user recipes');
+        $('#masterCount').textContent = `(${(data.master || {}).count || 0})`;
+        $('#userCount').textContent = `(${(data.user || {}).count || 0})`;
+        if (byId[id]) {
+          byId[id].master_recipe_count = (data.master || {}).count || 0;
+          byId[id].user_recipe_count = (data.user || {}).count || 0;
+        }
+        const jump = (sel) => sel.addEventListener('change', () => {
+          if (sel.value) { window.open(`/r/${encodeURIComponent(sel.value)}`, '_blank', 'noopener'); sel.value = ''; }
+        });
+        jump(mp); jump(up);
+      } catch (e) {
+        mp.innerHTML = up.innerHTML = `<option value="">Couldn’t load (${escapeHtml(String(e.message || e))})</option>`;
+      }
+    }
+
+    function renderIntro(){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Video lane · ${rows.length} channels</span></div>
+        <h1 class="ed-title">Channels</h1>
+        <p class="muted">The creator behind a video recipe. A channel row appears the first time a
+          YouTube recipe is saved, and this is where you say whether its videos may enter a dish's
+          video lane and whether one should always hold a seat. Pick one (☰) or ＋ to add one ahead of
+          any save.<button type="button" class="info-dot" data-info-title="Why a channel is not a domain"
+          data-info="Publishers are kept in the domains table, keyed by host, and a host is a good key: cooking.nytimes.com is one publisher. Every YouTube recipe shares the host youtube.com, so the publisher record for a video has to be the channel — keyed by the platform's own stable id, with its handle and name beside it. Video recipes stay on the same recipe tables as everything else (docs/video-recipes-lane.md); the channel is the one new record."></button></p>`;
+    }
+
+    /* ---------------- add / edit ---------------- */
+    function renderForm(c){
+      const isEdit = !!c;
+      const v = c || {};
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancel">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit channel' : 'Add a channel'}</h1>
+        <div class="ch-form" id="chForm">
+          ${isEdit ? `<div class="ed-field"><label>Id (locked — the join key)</label><input value="${escapeHtml(v.channel_id)}" disabled></div>`
+                   : `<div class="ed-field"><label>Channel URL, @handle or UC… id *<button type="button" class="info-dot" data-info-title="Adding a channel"
+                        data-info="Paste whatever you have: the channel page URL, the @handle, a watch URL from the channel, or the UC… id. The channel's public page is read once to find the id, handle and name; nothing else is fetched and no API key is used."></button></label>
+                      <input id="f_ref" placeholder="https://www.youtube.com/@FallowChefs" autocomplete="off"></div>`}
+          <div class="ch-row2">
+            <div class="ed-field"><label>Display name</label>
+              <input id="f_display_name" value="${escapeHtml(v.display_name||'')}" placeholder="${isEdit ? '' : 'read from the page when blank'}"></div>
+            <div class="ed-field"><label>Handle</label>
+              <input id="f_handle" value="${escapeHtml(v.handle||'')}" placeholder="${isEdit ? 'FallowChefs' : 'read from the page when blank'}"></div>
+          </div>
+          ${urlField('f_url', 'Channel URL', v.url || '', { ph: 'https://www.youtube.com/@…' })}
+          <div class="ch-row3">
+            <div class="ed-field"><label>Country</label><input id="f_country" value="${escapeHtml(v.country||'')}" placeholder="GB"></div>
+            <div class="ed-field"><label>Language</label><input id="f_language" value="${escapeHtml(v.language||'')}" placeholder="en"></div>
+            <div class="ed-field"><label>Known for</label><input id="f_known_for" value="${escapeHtml(v.known_for||'')}" placeholder="restaurant cooking at home"></div>
+          </div>
+          <div class="ed-field"><label>Story</label><textarea id="f_story">${escapeHtml(v.story||'')}</textarea></div>
+          <div class="ed-field"><label>Notes</label><textarea id="f_notes">${escapeHtml(v.notes||'')}</textarea></div>
+          <div class="ch-row2">
+            <label class="ch-check"><input type="checkbox" id="f_harvestable" ${Number(v.harvestable ?? 1)===1 ? 'checked' : ''}>
+              May enter a dish's video lane<button type="button" class="info-dot" data-info-title="Never admit"
+              data-info="Unchecked = the harvest never admits this channel's videos to a dish's video lane, whatever their rank. A recipe you save from it by hand is still kept. The video counterpart of a domain's allow flag."></button></label>
+            <label class="ch-check"><input type="checkbox" id="f_pinned" ${Number(v.pinned)===1 ? 'checked' : ''}>
+              Always seat when it is a candidate<button type="button" class="info-dot" data-info-title="Always seat"
+              data-info="Checked = when one of this channel's videos is admitted to a dish's video lane, it takes a seat ahead of the rank order (a curator pin beats the lane's rank key). It does not add videos the search did not find."></button></label>
+          </div>
+          <div class="ch-form-actions">
+            <button type="button" class="ed-btn primary" id="save" disabled>${isEdit ? 'Save' : 'Create'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancel').addEventListener('click', () => { mode = 'view'; renderDetail(); });
+      $('#save').addEventListener('click', () => saveForm(isEdit ? c : null));
+      // Editor standard: Save stays disabled until something changes (create: until a reference is typed).
+      const arm = () => { $('#save').disabled = isEdit ? false : !($('#f_ref').value || '').trim(); };
+      $('#chForm').addEventListener('input', arm);
+      $('#chForm').addEventListener('change', arm);
+      (isEdit ? $('#f_display_name') : $('#f_ref')).focus();
+    }
+
+    function collectFields(){
+      return {
+        display_name: ($('#f_display_name').value||'').trim(),
+        handle: ($('#f_handle').value||'').trim().replace(/^@/, ''),
+        url: ($('#f_url').value||'').trim(),
+        country: ($('#f_country').value||'').trim(),
+        language: ($('#f_language').value||'').trim(),
+        known_for: ($('#f_known_for').value||'').trim(),
+        story: ($('#f_story').value||'').trim(),
+        notes: ($('#f_notes').value||'').trim(),
+        harvestable: $('#f_harvestable').checked ? 1 : 0,
+        pinned: $('#f_pinned').checked ? 1 : 0,
+      };
+    }
+
+    async function saveForm(existing){
+      const st = $('#formStatus'), btn = $('#save');
+      const body = collectFields();
+      btn.disabled = true; st.textContent = existing ? 'Saving…' : 'Reading the channel page…';
+      try {
+        let r;
+        if (existing) {
+          r = await fetch(`/channels/${encodeURIComponent(existing.channel_id)}`, {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        } else {
+          body.ref = ($('#f_ref').value||'').trim();
+          r = await fetch('/channels', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        }
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'HTTP ' + r.status);
+        mode = 'view'; await load(d.channel_id || (existing && existing.channel_id));
+        flash && flash('Saved');
+      } catch(e){ st.textContent = 'Failed: ' + (e.message||e); btn.disabled = false; }
+    }
+
+    function wireDelete(){
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed = '1'; del.textContent = 'Confirm delete?';
+          setTimeout(() => { if (del.isConnected){ del.dataset.armed = ''; del.textContent = 'Delete'; } }, 3000);
+          return;
+        }
+        del.disabled = true; del.textContent = 'Deleting…';
+        try {
+          const r = await fetch(`/channels/${encodeURIComponent(selected)}`, { method: 'DELETE' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          selected = null; await load(); flash && flash('Deleted — the row returns on the next save from this channel');
+        } catch(e){ del.disabled = false; del.textContent = 'Delete'; flash && flash('Delete failed: ' + (e.message||e)); }
+      });
+    }
+
+    /* ---------------- controls ---------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
+    });
+    $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+    $('#sort').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { mode = 'add'; renderList(); renderDetail(); nav.afterSelect(); });
+
+    // Deep link: #<channel id> opens that channel directly.
+    load(decodeURIComponent((location.hash || '').slice(1)) || undefined);
+  </script>
+</body>
+</html>

@@ -1348,6 +1348,9 @@ def init_db():
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
             dishes_lib.ensure_dishes_table(conn)
+            # Video lane: the channel master beside the domain master.
+            from input.pipeline import channels_lib as _channels_lib
+            _channels_lib.ensure_channels_table(conn)
             # Materialized dish card thumbnails: catch-all sweep at startup so a
             # restored/synced DB (BAILEY) or rows changed outside the job hooks
             # converge. Quiet when nothing changed; prints each row it touches.
@@ -6511,6 +6514,114 @@ def delete_cook_kb_endpoint(kb_id: str):
 # friendly-site-name resolver and the a/c/d Domains editor. The `domains`
 # table is the source of truth; domain_display_names.json is its seed.
 # =========================================================================
+# --- channels: the video-platform counterpart of domains -----------------
+# Video lane step 2 (docs/video-recipes-lane.md §5). Rows appear on the first
+# SAVE of a video recipe from a channel (the save chokepoint calls
+# channels_lib.touch_channel) or by hand here; the editor is forms/channels.html.
+
+@app.get("/channels")
+def list_channels_endpoint():
+    """Every channel row, with live recipe counts from both recipe tables."""
+    try:
+        from input.pipeline import channels_lib
+        with _db() as conn:
+            return channels_lib.list_channels(conn)
+    except Exception as e:
+        print(f"[ERROR] list_channels failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
+@app.post("/channels")
+def create_channel_endpoint(request: Request, payload: dict = Body(...)):
+    """Create a channel row by hand. `channel_id` (UC…) is the key; a pasted
+    channel URL or @handle in `ref` is resolved to it from the channel page."""
+    _require_perm(request, "edit_master")
+    from input.pipeline import channels_lib
+    cid = (payload.get("channel_id") or "").strip()
+    ref = (payload.get("ref") or "").strip()
+    if not cid and ref:
+        found = channels_lib.resolve_youtube_channel(ref)
+        if not found:
+            raise HTTPException(status_code=400,
+                                detail=f"Could not read a channel id from {ref!r} — paste the channel URL, @handle or UC… id")
+        cid = found["channel_id"]
+        for k in ("handle", "display_name"):
+            if not (payload.get(k) or "").strip() and found.get(k):
+                payload[k] = found[k]
+    if not cid:
+        raise HTTPException(status_code=400, detail="channel_id (or a channel URL / @handle in ref) is required")
+    try:
+        with _db() as conn:
+            return channels_lib.create_channel(conn, cid, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        print(f"[ERROR] create_channel failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Create error: {e}") from e
+
+
+@app.get("/channels/{channel_id}")
+def get_channel_endpoint(channel_id: str):
+    try:
+        from input.pipeline import channels_lib
+        with _db() as conn:
+            row = channels_lib.get_channel(conn, channel_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Unknown channel: {channel_id}")
+        return row
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] get_channel({channel_id!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
+@app.get("/channels/{channel_id}/recipes")
+def channel_recipes_endpoint(channel_id: str):
+    """Recipes saved from this channel, master vs user, for the editor's
+    browse pickers; stores the two counts back on the row (refresh-on-open)."""
+    try:
+        from input.pipeline import channels_lib
+        with _db() as conn:
+            return channels_lib.recipes_for_channel(conn, channel_id)
+    except Exception as e:
+        print(f"[ERROR] channel_recipes({channel_id!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
+@app.patch("/channels/{channel_id}")
+def patch_channel_endpoint(request: Request, channel_id: str, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    try:
+        from input.pipeline import channels_lib
+        with _db() as conn:
+            return channels_lib.update_channel(conn, channel_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        print(f"[ERROR] patch_channel({channel_id!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
+
+
+@app.delete("/channels/{channel_id}")
+def delete_channel_endpoint(request: Request, channel_id: str):
+    """Removes the channel's master record only; its recipes keep their
+    capture stamp and the row returns on the next save from the channel."""
+    _require_perm(request, "edit_master")
+    try:
+        from input.pipeline import channels_lib
+        with _db() as conn:
+            ok = channels_lib.delete_channel(conn, channel_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Unknown channel: {channel_id}")
+        return {"deleted": channel_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_channel({channel_id!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}") from e
+
+
 @app.get("/domains")
 def list_domains_endpoint():
     """All domain-master rows, seeded from the JSON bootstrap on first call."""
@@ -13125,6 +13236,22 @@ def _save_recipe_core(payload: dict) -> dict:
                 except Exception as e:
                     print(f"[WARN] metabase_url last_accessed bump failed: {e}")
             print("[OK] Recipe saved to database")
+            # Video lane: a recipe read off a YouTube video names its channel in
+            # `_source.capture` (the ladder's stamp). The channel master row
+            # appears on the first SAVE from a channel and is refreshed on every
+            # later one — same connection, for the reason mark_saved gives.
+            _cap = (recipe_dict.get("_source") or {}).get("capture") or {}
+            if _cap.get("kind") == "youtube" and _cap.get("channel_id"):
+                try:
+                    from input.pipeline import channels_lib as _channels_lib
+                    _ch = _channels_lib.touch_channel(
+                        conn, channel_id=_cap["channel_id"], name=_cap.get("channel") or "",
+                        handle=_cap.get("handle") or "")
+                    if _ch:
+                        print(f"[CHANNEL] {_ch['channel_id']} @{_ch.get('handle') or '?'} "
+                              f"{_ch.get('display_name')!r} touched")
+                except Exception as e:
+                    print(f"[CHANNEL] touch skipped: {e}")
             # Re-flag the publisher ledger so selected=1 matches this actually-
             # saved master row (parity with /process-selected
             # — a manual-queue capture now flips the cohort row to a winner and
@@ -13838,8 +13965,8 @@ async def extract_from_markdown_endpoint(
             if isinstance(_c, dict) and (_c.get("kind") or _c.get("via")):
                 capture_meta = {k: _c[k] for k in ("kind", "label", "structure", "via",
                                                    "selected", "chars", "comments", "links",
-                                                   "verified", "rung", "channel", "length_s",
-                                                   "transcript_words", "caption_language") if k in _c}
+                                                   "verified", "rung", "channel", "channel_id", "handle",
+                                                   "length_s", "transcript_words", "caption_language") if k in _c}
         except Exception as e:
             print(f"[CAPTURE] ignoring malformed capture field: {e}")
     try:

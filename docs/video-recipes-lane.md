@@ -143,20 +143,33 @@ channel and the domains table is keyed by host:
 
 ```
 channels(channel_id TEXT PRIMARY KEY,      -- YouTube's UC… id, stable across renames
-         handle TEXT, display_name TEXT, platform TEXT DEFAULT 'youtube',
-         url TEXT, country TEXT, language TEXT,
-         dishes_ranked INTEGER, mean_position REAL, recipes_saved INTEGER,
+         platform TEXT DEFAULT 'youtube', handle TEXT, display_name TEXT, url TEXT,
+         country TEXT, language TEXT, story TEXT, known_for TEXT, notes TEXT,
+         harvestable INTEGER DEFAULT 1,    -- 0 = never admit this channel to a dish lane
+         pinned INTEGER DEFAULT 0,         -- 1 = always seat it when it is a candidate
+         dishes_ranked INTEGER, mean_position REAL,            -- stamped by step 3; NULL until then
          standing REAL, standing_method TEXT, standing_at TEXT,
-         harvestable INTEGER DEFAULT 1, notes TEXT, known_for TEXT,
-         created_at TEXT, updated_at TEXT)
+         master_recipe_count, user_recipe_count, counts_updated_at,   -- refresh-on-access, like domains
+         first_seen_at, last_seen_at, created_at, updated_at)
 ```
 
-Rows are created on first admission and the counters recomputed at each refresh
-that touches the channel. A channel row is what the channel editor edits (clone
-and specialise the domain editor, not a metadata-driven runtime), and it is
-where a curator says "never this channel" or "always seat this one." The recipe
-carries `channel_id` in `_source.capture`, which it already does by name; the
-id is added by the ladder from the watch page's `channelId`.
+*As built (step 2, 2026-10-17): `input/pipeline/channels_lib.py`, `/channels*`,
+`forms/channels.html`.* A row is created the first time a video recipe from the
+channel is **saved** (the save chokepoint calls `touch_channel`; a staged grab
+that is abandoned creates nothing) or by hand in the editor from a pasted
+channel URL, @handle, watch URL or UC… id (`resolve_youtube_channel` reads the
+public page once; no API key). The ladder stamps `channel`, `channel_id` and
+`handle` on the capture block from the watch page's `videoDetails.channelId`
+and `microformat.ownerProfileUrl`; the recipe carries them in
+`_source.capture`, which `recipe_model.SourceInfo` now declares (it did not,
+and every row saved before this day lost the whole capture block at the model
+boundary; `scripts/backfill_video_channels.py` re-stamped the two video rows
+from their watch pages, inventing no rung or door). The editor is a clone of
+the collection editor with the domain editor's recipe pickers; its two
+judgements are the ones the lane will read (never admit / always seat), and
+its standing block says "not yet measured" until step 3 stamps it — absent,
+never zero. The counter the design listed as `recipes_saved` became the two
+domains-style counts (master / user), live in the list, stored on open.
 
 ## 6. The tab
 
@@ -210,7 +223,12 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    First count on the live table: 13,248 web, 2 video (the curator's Butter
    Chicken save and an older Fallow short-rib video), 0 social. The dish cohort
    view is untouched until there is a video lane to show (step 3).
-2. `channels` table + ladder stamping `channel_id` + the channel editor.
+2. **BUILT 2026-10-17.** `channels` table (§5 as built), the ladder stamping
+   `channel_id` + `handle` beside `channel`, the save chokepoint creating and
+   refreshing the row, `/channels` CRUD + per-channel recipe lists, the editor
+   `forms/channels.html` in the Corpus menu, and the capture block made to
+   survive the save. First row: Fallow (UCJ901NqoRaXMnIm7aOjLyuA, @FallowChefs),
+   2 master recipes.
 3. Harvest admission + the video lane in the refresh (ledger first, so the
    rung classes are counted before anything is seated).
 4. Seats and the `video_seats` control; SEMrush stamping for seated winners.

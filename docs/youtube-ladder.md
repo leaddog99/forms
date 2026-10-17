@@ -87,7 +87,7 @@ nothing downstream knows the text came from a video except through the
    by URL fragment — the same door as the CSP fallback. The importing page
    posts it to `/stage-capture`, which climbs the ladder: server read of the
    description (cleaner than the DOM's), transcript, decision. The staged
-   `capture` block carries `rung`, `channel`, `length_s`, `transcript_words`,
+   `capture` block carries `rung`, `channel`, `channel_id`, `handle`, `length_s`, `transcript_words`,
    `caption_language`, `links`, and `reject` when rung 5 (or a link-out) is
    the answer. The importing page shows a `reject` as a plain sentence with
    the link, when there is one, as the primary action — before any extraction

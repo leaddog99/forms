@@ -88,7 +88,8 @@ class VideoInfo:
     video_id: str
     title: str = ""
     channel: str = ""
-    channel_id: str = ""
+    channel_id: str = ""        # YouTube's UC… id: stable across renames; the channels table key
+    handle: str = ""            # @FallowChefs, from the watch page's ownerProfileUrl
     description: str = ""
     length_s: int = 0
     caption_tracks: list[tuple[str, str]] = field(default_factory=list)  # (lang, kind)
@@ -139,6 +140,10 @@ def fetch_watch(video_id: str, *, timeout: float = _WATCH_TIMEOUT_S,
         return None
     vd = pr.get("videoDetails") or {}
     status = pr.get("playabilityStatus") or {}
+    mf = ((pr.get("microformat") or {}).get("playerMicroformatRenderer") or {})
+    # ownerProfileUrl is "http://www.youtube.com/@FallowChefs"; the handle is
+    # the one piece of channel identity videoDetails does not carry.
+    _h = re.search(r"/@([^/?#]+)", mf.get("ownerProfileUrl") or "")
     tracks = (((pr.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {})
               .get("captionTracks")) or []
     info = VideoInfo(
@@ -146,6 +151,7 @@ def fetch_watch(video_id: str, *, timeout: float = _WATCH_TIMEOUT_S,
         title=(vd.get("title") or "").strip(),
         channel=(vd.get("author") or "").strip(),
         channel_id=(vd.get("channelId") or "").strip(),
+        handle=_h.group(1) if _h else "",
         description=(vd.get("shortDescription") or "").strip(),
         length_s=int(vd.get("lengthSeconds") or 0),
         caption_tracks=[((t.get("languageCode") or ""), (t.get("kind") or "manual")) for t in tracks],
@@ -323,6 +329,8 @@ class LadderResult:
     url: str
     title: str
     channel: str
+    channel_id: str                     # the channels table key (intake/pipeline/channels_lib.py)
+    handle: str
     thumbnail: str
     rung: Optional[str]                 # description | link | comment | transcript | None
     markdown: Optional[str]             # staged text; None for link / reject
@@ -337,7 +345,9 @@ class LadderResult:
     def capture_extra(self) -> dict:
         """The fields stamped on the staged grab's `capture` block and, from
         there, on the recipe's `_source.capture`."""
-        return {"rung": self.rung, "channel": self.channel or None, "length_s": self.length_s or None,
+        return {"rung": self.rung, "channel": self.channel or None,
+                "channel_id": self.channel_id or None, "handle": self.handle or None,
+                "length_s": self.length_s or None,
                 "transcript_words": self.transcript_words or None,
                 "caption_language": self.caption_language or None,
                 "links": self.links or None, "reject": self.reject}
@@ -423,6 +433,8 @@ def ladder(url: str, *, description: Optional[str] = None, comments: Optional[li
     channel = (info.channel if info else "") or ""
     length_s = info.length_s if info else 0
     base = dict(video_id=vid, url=canonical_url(vid), title=title, channel=channel,
+                channel_id=(info.channel_id if info else "") or "",
+                handle=(info.handle if info else "") or "",
                 thumbnail=thumbnail_url(vid), links=links, description_chars=len(desc),
                 comments_used=0, transcript_words=transcript.words if transcript else 0,
                 caption_language=transcript.language if transcript else "", length_s=length_s)

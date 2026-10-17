@@ -104,6 +104,7 @@ Flip once the edges set and serve with lemon and sugar.
 
 def _info(desc, captions=(("en", "asr"),)):
     return ys.VideoInfo(video_id="XE6JvrChQ_Q", title="Michelin Beef Pie at Home", channel="Fallow",
+                        channel_id="UCJ901NqoRaXMnIm7aOjLyuA", handle="FallowChefs",
                         description=desc, length_s=1250, caption_tracks=list(captions))
 
 
@@ -224,6 +225,23 @@ def test_markdown_result_shape_and_rejects():
             assert "blog.example" in str(e)
     finally:
         ys.ladder = saved
+
+
+def test_capture_carries_channel_identity():
+    """The channels table is fed from `_source.capture` at save time, so the
+    ladder's capture block must name the channel by its stable id and handle,
+    not just its display name (video lane step 2)."""
+    res = ys.ladder(URL, log=_quiet, _fetch_watch=lambda v, log: _info(FALLOW_DESC),
+                    _fetch_transcript=lambda v, log: None)
+    cap = res.capture_extra()
+    assert cap["channel"] == "Fallow"
+    assert cap["channel_id"] == "UCJ901NqoRaXMnIm7aOjLyuA"
+    assert cap["handle"] == "FallowChefs"
+    # An unreadable watch page leaves the identity ABSENT, never a blank string.
+    res2 = ys.ladder(URL, description=FALLOW_DESC, log=_quiet, _fetch_watch=lambda v, log: None,
+                     _fetch_transcript=lambda v, log: None)
+    assert res2.capture_extra()["channel_id"] is None
+    assert res2.capture_extra()["handle"] is None
 
 
 def test_non_youtube_url_is_a_value_error():

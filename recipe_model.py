@@ -440,6 +440,13 @@ class SourceInfo(BaseModel):
     translated: Optional[bool] = False
     translatedAt: Optional[str] = ""        # ISO 8601 UTC
     originalTitle: Optional[str] = ""       # source-language title
+    # === Typed capture provenance ===================================
+    # The staged grab's `capture` block (intake/capture_sources.py +
+    # the YouTube ladder): kind / label / structure / via, and for a
+    # video the rung, channel, channel_id, handle, transcript words.
+    # Declared so it survives the save (pydantic drops undeclared keys
+    # on dump — every row saved before 2026-10-17 lost it here).
+    capture: Optional[dict] = None
 
 
 # Dish-library provenance block — stamped on master_recipes rows so the
@@ -553,6 +560,12 @@ class ScoringMetadata(BaseModel):
     iconUrl: str = ""
     recipeScore: int = 0
     recipeScoreThreshold: int = 0
+    # How `current_status` was decided when the phrase score fell short:
+    # "structure" = accepted because the EXTRACTED recipe had a name and
+    # enough ingredients and steps (a spoken transcript or an OCR'd card
+    # does not use written-recipe vocabulary). Absent = the phrase score
+    # decided alone. The score above is still the measurement.
+    recipeVerdictBasis: Optional[str] = None
     # SEMrush per-page demand (publisher harvest, from the Top-Pages export): monthly
     # organic traffic + the page's share of the publisher's traffic. The meaningful
     # tiebreaker when PA saturates across a publisher's pages; shown in the editor's
