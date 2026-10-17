@@ -172,7 +172,13 @@ _QTY_RE = re.compile(
     r"pinch|handful|knob|dash|splash|egg|eggs|onions?|carrots?|potatoes|lemons?|limes?)\b",
     re.I)
 _ING_HEAD_RE = re.compile(r"^\W*(?:ingredients?|you(?:'|’)ll need|what you(?:'|’)ll need|shopping list)\b", re.I)
-_METHOD_HEAD_RE = re.compile(r"^\W*(?:method|instructions?|directions|steps|how to make|preparation|procedure)\b", re.I)
+# "Step by Step" (Fallow's Butter Chicken, 2026-10-17) was not a method heading,
+# so its two unnumbered step blocks counted for nothing and a description that
+# held the whole recipe fell through to the transcript rung. Headings may wear
+# markdown stars ("*Step by Step*") — the leading \W* eats them.
+_METHOD_HEAD_RE = re.compile(
+    r"^\W*(?:method|instructions?|directions|steps|step[\s-]+by[\s-]+step|how to (?:make|cook)"
+    r"|preparation|procedure)\b", re.I)
 _NUMBERED_RE = re.compile(r"^\W*(?:\d{1,2}[.)]|step\s*\d+)\s*\S", re.I)
 _LINK_ONLY_RE = re.compile(r"(?:full|written|printable|complete)\s+recipe\b.{0,40}(?:link|below|blog|website|site|here|description)", re.I)
 

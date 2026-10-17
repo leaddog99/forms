@@ -46,6 +46,42 @@ youtube: @fallowchefs
 instagram: @fallowchefs
 """
 
+# Fallow's Butter Chicken (8V6Krk8DDuc, 2026-10-17): starred headings, "Step by
+# Step" instead of Method, unnumbered steps, two sub-recipes. Fell to the
+# transcript rung before the heading regex learned "step by step".
+STARRED_DESC = """We brought in chef Chet Sharma to show us how Butter Chicken should really be done.
+
+Video Chapters
+00:00 - Intro
+3:47 - Marinade
+
+*Recipe:*
+
+*Chicken Tikka*(marinated chicken)
+
+*Ingredients*
+30g Mustard Oil
+30g Kashmiri Chilli Powder
+15g Coriander Powder
+200g Hang Yoghurt
+
+*Step by Step*
+Mix the chicken with the garlic ginger paste, salt and lemon juice and let it marinade for 30 minutes.
+Drain the juices released by the chicken.
+Grill the chicken over charcoal until cooked and light charred around the edges.
+
+*Makhni Sauce*
+
+*Ingredients*
+30g Ghee
+5g Cumin Seeds
+400g Bombay Onions / Shallots, sliced
+
+*Step by Step*
+Heat the oil and add the cumin seeds, fry them until they crackle.
+Add the butter, cream, honey and kasoori methi and blend everything until smooth.
+"""
+
 LINK_ONLY_DESC = """The full recipe is on my blog: https://www.example-kitchen.com/recipes/beef-pie
 Follow me: https://www.instagram.com/examplekitchen
 My pans: https://amzn.to/3abcDEF
@@ -85,6 +121,15 @@ def test_signal_recipe_in_description():
     assert sig.has_recipe, sig
     assert sig.has_ingredient_heading and sig.has_method_heading
     assert sig.ingredient_lines >= 8 and sig.step_lines >= 4
+
+
+def test_signal_starred_step_by_step_description_passes():
+    sig = ys.recipe_signal(STARRED_DESC)
+    assert sig.has_recipe, sig
+    assert sig.has_method_heading and sig.step_lines >= 4, sig
+    res = ys.ladder(URL, log=_quiet, _fetch_watch=lambda v, log: _info(STARRED_DESC),
+                    _fetch_transcript=lambda v, log: _transcript())
+    assert res.rung == "description", res.rung
 
 
 def test_signal_link_only_description_does_not_pass():

@@ -126,6 +126,13 @@ re-install. Nothing else in the one-liner changed.
   staged text 29 k chars. The transcript names Worcestershire, beurre manié,
   suet and cartouche *zero* times while the description lists all four —
   the description is the record, the transcript the commentary.
+- Fallow, "The Ultimate Butter Chicken" (`8V6Krk8DDuc`), 2026-10-17, the
+  first live bookmarklet press: two defects. `/stage-capture` passed `links`
+  twice (the capped list and the ladder's copy) → 500 on every watch page
+  while the pasted-URL door worked. And the description's headings were
+  starred ("*Step by Step*"), which the method-heading regex did not know, so
+  a description holding the whole recipe (29 ingredient lines, 14 steps) fell
+  to the transcript rung. Both fixed; the description is rung 1 again.
 - Unit tests: `python -m intake.tests.test_youtube_source` (no network).
 
 ## Not done
