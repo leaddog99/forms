@@ -589,9 +589,32 @@ _CODE_RE = re.compile(r"^[a-z]{2}$")
 
 # gl for languages whose obvious country code differs (hl=el -> gl=gr, etc.).
 # Everything else maps language -> same-code country, which is right for the
-# fr/it/es/de/pt class this exists for.
+# fr/it/es/de/pt class this exists for. A language with no entry AND no
+# same-code country (hi, he, fa, ur, bn, vi, ta ...) used to pass the LANGUAGE
+# code as gl, which Scale SERP rejects outright: Butter Chicken's Hindi line
+# (gl=hi, 2026-10-17) returned "'gl' parameter is invalid" and the refresh found
+# zero candidates. Where one language has several home countries the entry is
+# the largest Google market for it (ar -> eg), which a line can always override.
 _GL_FOR_LANG = {"el": "gr", "en": "us", "ja": "jp", "zh": "cn", "ko": "kr",
-                "da": "dk", "sv": "se", "cs": "cz", "uk": "ua"}
+                "da": "dk", "sv": "se", "cs": "cz", "uk": "ua",
+                "hi": "in", "ta": "in", "te": "in", "mr": "in", "gu": "in", "kn": "in",
+                "ml": "in", "pa": "in", "bn": "bd", "ur": "pk", "he": "il", "fa": "ir",
+                "ar": "eg", "vi": "vn", "nb": "no", "nn": "no", "et": "ee", "sl": "si",
+                "sq": "al", "ka": "ge", "hy": "am", "ms": "my", "tl": "ph", "sw": "ke",
+                "af": "za", "ca": "es", "eu": "es", "gl": "es", "cy": "gb", "ga": "ie"}
+
+# ISO 3166-1 alpha-2, the universe Google's `gl` draws from (Scale SERP's own
+# list is 240 of these). A `gl` outside it is a language code in the wrong
+# field, and the validator says so instead of letting the provider reject it.
+_ISO_COUNTRIES = frozenset("""
+ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz
+ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg eh er es et fi fj fk fm fo fr
+ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp
+ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt
+mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw
+sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug
+um us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw
+""".split())
 
 
 def resolve_query_locales(rows: list[dict], source_language) -> list[dict]:
@@ -737,6 +760,13 @@ def validate_query_rows(raw, *, max_n: Optional[int] = None) -> list[dict]:
                 raise ValueError(
                     f"{field} for {r['q']!r} must be a two-letter code "
                     f"(got {r[field]!r}) — store the CODE, not a display name")
+        if r["gl"] is not None and r["gl"] not in _ISO_COUNTRIES:
+            hint = _GL_FOR_LANG.get(r["gl"])
+            raise ValueError(
+                f"gl for {r['q']!r} is {r['gl']!r}, which is not a country - it looks like "
+                f"the language code in the country field"
+                + (f"; the country for hl={r['gl']} is {hint!r}" if hint else "")
+                + " (Scale SERP rejects the whole search when gl is not a country)")
         if r.get("keep") is not None and r["keep"] > 50:
             raise ValueError(
                 f"reserved slots for {r['q']!r} ({r['keep']}) look like a typo "

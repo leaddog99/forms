@@ -83,7 +83,7 @@
   </div>
 
   <script src="/forms/library-shell.js?v=20260831b"></script>
-  <script src="/forms/query-rows.js?v=20261010b"></script>
+  <script src="/forms/query-rows.js?v=20261017a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -120,8 +120,8 @@
        Shared component (forms/query-rows.js, lifted from here 2026-09-09 so the
        product-pool editor uses the SAME rows). A dish's queries are ROWS
        {q, n, gl, hl, keep}: each line is its own Google search with its own
-       result count and locale; null = follow the dish, resolved at run time. */
-    const glForLang = QueryRows.glForLang;
+       result count and locale; null = follow the dish, resolved at run time
+       (country included - resolve_query_locales owns the language->country table). */
     const DISH_QROWS = {
       langs: SOURCE_LANGS, nLabel: 'Results', nPlaceholder: 'dflt',
       translateUrl: '/dishes/translate-query',

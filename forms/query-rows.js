@@ -19,8 +19,12 @@
  * Requires escapeHtml (library-shell.js) and the .info-dot styling the shell provides.
  */
 (function (global) {
-  const GL_FOR_LANG = {el:'gr', en:'us', ja:'jp', zh:'cn', ko:'kr', da:'dk', sv:'se', cs:'cz', uk:'ua'};
-  const glForLang = (hl) => GL_FOR_LANG[hl] || hl;
+  // No language->country map here any more (2026-10-17). The editor used to
+  // derive gl from hl at SAVE with its own copy of the server's table, which
+  // lacked Hindi, so Butter Chicken's line was stored with gl=hi - a language
+  // code the SERP provider rejects, and a refresh that found nothing. A blank
+  // country is STORED blank ("auto") and input/pipeline/dishes.py
+  // resolve_query_locales derives it at run time from one table.
   const QIN = 'padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit;box-sizing:border-box';
   const _opts = {};   // boxId -> opts
   const esc = (s) => (global.escapeHtml ? global.escapeHtml(s) : String(s ?? '')
@@ -178,11 +182,13 @@
         box.querySelector('.qrows-add').click();
       }
     });
-    // Picking a language auto-fills its country; still editable afterwards.
+    // Picking a language clears the country back to "auto": the server derives
+    // the country from the language at run time (one table, server-side), and
+    // a typed country is an explicit override that must stay explicit.
     box.addEventListener('change', (e) => {
       const sel = e.target.closest('.qr-hl'); if (!sel) return;
       const row = sel.closest('.qrow');
-      row.querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
+      row.querySelector('.qr-gl').value = '';
       const xl = row.querySelector('.qr-xl');
       if (xl) xl.style.visibility = isForeign(sel.value) ? '' : 'hidden';
       const prev = sel.dataset.prev ?? '';
@@ -260,7 +266,7 @@
       if (keepRaw !== '' && !(keep > 0)) return {error: `Reserve for “${q}” must be a positive number (or blank)`};
       const row = {q, n, keep};
       if (o.langs){
-        row.gl = glRaw || (hl ? glForLang(hl) : null); row.hl = hl;
+        row.gl = glRaw || null; row.hl = hl;   // blank = resolved server-side at run time
         // The English a translated line came from — provenance for the form +
         // the refresh log; only meaningful while the line is non-English.
         const qsrc = (el.dataset.qsrc || '').trim();
@@ -272,5 +278,5 @@
     return {rows: out};
   }
 
-  global.QueryRows = { rowHtml, blockHtml, init, collect, paintFetchTotal, glForLang, GL_FOR_LANG };
+  global.QueryRows = { rowHtml, blockHtml, init, collect, paintFetchTotal };
 })(window);
