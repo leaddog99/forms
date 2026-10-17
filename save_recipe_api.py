@@ -11621,6 +11621,12 @@ SORT_SQL = {
 }
 DEFAULT_SORT = "updated_desc"
 
+# Match tiers of a text search (see _materialise_text_match). Lower = closer to
+# what was typed; with a query present every sort orders by tier first.
+MATCH_TIER_DISH, MATCH_TIER_ABOUT, MATCH_TIER_CONTAINS = 0, 1, 2
+MATCH_TIER_LABEL = {MATCH_TIER_DISH: "dish", MATCH_TIER_ABOUT: "title",
+                    MATCH_TIER_CONTAINS: "ingredients"}
+
 
 # List recipes for the given owner. user_id=0 returns the master collection
 # (master_recipes table); any other value returns that owner's personal
@@ -11789,7 +11795,7 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
         # The query was all punctuation. An empty FTS5 expression is a syntax
         # error, and matching everything would silently ignore what was typed,
         # so match nothing and let the caller report no results.
-        conn.execute("CREATE TEMP TABLE q_match (id INTEGER PRIMARY KEY, rel REAL)")
+        conn.execute("CREATE TEMP TABLE q_match (id INTEGER PRIMARY KEY, rel REAL, tier INTEGER)")
         return
     fts = f"{table}_fts"
     # WEIGHTED bm25 (2026-09-05, the black-beans-rice search): unweighted, a
@@ -11797,12 +11803,36 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
     # short-doc bias floated cocktails over the actual dish. Columns are
     # (name, dish, ingredients, cuisine): a match in the NAME or canonical
     # dish is the recipe being ABOUT the query; ingredients merely contain it.
+    #
+    # THE MATCH TIER (2026-10-17, curator: "best match works great, switch the
+    # sort to the blend and it lists a whole bunch of irrelevant dishes").
+    # The weights only ORDER the set; the set itself holds every row whose
+    # ingredient list happens to contain the words. "lemon chicken" matched
+    # 410 master rows of which 37 are about lemon chicken - the other 373
+    # (Shawarma, Butter Chicken, braised short ribs) list lemon and chicken.
+    # Best match buried them; any other sort let them lead. So each match
+    # carries which column it was found in, and every sort orders by that
+    # tier FIRST while a query is present (_recipes_search_impl):
+    #   0  identity dish member (the dish-aware layer below)
+    #   1  the query is in the name or the canonical dish - the recipe is
+    #      ABOUT it
+    #   2  found only in the ingredients or the cuisine - it CONTAINS it
+    # Tier 2 stays in the set (the ingredients index exists so "shrimp" can
+    # reach a dish whose title never says so) but never outranks tier 1.
     conn.execute(
         f"CREATE TEMP TABLE q_match AS "
-        f"SELECT rowid AS id, -bm25({fts}, 10.0, 8.0, 2.0, 1.0) AS rel "
+        f"SELECT rowid AS id, -bm25({fts}, 10.0, 8.0, 2.0, 1.0) AS rel, "
+        f"{MATCH_TIER_CONTAINS} AS tier "
         f"FROM {fts} WHERE {fts} MATCH ?",
         [expr],
     )
+    conn.execute(
+        f"UPDATE temp.q_match SET tier = {MATCH_TIER_ABOUT} WHERE id IN "
+        f"(SELECT rowid FROM {fts} WHERE {fts} MATCH ?)",
+        ["{name dish} : (" + expr + ")"],
+    )
+    # The sort and the page both look rows up by id; CREATE TABLE AS gives no key.
+    conn.execute("CREATE INDEX temp.q_match_id ON q_match(id)")
     # DISH-AWARE layer (2026-09-01 — the beef-WITH-broccoli 15-vs-2): FTS ANDs
     # every typed word, so one connector ('with' where titles say 'and') hides
     # an entire dish. If the query names a catalog dish, display name or alias
@@ -11836,11 +11866,17 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
                 # search for a dish means recipes that ARE the dish:
                 # assigned or confidently matched, nothing looser.
                 conn.execute(
-                    f"INSERT INTO temp.q_match(id, rel) "
-                    f"SELECT id, ? FROM {table} WHERE dish_effective = ? "
+                    f"INSERT INTO temp.q_match(id, rel, tier) "
+                    f"SELECT id, ?, {MATCH_TIER_DISH} FROM {table} WHERE dish_effective = ? "
                     f"AND dish_effective_source IN ('assigned','matched') "
                     f"AND id NOT IN (SELECT id FROM temp.q_match)",
                     (float(top or 0) + 1.0, dish))
+                # A text hit that is ALSO a member of the named dish is the dish.
+                conn.execute(
+                    f"UPDATE temp.q_match SET tier = {MATCH_TIER_DISH} WHERE id IN "
+                    f"(SELECT id FROM {table} WHERE dish_effective = ? "
+                    f"AND dish_effective_source IN ('assigned','matched'))",
+                    (dish,))
     except Exception as e:
         print(f"[SEARCH] dish-aware layer skipped: {e}")
 
@@ -11863,7 +11899,16 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     order_by = SORT_SQL.get(sort) or SORT_SQL[DEFAULT_SORT]
     if sort == "relevance" and not q:
         order_by = SORT_SQL[DEFAULT_SORT]
-    # Relevance reads temp.q_match, which is named per request; bind the table.
+    # BEST MATCH ALWAYS, then the chosen order within it (curator, 2026-10-17):
+    # with a query present the match tier leads EVERY sort, so the blend ranks
+    # the lemon-chicken recipes among themselves and the 373 rows that merely
+    # list lemon and chicken follow, in the same order, below them. Without
+    # the tier the OU sort put Shawarma and Butter Chicken first. See
+    # _materialise_text_match for the tiers.
+    if q:
+        order_by = f"(SELECT tier FROM temp.q_match WHERE id = {{T}}.id) ASC, {order_by}"
+    # Relevance and the tier read temp.q_match, which is named per request;
+    # bind the table.
     order_by = order_by.replace("{T}", table)
     # THE HOTLIST IS A SELECTION, not just an ordering — and it is ONE page
     # per publisher (curator, 2026-08-24, second correction: 1,683 qualifying
@@ -11911,8 +11956,9 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
             # curator ask): the weighted-bm25 rank (higher = better), or the
             # flat above-text boost for identity dish members — so a caller
             # can SEE why a row placed where it did. NULL when no query.
-            rel_col = (f", (SELECT rel FROM temp.q_match WHERE id = {table}.id)"
-                       if q else ", NULL")
+            rel_col = (f", (SELECT rel FROM temp.q_match WHERE id = {table}.id), "
+                       f"(SELECT tier FROM temp.q_match WHERE id = {table}.id)"
+                       if q else ", NULL, NULL")
             # TWO STEPS, so the optimizer can choose well ON ITS OWN (2026-09-19).
             # Selecting `data` means no index can ever cover the page query, so
             # the planner picks among the owner-led indexes blind to the one cost
@@ -11945,6 +11991,8 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                     "source_changed_at": row[4], "created_at": row[5],
                     "updated_at": row[6], "bccUrl": _bcc_permalink(row[1]),
                     "relevance": round(row[7], 3) if row[7] is not None else None,
+                    # Where the query was found - why the row placed where it did.
+                    "match": MATCH_TIER_LABEL.get(row[8]),
                 })
 
             facet_counts: dict = {}

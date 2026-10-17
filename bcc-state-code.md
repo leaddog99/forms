@@ -11643,3 +11643,52 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   proposed default. Awaiting go-ahead.
 * **Open:** TTL + Sources-in removal (curator to pick) · ethnicity stamp + backfill · the Substack
   authority-source switch (domain form) · Yogurt saves 1/15 with skip-thin×15 (own problem) · carried.
+
+## Session 2026-10-16 (evening) → 2026-10-17 — dish story in prose; YouTube becomes a recipe source; search keeps the match under every sort
+
+* **Dish story + ethnicity enrichment (8a14b7f, 129e07e):** the editor's grounded call is
+  `input/pipeline/dish_story.py` (`draft` = forced tool call, Sonnet; `fill` writes BLANK fields only,
+  stamps `<field>_source='enrich'`, never replaces `curator`); runs after every dish refresh and as the
+  `dish_story_fill` job (one dish or the sweep — sweep NOT run, curator "not yet"). Prompt rules added
+  on review of five drafts (Buttercream, Skordalia, Paella de Mariscos, Melomakarona, Red Beans and Rice):
+  story = two or three short paragraphs; NUMBERS in plain-English counts, at most one per story, none in
+  notes, never describe the measurement; WHO SAYS WHAT — story owns why/history, notes own the stove,
+  a fact lives in one place; cook's notes are each ONE short paragraph of connected sentences (40–80
+  words, curator: "sentences rather than bullets… more of a dialog") instead of one-per-line items.
+  Parser repair `_unleak`: once in five calls the model ran the tool parameters together as tagged text
+  inside one string field; cut at the first tag, hand each segment to its blank field. **Uncommitted,
+  awaiting the curator's verdict on the prose shape.** Side finding: the Buttercream Frosting cohort
+  (58) holds two royal icings, a stabilized whipped cream, a cream-cheese buttercream and a petit-fours
+  recipe → membership pass warranted.
+* **YouTube ladder (1897517, pushed; `docs/youtube-ladder.md`):** curator's bookmarklet hung on a
+  watch page. Cause: YouTube enforces Trusted Types, `s.src = string` threw before the v4 loader armed
+  its fallback. Loader v5 (install.html + bookmarklet.js) wraps the URL in a TT policy (allowed on
+  YouTube) and falls back at once when a page refuses even that; installed bookmarks must be
+  re-installed once. New `intake/youtube_source.py`: description → link in the description → the
+  creator's first comments (browser only) → transcript (youtube-transcript-api, from our own address,
+  cloud ranges are blocked) → polite reject; the transcript rides along as corroboration under any rung;
+  thumbnail from the video id; recipe carries the video field. Three doors (`/stage-capture`,
+  `/stage-markdown`, `extract_recipe_from_url`) land on the one staged-markdown path; importing.html
+  shows a reject or a link-out before anything is spent. **Decision ("option 2"): no YouTube Data API**
+  — captions.download needs edit rights on the video, and Developer Policies §III.E.4.h/.4.b/I.14/E.6
+  forbid derived scores, long storage and any other retrieval alongside a key. Verified: Fallow
+  "Michelin Beef Pie at Home" rung 1, 4,672-word transcript, URL path 35 ingredients / 8 steps, hero
+  cooped; 13 unit tests. Not done: server-side comments, a separate second-pass transcript auditor,
+  Shorts untested. Substack (fallowchefs) works with the bookmarklet as-is.
+* **Recipe search — best match under every sort (this commit):** curator: "best match works great…
+  change the sort to the blended mix and it lists a whole bunch of irrelevant dishes." Best match is
+  FTS5 weighted bm25 over (name, dish, ingredients, cuisine) — NOT the vectors, which only answer a
+  zero-match search with suggestions. The weights ordered the set; the set held every row whose
+  ingredient list contains the words: "lemon chicken" 410 matches, 37 about lemon chicken, 373
+  (Shawarma, Butter Chicken, short ribs) merely list both — and they led the OU sort. Now
+  `temp.q_match` carries a **tier** (0 identity-dish member, 1 name/dish hit via FTS column filter
+  `{name dish}:`, 2 ingredients/cuisine only) and with a query present every sort orders
+  `tier ASC, <chosen order>`; rows return `match: dish|title|ingredients`. Measured in-process: lemon
+  chicken OU sort now leads with Greek Lemon Chicken Soup / Lemon Chicken Breasts, 78 ms; black beans
+  and rice 84 matches all tier 0, 24 ms. Note for the curator: "Quality blend" in the recipe list is
+  OU → recipe-text score → recency, not the 70/30 OU/power percentile blend of the dish cohort.
+* **Restart pending (curator):** BCC on MARLEY still runs pre-1897517 code; my restart attempt lost
+  the UAC prompt. The ladder and the search tier both need it. Verify PID ≠ 1920, 8009 answering.
+* **Open:** dish-story prose verdict → commit → sweep on go · Buttercream cohort pass · live
+  bookmarklet test on the Fallow video after reinstall · TTL + Sources-in · Substack authority switch ·
+  ethnicity stamp + backfill · carried.

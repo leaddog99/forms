@@ -4049,6 +4049,11 @@
       // bm25 is computed by the FTS index and cannot be recomputed here. It is
       // also the only sort that is meaningless without a query, which the server
       // guards by falling back to updated_desc.
+      // While a query is typed, EVERY sort below is applied within the match
+      // tier (server, 2026-10-17): recipes ABOUT the query (dish identity, then
+      // title) come first in the chosen order, and rows that merely list the
+      // words among their ingredients follow in the same order. Each row says
+      // where it matched (`match`: dish | title | ingredients).
       relevance:     { label: "Best match",               order: [["updated_at", "desc"]] },
       updated_desc:  { label: "Last modified (newest)",   order: [["updated_at", "desc"]] },
       created_desc:  { label: "Date added (newest)",      order: [["created_at", "desc"]] },
@@ -4908,7 +4913,9 @@
       // A TYPED QUERY means relevance ordering (2026-09-05, the black-beans-
       // rice search: results were date-ordered, so recency beat aboutness).
       // The user's explicit sort choice still wins — only the date defaults
-      // are overridden while a query is present.
+      // are overridden while a query is present — and the server applies that
+      // choice WITHIN the match tier, so an OU sort cannot float an
+      // ingredient-only hit above the recipes that are about the query.
       let sort = document.getElementById('sidebar_sort')?.value || 'updated_desc';
       if (_searchQuery && (sort === 'updated_desc' || sort === 'created_desc')) sort = 'relevance';
       const p = new URLSearchParams({
