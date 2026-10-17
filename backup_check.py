@@ -1,4 +1,6 @@
 """backup_check.py — did last night's backup and BAILEY sync ACTUALLY work? Email if not.
+(The sync is bcc_sync_standby.ps1 -Standby BAILEY; its "bailey sync exit code:" marker is
+written by bcc_backup_scheduled.bat.)
 
 Runs as its OWN scheduled task ("BCC Backup Check", 07:00), four hours after the 03:00
 backup, NOT as the backup's last line: on 2026-09-19 Windows killed the backup task at

@@ -219,7 +219,8 @@ password manager (keys — if maintained, see G3).
      host. A cutover must grant the new host ADAM access or its own nightly
      backups fail silently.
 
-  BAILEY stays fresh during the soak via `bcc_sync_bailey.ps1` — one-way
+  BAILEY stays fresh during the soak via `bcc_sync_standby.ps1 -Standby BAILEY`
+  (parameterised 2026-10-17; `-Standby HESTIA` feeds the new desktop) — one-way
   incremental rclone-over-SFTP (code+assets live; `-WithDbs` stops the
   server, lays in the newest ADAM backup set, restarts; `-FreshBackup`
   snapshots first). BAILEY runs a complete, verified, parallel instance

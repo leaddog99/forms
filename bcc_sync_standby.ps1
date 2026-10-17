@@ -1,46 +1,78 @@
 ﻿# =====================================================================
-# bcc_sync_bailey.ps1 — ONE-WAY incremental sync MARLEY -> BAILEY.
+# bcc_sync_standby.ps1 — ONE-WAY incremental sync MARLEY -> a standby host.
 #
-# Keeps the BAILEY staging instance fresh during the soak without a full
-# reload (the 2026-08-24 restore drill built it; this maintains it).
-# rclone over SFTP (remote 'bailey', same SSH key as the drill) diffs by
-# size+modtime, so an unchanged tree transfers nothing.
+# Was bcc_sync_bailey.ps1 (2026-08-24 → 2026-10-17); parameterised when the
+# new desktop HESTIA arrived, so ONE script serves every standby. Keeps a
+# standby instance fresh during a soak without a full reload (the 2026-08-24
+# restore drill built BAILEY; this maintains it — and builds HESTIA's soak).
+# rclone over SFTP (remote named after the host, lower-case, same SSH key as
+# the drill) diffs by size+modtime, so an unchanged tree transfers nothing.
 #
-#   .\bcc_sync_bailey.ps1              # code + assets only (server stays up)
-#   .\bcc_sync_bailey.ps1 -WithDbs     # + databases: STOPS Bailey's server,
-#                                      #   copies the newest ADAM backup set,
-#                                      #   restarts the BCC-Drill task
-#   .\bcc_sync_bailey.ps1 -WithDbs -FreshBackup
-#                                      # runs backup_db.py first so the DBs
-#                                      #   are to-the-minute, then as above
+#   .\bcc_sync_standby.ps1                      # BAILEY, code + assets only (server stays up)
+#   .\bcc_sync_standby.ps1 -Standby HESTIA      # same, for HESTIA
+#   .\bcc_sync_standby.ps1 -WithDbs             # + databases: STOPS the standby's server,
+#                                               #   copies the newest ADAM backup set, restarts it
+#   .\bcc_sync_standby.ps1 -Standby HESTIA -WithDbs -FreshBackup
+#                                               # runs backup_db.py first so the DBs are
+#                                               #   to-the-minute, then as above
 #
-# ONE-WAY means one-way: anything saved on BAILEY since the last sync is
+# The rclone remote must exist: one per standby, named like the host in lower
+# case. Create one with (key = the drill key, host = the machine name):
+#   rclone config create hestia sftp host HESTIA user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none
+# and the standby's C:\ProgramData\ssh\administrators_authorized_keys must
+# hold that key's .pub (john is an administrator there, so the per-user
+# authorized_keys is ignored by Windows OpenSSH).
+#
+# ONE-WAY means one-way: anything saved on the standby since the last sync is
 # overwritten (that is the point of a staging copy). Excluded either side:
 # live sqlite files (consistent copies come from backup_db), page cache,
 # logs (each machine keeps its own), venv/pycache noise, the local dump.
+#
+# backup_check.py reads this script's output inside backup.log: the words
+# "FAILED" / "permission denied" / "rename failed" mark a bad night and
+# "== sync done ==" a clean one. Keep those strings if you edit messages.
 # =====================================================================
-param([switch]$WithDbs, [switch]$FreshBackup)
+param(
+  [string]$Standby = "BAILEY",
+  [switch]$WithDbs,
+  [switch]$FreshBackup
+)
 
+$Standby = $Standby.ToUpper()
+$remote  = $Standby.ToLower()          # rclone remote name: bailey, hestia
+$who     = "john@$Standby"             # ssh target; the SSH key is the drill key
 $rc    = "C:\Users\john\bin\rclone.exe"
 $ssh   = "C:\Windows\System32\OpenSSH\ssh.exe"   # full path: not on PATH in every shell (2026-09-08)
 $src   = "C:/Users/john/PycharmProjects/forms"
-$dst   = "bailey:/C:/Users/john/PycharmProjects/forms"
+$dst   = "${remote}:/C:/Users/john/PycharmProjects/forms"
 $adam  = "\\Adam\tbotb\Backups\recipes-db"
+
+# Fail before doing anything if the remote is not configured — rclone would
+# otherwise print 'didn't find section in config file' per stage and the run
+# would read as a code-sync failure rather than a missing remote.
+$remotes = & $rc listremotes 2>$null
+if (-not ($remotes -contains "${remote}:")) {
+  Write-Host ("!" * 70)
+  Write-Host "!! $Standby SYNC FAILED: no rclone remote '$remote'. Create it:"
+  Write-Host "!!   rclone config create $remote sftp host $Standby user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none"
+  Write-Host ("!" * 70)
+  exit 1
+}
 
 # 2026-10-03: the two code syncs below were never checked. On 10-03 BAILEY was
 # unreachable (stale DNS after a reboot), both failed CRITICAL, and only the DB
 # stage's own check made the run exit 1. Any failed stage fails the script.
 $stageFailed = @()
-Write-Host "== code + assets (incremental) =="
+Write-Host "== ${Standby}: code + assets (incremental) =="
 # --no-update-dir-modtime (2026-09-12): Windows sftp-server refuses SetModTime on
 # directories the running service holds open -> rclone reported 1 error every run
-# and SKIPPED ALL DELETIONS on BAILEY. Directory mtimes carry nothing we need.
+# and SKIPPED ALL DELETIONS on the standby. Directory mtimes carry nothing we need.
 # 2026-10-13: git writes pack and commit-graph files READ-ONLY, and the SFTP
-# copy carries that mode to BAILEY, where Windows then refuses to delete them.
-# When MARLEY's git repacks (10-10 did), rclone fails to delete the stale pair
-# on BAILEY and, as on 09-12, SKIPS ALL DELETIONS for the run - three nights of
+# copy carries that mode to the standby, where Windows then refuses to delete
+# them. When MARLEY's git repacks (10-10 did), rclone fails to delete the stale
+# pair and, as on 09-12, SKIPS ALL DELETIONS for the run - three nights of
 # alerts and a tree that only grew. Clear the attribute under .git first.
-& $ssh -o BatchMode=yes john@BAILEY "cmd /c attrib -R /S C:\Users\john\PycharmProjects\forms\.git\*.*" | Out-Null
+& $ssh -o BatchMode=yes $who "cmd /c attrib -R /S C:\Users\john\PycharmProjects\forms\.git\*.*" | Out-Null
 & $rc sync $src $dst --stats-one-line --no-update-dir-modtime `
   --exclude "recipes.db" --exclude "recipes.db-wal" --exclude "recipes.db-shm" `
   --exclude "page_cache.db" --exclude "media.db" --exclude "training.db" `
@@ -52,9 +84,14 @@ Write-Host "== code + assets (incremental) =="
   #   (13 rclone errors) and its cookies are a signed-in session that must
   #   stay on this machine; captures are per-machine pipeline inputs.
 if ($LASTEXITCODE -ne 0) { $stageFailed += "forms code sync (rclone exit $LASTEXITCODE)" }
-& $rc sync "C:/Users/john/PycharmProjects/recipe-core" "bailey:/C:/Users/john/PycharmProjects/recipe-core" --no-update-dir-modtime `
-  --exclude "__pycache__/**" --exclude "*.egg-info/**" --stats-one-line
-if ($LASTEXITCODE -ne 0) { $stageFailed += "recipe-core sync (rclone exit $LASTEXITCODE)" }
+# The three editable sibling packages the venv points at (-e lines in
+# requirements-frozen.txt). recipe-core is not a git repo anywhere, so this
+# copy is its only route to a standby; imagekit and llmkit also have GitHub.
+foreach ($pkg in "recipe-core", "imagekit", "llmkit") {
+  & $rc sync "C:/Users/john/PycharmProjects/$pkg" "${remote}:/C:/Users/john/PycharmProjects/$pkg" --no-update-dir-modtime `
+    --exclude "__pycache__/**" --exclude "*.egg-info/**" --exclude ".git/**" --stats-one-line
+  if ($LASTEXITCODE -ne 0) { $stageFailed += "$pkg sync (rclone exit $LASTEXITCODE)" }
+}
 
 if ($WithDbs) {
   if ($FreshBackup) {
@@ -63,12 +100,12 @@ if ($WithDbs) {
     python backup_db.py | Select-Object -Last 2
     Pop-Location
   }
-  Write-Host "== stopping BAILEY server =="
-  # 2026-09-11 cut-over: BAILEY runs BCC as an NSSM service (AppExit=Restart),
+  Write-Host "== stopping $Standby server =="
+  # 2026-09-11 cut-over: the standby runs BCC as an NSSM service (AppExit=Restart),
   # so a bare Stop-Process would be undone by nssm within seconds and the db
   # copy would hit a locked file. Stop the SERVICE when it exists; fall back
   # to the old process kill for a BCC-Drill-era host.
-  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Stop-Service BCC -Force; 'service stopped' } else { Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped' }"""
+  & $ssh -o BatchMode=yes $who "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Stop-Service BCC -Force; 'service stopped' } else { Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped' }"""
   # WAIT for python to actually exit and release recipes.db — on 2026-08-26 the
   # copy started immediately, hit 'rename failed: permission denied' x3, and the
   # run still reported success. Poll up to 30s for zero python processes.
@@ -76,10 +113,10 @@ if ($WithDbs) {
   while ((Get-Date) -lt $deadline) {
     # NO PIPE in the remote command (2026-09-19). The nightly runs this file under
     # Windows PowerShell 5.1, which hands native exes the inner quotes differently
-    # from pwsh 7: BAILEY's cmd.exe saw the bare "|" and answered "'Measure-Object)
+    # from pwsh 7: the standby's cmd.exe saw the bare "|" and answered "'Measure-Object)
     # .Count' is not recognized" on every poll - so $left was never "0" and this
     # loop was a blind 30s sleep, not a check. @(...).Count needs no pipe.
-    $left = & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""@(Get-Process python -ErrorAction SilentlyContinue).Count"""
+    $left = & $ssh -o BatchMode=yes $who "powershell -NoProfile -Command ""@(Get-Process python -ErrorAction SilentlyContinue).Count"""
     if ("$left".Trim() -eq "0") { break }
     Start-Sleep 3
   }
@@ -126,23 +163,23 @@ if ($WithDbs) {
   }
   # A REPLACED db must never pair with the previous run's WAL/SHM — that pairing
   # reads as 'database disk image is malformed' at startup.
-  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
-  Write-Host "== restarting BAILEY server =="
-  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Start-Service BCC; 'service started' } else { schtasks /Run /TN BCC-Drill }"""
+  & $ssh -o BatchMode=yes $who "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
+  Write-Host "== restarting $Standby server =="
+  & $ssh -o BatchMode=yes $who "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Start-Service BCC; 'service started' } else { schtasks /Run /TN BCC-Drill }"""
   Start-Sleep 40   # 2026-09-11: 15 s printed NOT ANSWERING on a healthy start
-  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
+  & $ssh -o BatchMode=yes $who "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
   if ($failed.Count -gt 0) {
     Write-Host ("!" * 70)
-    Write-Host "!! BAILEY DB SYNC FAILED for: $($failed -join ', ')"
-    Write-Host "!! BAILEY is serving STALE data. Re-run: .\bcc_sync_bailey.ps1 -WithDbs"
+    Write-Host "!! $Standby DB SYNC FAILED for: $($failed -join ', ')"
+    Write-Host "!! $Standby is serving STALE data. Re-run: .\bcc_sync_standby.ps1 -Standby $Standby -WithDbs"
     Write-Host ("!" * 70)
     exit 1
   }
 }
 if ($stageFailed.Count -gt 0) {
   Write-Host ("!" * 70)
-  Write-Host "!! BAILEY CODE SYNC FAILED: $($stageFailed -join '; ')"
-  Write-Host "!! Re-run: .\bcc_sync_bailey.ps1"
+  Write-Host "!! $Standby CODE SYNC FAILED: $($stageFailed -join '; ')"
+  Write-Host "!! Re-run: .\bcc_sync_standby.ps1 -Standby $Standby"
   Write-Host ("!" * 70)
   exit 1
 }

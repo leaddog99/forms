@@ -81,7 +81,7 @@ existing rather than getting ported.
    equipment_match.py, catalog_store.py (some grep hits are non-SQL).
 6. **Backup/DR chain, end to end.** backup_db.py, bcc_backup.bat,
    bcc_backup_scheduled.bat (nightly), the git-side recipes.sql dump, ADAM
-   disk mirror, bcc_sync_bailey.ps1 (file-copy + size-verify — meaningless for
+   disk mirror, bcc_sync_standby.ps1 (file-copy + size-verify — meaningless for
    a Postgres cluster; becomes pg_dump/pg_restore or a standby), and
    docs/disaster-recovery.md §5. The "copy the .db file" mental model dies;
    this is the piece with the most operational muscle memory to retrain.

@@ -11717,6 +11717,7 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   URL to 127.0.0.1:5432/f2n, connection established); recipes on BAILEY is the SQLite mirror;
   EDB PEM httpd listens on BAILEY :8080 on all interfaces (came with Postgres; not ours).
 
+* **The new box is HESTIA; sync script parameterised.** `bcc_sync_bailey.ps1` -> `bcc_sync_standby.ps1 -Standby <HOST>` (default BAILEY; rclone remote = host in lower case, fails loudly with the `rclone config create` line when the remote is missing; now also syncs imagekit and llmkit beside recipe-core). Nightly bat calls the new name; backup_check markers unchanged. Verified: code-only sync to BAILEY clean with the new script; HESTIA path fails as designed until its sshd + remote exist. Playbook renamed throughout to HESTIA.
 * **Restart done (curator, ~14:10):** new worker PID 36420, FTS index rebuilt with six columns, 13,217
   rows; ten live searches verified (tiers monotone across 415 rows, author/site prefixes, operators).
 * **Open:** dish-story prose verdict → commit → sweep on go · Buttercream cohort pass · live

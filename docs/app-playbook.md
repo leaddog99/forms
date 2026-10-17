@@ -76,7 +76,7 @@ The one-line versions:
 | system config | `input/pipeline/system_config.py` | DB-resident settings + cached `get_setting` + admin editor contract |
 | curator alerts | `input/pipeline/alerts.py` | loud banner + email for losses a log line can't carry |
 | logging | `log_config.json` | uvicorn log config with timestamps |
-| ops kit | `backup_db.py`, `bcc_backup_scheduled.bat`, `bcc_restart.bat`, `bcc_sync_bailey.ps1` | verified nightly dump + offsite tiers, NSSM restart, warm-standby sync |
+| ops kit | `backup_db.py`, `bcc_backup_scheduled.bat`, `bcc_restart.bat`, `bcc_sync_standby.ps1` | verified nightly dump + offsite tiers, NSSM restart, warm-standby sync |
 | ops docs | `docs/disaster-recovery.md`, `docs/host-stability-and-watchdog.md`, `docs/jobs-as-executables.md` | the why behind the kit |
 
 Copy the file, rename the tables and the service name, delete what the new app

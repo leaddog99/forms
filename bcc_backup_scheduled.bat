@@ -69,7 +69,7 @@ if /I not "%COMPUTERNAME%"=="MARLEY_SVR" (
   echo bailey sync skipped: running on %COMPUTERNAME% >> backup.log
 ) else (
   ipconfig /flushdns >nul 2>&1
-  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_bailey.ps1" -WithDbs >> backup.log 2>&1
+  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_standby.ps1" -Standby BAILEY -WithDbs >> backup.log 2>&1
   echo bailey sync exit code: !ERRORLEVEL! >> backup.log
 )
 endlocal
