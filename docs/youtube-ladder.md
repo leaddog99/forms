@@ -135,6 +135,36 @@ re-install. Nothing else in the one-liner changed.
   to the transcript rung. Both fixed; the description is rung 1 again.
 - Unit tests: `python -m intake.tests.test_youtube_source` (no network).
 
+## Video authority — the experiment (2026-10-17)
+
+The Butter Chicken refresh on a Hindi search line (gl=in hl=hi) returned 36
+organic results of which **33 were YouTube or Facebook** and were dropped at the
+SERP stage as blocked hosts; of the 3 pages left, Moz had data for none, and the
+dish kept 2 recipes by reserve alone. The curator asked whether the videos could
+be used, and what Moz or SEMrush would say about them. Measured:
+
+| instrument | result |
+|---|---|
+| **Moz** on 4 ranking watch pages | 3 of 4 *uncrawled* (no data); the one with data (Get Curried, a decade-old video) came back PA 75 / DA 100 / OU 26 — OU against a DA-100 baseline is not a measurement. 16 rows billed for 4 URLs: canonical-variant learning cannot learn youtube.com, so every URL costs the full 4-variant probe. **Wrong instrument.** |
+| **SEMrush, URL-level organic** (`resource_organic` on the watch URL) | Works. Fallow's Butter Chicken: ~250 US visits/month from 20 butter-chicken keywords (#3 for "butter chicken recipe", 110k volume); Get Curried's: ~270 India visits/month, with SEMrush noise keywords to filter ("restaurants near me open now"). ~400 API units per URL. |
+| **SEMrush, keyword-level** for the Hindi-script query | *Nothing found* in the India database — SEMrush's `in` tracks English queries; the Devanagari web is invisible to it. The Hindi SERP itself has to come from Scale SERP, as it does. |
+| **The ladder** on the same 4 | 3 of 4 hold the written recipe in the description (rung 1); 1 is transcript-only. |
+| **SERP position** | Fallow's video is #3 in the US and #10 in India for "butter chicken recipe"; this signal is already in hand at harvest time, free. |
+
+What this says: for a foreign-locale line the native recipe web **is** YouTube
+and the blocked-host rule throws the cohort away; the videos can be read (the
+ladder), and they can be ranked, but not by Moz. The signals we own are the
+SERP position for the dish query (free, already captured), SEMrush URL-level
+traffic where the market is English-indexed, and the channel treated like a
+publisher domain. Design sketch, **not built**: admit youtube.com at the SERP
+stage when the ladder reports rung 1 or 3 (a written recipe; transcript-only
+stays out of harvests), carry `serp_position` as the rank key in place of the
+missing Moz pair (today a Moz-less URL is dropped, not ranked), and give the
+channel a row in `domains` at the `youtube.com/@handle` grain so the channel's
+own standing accrues the way a publisher's does. Subscriber and view counts stay
+out of any score (the Data API policy decision above; the watch page shows them
+but a number read off a page is still YouTube's number).
+
 ## Not done
 
 - Comments on the server path (a pasted URL has no browser). Rung 3 is
