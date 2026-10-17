@@ -292,6 +292,11 @@
       } catch (e) { console.warn('[importing] bad capture fragment', e); return null; }
     }
     function clearHash() { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+    // The 11-character video id of a watch / youtu.be / shorts URL, else ''.
+    function youtubeIdOf(u) {
+      const m = /(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/)([\w-]{11})(?![\w-])/.exec(u || '');
+      return m ? m[1] : '';
+    }
 
     // The CSP fallback: a capture made by the bookmark's own code arrives in the
     // fragment. Coopt its picture (same-origin now), then stage it through the
@@ -301,15 +306,22 @@
       clearHash();   // never re-stage on reload; never leave the text in history
       setProgress(0.03, STR.staging);
       setSheetTitle((cap.title && !/^\(\d+\+?\)\s*\w+$/.test(cap.title) && cap.title !== 'Facebook') ? cap.title : (cap.text.split('\n').find(l => l.trim()) || '').slice(0, 140));
+      // YouTube is a single-page app: after a click from one video to the next,
+      // the page's og:image still names the PREVIOUS video, and that is what the
+      // loader read (the fried rice arrived with the fricassee's picture,
+      // 2026-10-17). A video's picture is a function of its id, so derive it from
+      // the URL — the same still the ladder uses — and ignore the meta tag.
+      const ytId = youtubeIdOf(cap.url || srcUrl);
+      const heroSrc = ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : cap.image;
       let localHero = null;
-      if (cap.image && /^https?:\/\//.test(cap.image)) {
+      if (heroSrc && /^https?:\/\//.test(heroSrc)) {
         setProgress(0.04, STR.stagingImage);
         try {
-          const r = await fetch(`${API}/images/fetch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: cap.image }) });
+          const r = await fetch(`${API}/images/fetch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: heroSrc }) });
           if (r.ok) { const d = await r.json(); localHero = d && d.url ? d.url : null; }
         } catch (e) { /* the picture is a courtesy; the recipe is the point */ }
       }
-      setSheetImage(localHero || cap.image);
+      setSheetImage(localHero || heroSrc);
       const r = await fetch(`${API}/stage-capture`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: cap.url || srcUrl, title: cap.title || '', text: cap.text, comments: cap.comments || [],
