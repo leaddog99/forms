@@ -36,7 +36,9 @@ SOURCE_ENRICH = "enrich"
 SOURCE_CURATOR = "curator"
 
 
-_LINES = {"type": "string", "description": "One item per line. No bullets, no numbering, no tags."}
+_NOTE = {"type": "string",
+         "description": "One short paragraph of connected sentences, 40-80 words, spoken to the "
+                        "cook. No bullets, no numbering, no line breaks, no tags."}
 _TOOL = {
     "name": "submit_dish_editorial",
     "description": "Submit the dish's story, provenance and cook's notes.",
@@ -50,11 +52,13 @@ _TOOL = {
                                      "120-200 words in all. Reader-facing narrative."},
             "ethnicity": {"type": "string", "description": "One word/phrase; empty if genuinely mixed or unclear."},
             "origin_region": {"type": "string", "description": "Region/country; empty if unknown."},
-            # Flat strings, not arrays: with array parameters the model wrapped
-            # the list in <item>/<parameter> text (Soutzoukakia, 2026-10-16).
-            "tips": _LINES,
-            "techniques": _LINES,
-            "landmines": _LINES,
+            # Prose, not lists (curator, 2026-10-16: "soften them into sentences
+            # rather than bullets, more of a dialog than staccato points"). Flat
+            # strings either way: array parameters came back as <item>/<parameter>
+            # tagged text (Soutzoukakia, 2026-10-16).
+            "tips": _NOTE,
+            "techniques": _NOTE,
+            "landmines": _NOTE,
         },
     },
 }
@@ -109,6 +113,25 @@ rhetorical questions, exclamation marks, a sentence that tells the reader how
 they will feel, an opening that defines the dish by its name, a closing that
 sums up or invites the reader to try it, and lists of three adjectives.
 
+NUMBERS. The signals below are measurements; the reader never sees a
+spreadsheet. No percentages, decimals or ratios in the prose - say "three in
+four recipes", "nearly every recipe", "about half", "only a handful". At most
+one such count in the whole story, and none in the notes. Never describe the
+measurement itself ("cited at a ratio", "leans toward", "shows up as a
+signal", "the data suggests"): talk about recipes and cooks, never about the
+numbers behind them.
+
+WHO SAYS WHAT. The story and the notes split the material; a fact lives in
+one place. The story owns the why, the history and the argument between
+recipes. The notes own the instruction at the stove. The story may name the
+dish's single biggest landmine as its hook, in one clause, but the actionable
+version of it lives only in the notes - and the notes never restate anything
+the story has already said. The three notes are each ONE short paragraph in
+the same voice as the story - a cook talking, not a checklist - and a fact
+appears once across all three: tips say what to do, techniques say what the
+dish turns on and why, landmines say how it goes wrong. If the same fact
+wants to be in two of them, it belongs in the one where it is most useful.
+
 DISH: {name} (chapter: {dish.get('chapter') or '?'})
 DESCRIPTION: {(dish.get('description') or '')[:300]}
 MEASURED SIGNALS ({sig.get('cohort_n') or 0} recipes): {terms or '(none)'}
@@ -123,11 +146,14 @@ Call submit_dish_editorial with:
   specifics in the material. One idea per paragraph; never one block of text
 - ethnicity: one word/phrase, or empty if genuinely mixed/unclear
 - origin_region: region/country, or empty
-- tips: 3-5 lines, each short, concrete, grounded in the methods
-- techniques: 2-4 lines, each "Technique name: one sentence on why the dish turns on it"
-- landmines: 2-4 lines, each a way this dish actually goes wrong — prefer points
-  where the cohort's recipes disagree or the methods warn
-One item per line in tips / techniques / landmines; no bullets, numbering or tags."""
+- tips: one paragraph, 40-80 words, three or four concrete things to do at the
+  stove, grounded in the methods, connected as a cook would say them
+- techniques: one paragraph, 40-80 words, the two or three moves the dish turns
+  on and why, each named in passing
+- landmines: one paragraph, 40-80 words, how this dish actually goes wrong — prefer
+  points where the cohort's recipes disagree or the methods warn
+Each note is prose: no bullets, numbering, line breaks or tags; nothing the story
+already says; nothing another note already says."""
 
 
 def draft(conn: sqlite3.Connection, name: str) -> dict:
@@ -151,12 +177,38 @@ def draft(conn: sqlite3.Connection, name: str) -> dict:
                 if getattr(b, "type", None) == "tool_use" and b.name == _TOOL["name"]), None)
     if not isinstance(out, dict):
         raise RuntimeError("model reply unusable (no submit_dish_editorial call) — run again")
+    out = _unleak(out)
     return {
         "story": (out.get("story") or "").strip(),
         "ethnicity": (out.get("ethnicity") or "").strip(),
         "origin_region": (out.get("origin_region") or "").strip(),
         "cook_notes": {k: _as_list(out.get(k)) for k in ("tips", "techniques", "landmines")},
     }
+
+
+_LEAK = re.compile(r"</?(?:story|ethnicity|origin_region|tips|techniques|landmines|parameter)\b[^>]*>")
+
+
+def _unleak(out: dict) -> dict:
+    """Once in five calls (Skordalia, 2026-10-16) the model ran the tool
+    parameters together as tagged text inside ONE string field, e.g.
+    'story text</story> <parameter name="ethnicity">Greek', and left the real
+    `ethnicity` empty. Cut each string at the first tag, and give every tagged
+    segment to the field it names when that field is blank."""
+    props = _TOOL["input_schema"]["properties"]
+    fixed = dict(out)
+    for k, v in out.items():
+        if not isinstance(v, str) or not _LEAK.search(v):
+            continue
+        parts = _LEAK.split(v)
+        tags = [m.group(0) for m in _LEAK.finditer(v)]
+        fixed[k] = parts[0].strip()
+        for tag, seg in zip(tags, parts[1:]):
+            m = re.match(r'<(?:parameter name="(\w+)"|(\w+))>', tag)
+            field = (m.group(1) or m.group(2)) if m else None
+            if field in props and seg.strip() and not (fixed.get(field) or "").strip():
+                fixed[field] = seg.strip()
+    return fixed
 
 
 def _as_list(v) -> list[str]:
