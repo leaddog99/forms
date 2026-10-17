@@ -794,6 +794,27 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "reliance on the LLM); lower = more recall. Default 4.",
     },
     {
+        "key": "is_recipe_structure_min_ingredients",
+        "value": 5,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Is-recipe verdict — min ingredients to accept on structure",
+        "description": "When the recipe-phrase score misses its threshold, an EXTRACTED recipe "
+                       "with a name, at least this many ingredients and at least the minimum "
+                       "steps (below) is still accepted, with the basis recorded "
+                       "(_scoring.recipeVerdictBasis = structure). The phrase list is written-"
+                       "recipe vocabulary; a spoken transcript or an OCR'd card does not use it. "
+                       "The score itself is stored as measured either way.",
+    },
+    {
+        "key": "is_recipe_structure_min_steps",
+        "value": 3,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Is-recipe verdict — min steps to accept on structure",
+        "description": "The step half of the structural acceptance above.",
+    },
+    {
         "key": "snippet_recipe_anchors",
         "value": ["ingredients", "instructions", "directions", "method:", "method ",
                   "prep time", "cook time", "total time", "yield", "servings", "serves",

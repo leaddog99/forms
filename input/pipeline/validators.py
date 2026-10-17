@@ -6,6 +6,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timezone
+from typing import Optional
 
 from input.pipeline.config import RECIPE_PHRASES, IS_RECIPE_THRESHOLD
 
@@ -284,14 +285,51 @@ def is_recipe(text: str, threshold: int = IS_RECIPE_THRESHOLD) -> dict:
     }
 
 
+# When the phrase score falls short, the EXTRACTED recipe gets a say. The
+# phrase list is written-recipe vocabulary ("tsp", "1/2 cup", "servings:");
+# a cook talking through a video says "half a cup", so a transcript-rung
+# YouTube recipe scored 6 against 7 on 2026-10-17 while the extraction had
+# 19 ingredients and 9 steps, and the in-progress page called it thin. The
+# verdict's job is "is this a recipe at all?" — a result with a name and
+# this many ingredients and steps answers that on its own. The score is
+# still stored as measured; only the verdict and its stated basis change.
+_STRUCTURE_MIN_INGREDIENTS_SEED = 5
+_STRUCTURE_MIN_STEPS_SEED = 3
+
+
+def structure_accepts(recipe: dict) -> Optional[str]:
+    """A one-line reason when the extracted recipe's own structure carries
+    the is-recipe verdict; None when it does not."""
+    name = (recipe.get("name") or "").strip() if isinstance(recipe.get("name"), str) else ""
+    n_ing = len(recipe.get("recipeIngredient") or [])
+    n_step = len(recipe.get("recipeInstructions") or [])
+    if (not name
+            or n_ing < _cfg_int("is_recipe_structure_min_ingredients", _STRUCTURE_MIN_INGREDIENTS_SEED)
+            or n_step < _cfg_int("is_recipe_structure_min_steps", _STRUCTURE_MIN_STEPS_SEED)):
+        return None
+    return f"accepted on structure: {n_ing} ingredients, {n_step} steps"
+
+
 def stamp_validation_on_recipe(recipe: dict, validation: dict) -> None:
-    """Write validation result onto a sanitized recipe dict in-place."""
+    """Write the validation result onto a sanitized recipe dict in place:
+    the phrase score as measured, and a verdict the extracted structure may
+    rescue (see structure_accepts)."""
+    accepted = bool(validation["accepted"])
+    reason = validation["reason"]
+    basis = None
+    if not accepted:
+        why = structure_accepts(recipe)
+        if why:
+            accepted, basis = True, "structure"
+            reason = f"{reason}; {why}"
     recipe["current_status"] = {
-        "value": "accepted" if validation["accepted"] else "rejected",
-        "reason": validation["reason"],
+        "value": "accepted" if accepted else "rejected",
+        "reason": reason,
         "timestamp": validation["timestamp"],
     }
     scoring = recipe.get("_scoring") or {}
     scoring["recipeScore"] = validation["score"]
     scoring["recipeScoreThreshold"] = validation["threshold"]
+    if basis:
+        scoring["recipeVerdictBasis"] = basis
     recipe["_scoring"] = scoring
