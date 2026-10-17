@@ -76,12 +76,24 @@ _MOZ_URLS = 0        # URLs looked up (what `calls` used to mean before batching
 _MOZ_UNCRAWLED = 0
 
 
+# Domains whose FULL variant probe came back with no crawled variant at all, this
+# run. Canonical learning cannot learn such a domain (there is no crawled form to
+# learn from), so before this every further URL of the host paid the full probe
+# again: americanlamb.com, 2026-10-17, 43 URLs -> 172 billed rows to be told "never
+# crawled" 43 times. A domain in this set is probed with ONE target (the URL as
+# given) for the rest of the run - the answer is the same and costs a quarter.
+# Per run on purpose: Moz crawls new pages in days, and a 30-day memory of
+# "uncrawled" would hide the day it does.
+_UNCRAWLED_DOMAINS: set = set()
+
+
 def reset_moz_row_stats() -> None:
     global _MOZ_ROWS, _MOZ_CALLS, _MOZ_URLS, _MOZ_UNCRAWLED
     _MOZ_ROWS = 0
     _MOZ_CALLS = 0
     _MOZ_URLS = 0
     _MOZ_UNCRAWLED = 0
+    _UNCRAWLED_DOMAINS.clear()
 
 
 def _note_moz_url() -> None:
@@ -593,13 +605,21 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
     if learning_on:
         _canon_load()
         pattern = _CANON.get(_canon_domain(url))
-    candidates = [_canonical_variant(url, pattern)] if pattern else _url_variants(url)
+    _dom = _canon_domain(url)
+    if pattern:
+        candidates = [_canonical_variant(url, pattern)]
+    elif _dom and _dom in _UNCRAWLED_DOMAINS:
+        candidates = [url]          # the host is uncrawled this run: one row, not four
+    else:
+        candidates = _url_variants(url)
 
     results = _moz_url_metrics(candidates, auth)
     if results is None:
         return None, None
 
     chosen, chosen_url, usable = _pick_variant(candidates, results)
+    if not usable and _dom and len(candidates) > 1:
+        _UNCRAWLED_DOMAINS.add(_dom)
 
     # Self-heal: a learned single-variant probe that comes back with NO real Moz data
     # (http_code 0) means the learned pattern is stale/wrong for this URL — re-expand to

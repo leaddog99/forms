@@ -1167,8 +1167,19 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # and records what it scores, so the pool itself becomes the cache for the
     # next run of this publisher — and for any dish batch that meets the URL.
     _moz_cached = 0
+    n_moz_ok = 0          # pages Moz has actually crawled (a measured PA)
+    n_uncrawled_kept = 0  # pages Moz answered "never crawled" for - kept, PA absent
     from input.pipeline import domains_lib as _dlm
     _moz_conn = _dlm._connect(_dlm._DEFAULT_DB)
+    # The publisher's own DA, for members whose page Moz has never crawled: DA is a
+    # domain-level measurement (Moz returns the same figure on every URL of the
+    # host, crawled or not), so a page can carry it without a PA of its own.
+    try:
+        _dom_da = (_dlm.get_domain(_moz_conn, domain) or {}).get("domain_authority")
+        _dom_da = float(_dom_da) if _dom_da is not None else None
+    except Exception:
+        _dom_da = None
+    _fp = lambda v: ("  ?" if v is None else f"{v:>3.0f}")
     for i, (url, title) in enumerate(recipe_pass, 1):
         if should_cancel and should_cancel():
             from input.pipeline.jobs import JobCancelled
@@ -1178,19 +1189,41 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                 _prior.get("moz_last_scored"), _us.MOZ_REFRESH_TTL_DAYS):
             _moz_cached += 1
         s = _us.get_or_create_url_metadata(_moz_conn, url, fallback_title=title or "")
+        _fm = file_meta.get(url) or {}
         if s and s.get("page_authority"):
-            pa, da = s.get("page_authority"), s.get("domain_authority")
-            _fm = file_meta.get(url) or {}
+            pa, da = float(s["page_authority"]), s.get("domain_authority")
+            n_moz_ok += 1
             scored.append({"url": url, "title": title,
-                           "da": float(da), "pa": float(pa),
+                           "da": float(da) if da is not None else None, "pa": pa,
                            "traffic": _fm.get("traffic"),
                            "traffic_pct": _fm.get("traffic_pct"),
                            "file_seq": _fm.get("file_seq")})
             # Per-URL Moz line, mirroring the dish batch's _moz_score log. No OU —
             # publishers have no per-publisher fit; within-publisher rank IS pa.
-            _fp = lambda v: ("?" if v is None else f"{v:>3}")
             print(f"  [{i:>2}/{n_rp}] MOZ-OK   pa={_fp(pa)} da={_fp(da)}  {url}")
+        elif s and s.get("moz_http_code") == 0:
+            # MOZ ANSWERED: NEVER CRAWLED. Kept, with PA ABSENT (2026-10-17, the
+            # americanlamb.com harvest: 43 recipe pages, Moz had crawled none of
+            # them - its last visit to the site was 2023 - 172 rows billed, 0
+            # stored). A publisher harvest from a SEMrush file is already SELECTED
+            # on traffic; Moz only orders within the publisher. A page Moz has not
+            # reached is not a page that failed, so it stays in the pool and ranks
+            # after the measured ones, by traffic (the sort below). The dish batch
+            # keeps the older rule and drops uncrawled pages: there the pages
+            # compete ACROSS publishers on authority and an absent PA cannot be
+            # placed. PA is never the placeholder Moz ships for uncrawled pages
+            # (identical on every URL of the host - a domain estimate, not a
+            # measurement); DA is the publisher's, which is real.
+            n_uncrawled_kept += 1
+            scored.append({"url": url, "title": title,
+                           "da": _dom_da, "pa": None,
+                           "traffic": _fm.get("traffic"),
+                           "traffic_pct": _fm.get("traffic_pct"),
+                           "file_seq": _fm.get("file_seq"),
+                           "note": "moz-uncrawled"})
+            print(f"  [{i:>2}/{n_rp}] MOZ-NONE pa=  ? da={_fp(_dom_da)}  {url}  (never crawled by Moz; ranks by traffic)")
         else:
+            # No Moz answer at all (creds, network, quota) or an unparseable URL.
             _drop(url, title, "moz-unavailable", "moz")
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
     # STAMP THE PUBLISHER'S DA FROM THIS RUN. Moz returns domain_authority on
@@ -1240,11 +1273,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # whole publisher is a real (if unusual) answer and stays a soft result; every
     # URL failing for some OTHER reason — creds, quota, network, a bad gate — is a
     # bug, and spending money to learn nothing must be loud.
-    if n_rp and not scored:
-        _detail = (f"{n_rp} candidate(s), {_ms['rows']} Moz row(s) billed, 0 scored "
-                   f"({_ms['uncrawled']} reported no Moz data)")
-        if _ms["uncrawled"] >= n_rp:
-            print(f"  [harvest] WARNING — Moz has no data for ANY candidate: {_detail}")
+    if n_rp and not n_moz_ok:
+        _detail = (f"{n_rp} candidate(s), {_ms['rows']} Moz row(s) billed, 0 with a measured PA "
+                   f"({_ms['uncrawled']} reported no Moz data, {n_uncrawled_kept} kept with PA absent)")
+        if _ms["uncrawled"] >= n_rp or n_uncrawled_kept >= n_rp:
+            print(f"  [harvest] WARNING — Moz has crawled NONE of this publisher's pages: {_detail}. "
+                  f"The pool ranks by traffic alone this run.")
         else:
             raise RuntimeError(
                 f"Moz scoring produced nothing while billing rows: {_detail}. "
@@ -1293,7 +1327,9 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         _ou = m.get("ou")
         _ous = "    ?" if _ou is None else f"{_ou:+5.1f}"
         _sel = "*" if m.get("selected") else " "
-        print(f"  {_sel}[{m['rank']:>2}/{_ns}] pa={m['pa']:>4.0f} da={m['da']:>4.0f} ou={_ous}  {m['url']}")
+        _pa_s = "   ?" if m.get("pa") is None else f"{m['pa']:>4.0f}"
+        _da_s = "   ?" if m.get("da") is None else f"{m['da']:>4.0f}"
+        print(f"  {_sel}[{m['rank']:>2}/{_ns}] pa={_pa_s} da={_da_s} ou={_ous}  {m['url']}")
     # Translate the SELECTED members' titles to the instance base language for a READABLE
     # ledger: the harvested og:title is in the publisher's language (e.g. Greek 'Μπουγάτσα με
     # κρέμα'), and while the ingested master copy is translated, the discovery list shows this

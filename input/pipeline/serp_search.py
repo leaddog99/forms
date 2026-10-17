@@ -222,7 +222,13 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
 # wrapper with a 302 whose Location IS the publisher URL, so one HEAD-sized request
 # (no page body) recovers it. The legacy google.com/url?q=<url> form carries the
 # URL in the clear.
-_GOOGLE_WRAPPER = re.compile(r"^https?://(?:www\.)?google\.[a-z.]{2,8}/(goto|url)\?", re.I)
+# /goto and /url are redirect wrappers (resolved by a HEAD-less GET below).
+# translate.google.com/translate?u=<page> is Google's TRANSLATION PROXY: a Hindi
+# SERP for Butter Chicken (2026-10-17) returned two English blogs behind it, and
+# they reached Moz as translate.google.com URLs, which Moz has never crawled.
+# The publisher page is the `u` parameter; no request needed.
+_GOOGLE_WRAPPER = re.compile(
+    r"^https?://(?:(?:www\.)?google\.[a-z.]{2,8}/(?:goto|url)\?|translate\.google\.[a-z.]{2,8}/translate\?)", re.I)
 _RESOLVE_UAS = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/130.0.0.0 Safari/537.36",
@@ -245,12 +251,14 @@ def unwrap_google_redirect(link: str, timeout: float = 10.0) -> str | None:
     if not is_google_wrapper(link):
         return link
     sp = urlsplit(link)
-    if sp.path.rstrip("/").endswith("/url"):
+    if sp.path.rstrip("/").endswith("/url") or sp.netloc.lower().startswith("translate.google."):
         q = parse_qs(sp.query)
-        for k in ("q", "url"):
+        for k in ("q", "url", "u"):
             v = (q.get(k) or [""])[0]
             if v.startswith(("http://", "https://")):
                 return unquote(v)
+        if sp.netloc.lower().startswith("translate.google."):
+            return None              # a translate URL with no page behind it: nothing to fetch
     for ua in _RESOLVE_UAS:
         try:
             r = requests.get(link, allow_redirects=False, timeout=timeout,
