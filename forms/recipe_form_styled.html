@@ -1687,10 +1687,10 @@
       background: var(--accent-soft, #faf3ee);
     }
     /* Source lane tabs — same vocabulary as .filter-btn, laid out as a strip. */
-    .sidebar-controls .source-tabs {
+    .source-tabs {
       display: flex; align-items: center; gap: 4px; margin-top: 6px;
     }
-    .sidebar-controls .source-tabs .src-tab {
+    .source-tabs .src-tab {
       flex: 1 1 0; min-width: 0; padding: 5px 4px;
       font-family: inherit; font-size: 0.8em; line-height: 1.2;
       color: var(--ink-muted, #666); background: transparent;
@@ -1698,13 +1698,13 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       transition: border-color 0.15s, color 0.15s, background 0.15s;
     }
-    .sidebar-controls .source-tabs .src-tab:hover { color: var(--ink); border-color: var(--line); }
-    .sidebar-controls .source-tabs .src-tab.active {
+    .source-tabs .src-tab:hover { color: var(--ink); border-color: var(--line); }
+    .source-tabs .src-tab.active {
       color: var(--accent); background: var(--accent-soft, #faf3ee); border-color: var(--accent);
     }
-    .sidebar-controls .source-tabs .src-tab .n { opacity: 0.7; font-size: 0.9em; margin-left: 3px; }
-    .sidebar-controls .source-tabs .src-tab:disabled { opacity: 0.45; cursor: default; }
-    .sidebar-controls .source-tabs .info-dot { flex: 0 0 auto; margin-left: 2px; }
+    .source-tabs .src-tab .n { opacity: 0.7; font-size: 0.9em; margin-left: 3px; }
+    .source-tabs .src-tab:disabled { opacity: 0.45; cursor: default; }
+    .source-tabs .info-dot { flex: 0 0 auto; margin-left: 2px; }
     /* Class glyph on a list card: ▶ video, ◎ social; web shows nothing. */
     .recipe-list .src-glyph { opacity: 0.75; margin-right: 4px; font-size: 0.85em; }
     .sidebar-controls .filter-btn svg { width: 15px; height: 15px; }
