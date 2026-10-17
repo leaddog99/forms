@@ -156,6 +156,26 @@ FTS_FIELD_ALIASES = {
 # what the recipe is, not what it contains.
 FTS_ABOUT_COLUMNS = ("name", "dish", "author", "domain")
 
+# SOURCE CLASS (docs/video-recipes-lane.md §3, 2026-10-17): web | video | social,
+# a generated column on both recipe tables, faceted like cuisine. The capture
+# kind stamped by the staged-markdown doors decides; rows saved before the stamp
+# existed fall back to the source URL's host, so the two YouTube recipes in the
+# master table from before the ladder are video too. scripts/add_source_class_column.py
+# applies it to a live database (ALTER TABLE needs sqlite-vec loaded); the
+# startup loop below only reaches a table without vec triggers (a fresh install).
+_SRC_URL = "json_extract(data,'$._source.originalUrl')"
+SOURCE_CLASS_SQL = (
+    "CASE json_extract(data,'$._source.capture.kind') "
+    "WHEN 'youtube' THEN 'video' "
+    "WHEN 'facebook' THEN 'social' WHEN 'instagram' THEN 'social' WHEN 'tiktok' THEN 'social' "
+    "ELSE CASE "
+    f"WHEN {_SRC_URL} LIKE '%youtube.com/%' OR {_SRC_URL} LIKE '%youtu.be/%' THEN 'video' "
+    f"WHEN {_SRC_URL} LIKE '%facebook.com/%' OR {_SRC_URL} LIKE '%fb.watch/%' "
+    f"OR {_SRC_URL} LIKE '%instagram.com/%' OR {_SRC_URL} LIKE '%tiktok.com/%' THEN 'social' "
+    "ELSE 'web' END END"
+)
+SOURCE_CLASSES = ("web", "video", "social")
+
 
 # Typographic characters that appear in recipe titles and would otherwise sort
 # above every letter. Mapped to the ASCII the same title uses elsewhere in the
@@ -1194,13 +1214,24 @@ def init_db():
                     # must be excluded from any fit over PA — notably the paid-PA
                     # calibration, whose population IS these blocked publishers.
                     ("moz_http_code", "INTEGER", "json_extract(data,'$._scoring.mozHttpCode')"),
+                    # web | video | social — the lane a recipe belongs to
+                    # (docs/video-recipes-lane.md). Added to live DBs by
+                    # scripts/add_source_class_column.py, see SOURCE_CLASS_SQL.
+                    ("source_class", "TEXT", SOURCE_CLASS_SQL),
                 ):
                     try:
                         conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_gc} {_type} "
                                      f"GENERATED ALWAYS AS ({_expr}) VIRTUAL")
                         print(f"[MIGRATE] added {_tbl}.{_gc} generated column")
-                    except sqlite3.OperationalError:
-                        pass  # already present
+                    except sqlite3.OperationalError as _ge:
+                        # "duplicate column" = already present, the normal case.
+                        # Anything else is the ALTER re-validating this table's
+                        # vec cleanup trigger on a connection without sqlite-vec
+                        # ("no such module: vec0") - the column is NOT there and
+                        # has to be added by the one-off with vec loaded.
+                        if "duplicate column" not in str(_ge).lower():
+                            print(f"[MIGRATE] {_tbl}.{_gc} NOT added ({_ge}) - run "
+                                  f"scripts/add_source_class_column.py (ALTER needs sqlite-vec)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_source_host "
                              f"ON {_tbl}(source_host)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_ou_score "
@@ -1210,9 +1241,13 @@ def init_db():
                 # Facet indexes. (user_id, col) because every list/facet query
                 # filters by owner first, so the owner has to lead or the index
                 # is only half usable.
-                for _fc in ("cuisine", "ethnicity", "chapter", "recipe_name"):
-                    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_{_fc} "
-                                 f"ON {_tbl}(user_id, {_fc})")
+                for _fc in ("cuisine", "ethnicity", "chapter", "recipe_name", "source_class"):
+                    try:
+                        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_{_fc} "
+                                     f"ON {_tbl}(user_id, {_fc})")
+                    except sqlite3.OperationalError as _ie:
+                        # source_class may be absent until the one-off has run.
+                        print(f"[SETUP] index idx_{_tbl}_{_fc} skipped: {_ie}")
                 # THE HOTLIST index (2026-09-19). The hotlist sort SELECTS one
                 # flagship page per publisher with a window over (source_host,
                 # traffic_pct, traffic) - three VIRTUAL columns, so every one of
@@ -2128,17 +2163,19 @@ def search_recipes(
     ethnicity: str = "",
     chapter: str = "",
     domain: str = "",
+    source: str = "",
     sort: str = "",
     limit: int = 200,
     offset: int = 0,
     facets: int = 1,
 ):
     """Faceted recipe search: one page of rows PLUS the counts every dropdown
-    needs, in a single round trip. See _recipes_search_impl for the why."""
+    needs, in a single round trip. See _recipes_search_impl for the why.
+    `source` = web | video | social (the lane tab)."""
     return _recipes_search_impl(
         user_id=user_id, q=q, cuisine=cuisine, ethnicity=ethnicity,
-        chapter=chapter, domain=domain, sort=sort, limit=limit, offset=offset,
-        facets=facets,
+        chapter=chapter, domain=domain, source=source, sort=sort, limit=limit,
+        offset=offset, facets=facets,
     )
 
 
@@ -11690,6 +11727,8 @@ FACET_COLUMNS = {
     "cuisine": "cuisine",
     "ethnicity": "ethnicity",
     "chapter": "chapter",
+    # web | video | social (SOURCE_CLASS_SQL) - the lane tab in the recipe list.
+    "source": "source_class",
 }
 
 
@@ -11972,8 +12011,8 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
 
 
 def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
-                         chapter: str, domain: str = "", sort: str, limit: int,
-                         offset: int, facets: int) -> dict:
+                         chapter: str, domain: str = "", source: str = "", sort: str,
+                         limit: int, offset: int, facets: int) -> dict:
     """One page of matching rows plus every dropdown's options, in one request.
 
     Returns an ENVELOPE, unlike GET /recipes which returns a bare array. The
@@ -11983,7 +12022,10 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     """
     table = _recipes_table_for(user_id)
     filters = {"cuisine": cuisine, "ethnicity": ethnicity, "chapter": chapter,
-               "domain": domain}
+               "domain": domain,
+               # An unknown class is ignored, not an empty list: a stale client
+               # must not make the recipes look gone.
+               "source": source if source in SOURCE_CLASSES else ""}
     q = (q or "").strip()
 
     order_by = SORT_SQL.get(sort) or SORT_SQL[DEFAULT_SORT]
@@ -12061,7 +12103,7 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
             # No INDEXED BY: a hint would break under filters and on rename.
             rows = conn.execute(
                 f"SELECT id, recipe_id, user_id, data, source_changed_at, "
-                f"created_at, updated_at{rel_col} FROM {table} WHERE id IN ("
+                f"created_at, updated_at{rel_col}, source_class FROM {table} WHERE id IN ("
                 f"SELECT id FROM {table} WHERE {where} "
                 f"ORDER BY {order_by} LIMIT ? OFFSET ?) "
                 f"ORDER BY {order_by}",
@@ -12083,6 +12125,8 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                     "relevance": round(row[7], 3) if row[7] is not None else None,
                     # Where the query was found - why the row placed where it did.
                     "match": MATCH_TIER_LABEL.get(row[8]),
+                    # web | video | social - the lane (SOURCE_CLASS_SQL).
+                    "source_class": row[9],
                 })
 
             facet_counts: dict = {}

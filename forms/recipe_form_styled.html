@@ -1686,6 +1686,27 @@
       color: var(--accent);
       background: var(--accent-soft, #faf3ee);
     }
+    /* Source lane tabs — same vocabulary as .filter-btn, laid out as a strip. */
+    .sidebar-controls .source-tabs {
+      display: flex; align-items: center; gap: 4px; margin-top: 6px;
+    }
+    .sidebar-controls .source-tabs .src-tab {
+      flex: 1 1 0; min-width: 0; padding: 5px 4px;
+      font-family: inherit; font-size: 0.8em; line-height: 1.2;
+      color: var(--ink-muted, #666); background: transparent;
+      border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .sidebar-controls .source-tabs .src-tab:hover { color: var(--ink); border-color: var(--line); }
+    .sidebar-controls .source-tabs .src-tab.active {
+      color: var(--accent); background: var(--accent-soft, #faf3ee); border-color: var(--accent);
+    }
+    .sidebar-controls .source-tabs .src-tab .n { opacity: 0.7; font-size: 0.9em; margin-left: 3px; }
+    .sidebar-controls .source-tabs .src-tab:disabled { opacity: 0.45; cursor: default; }
+    .sidebar-controls .source-tabs .info-dot { flex: 0 0 auto; margin-left: 2px; }
+    /* Class glyph on a list card: ▶ video, ◎ social; web shows nothing. */
+    .recipe-list .src-glyph { opacity: 0.75; margin-right: 4px; font-size: 0.85em; }
     .sidebar-controls .filter-btn svg { width: 15px; height: 15px; }
     .sidebar-controls .filter-btn .badge {
       background: var(--accent);
@@ -2003,6 +2024,12 @@
           <select id="filter_ethnicity"><option value="">Any ethnicity</option></select>
         </div>
         <div class="filter-row">
+          <label for="filter_source">Source</label>
+          <!-- Same facet as the lane tabs above the list; here so a saved
+               criteria set can carry it and the badge counts it. -->
+          <select id="filter_source"><option value="">Any source</option></select>
+        </div>
+        <div class="filter-row">
           <label for="filter_domain">Site</label>
           <!-- Type-ahead over the domains master: shows the friendly name,
                FILTERS on the actual host (the option text carries both;
@@ -2116,6 +2143,11 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
            keeps chapter's persistence key working unchanged. -->
       <input type="hidden" id="sidebar_chapter" value="" />
       <input type="hidden" id="sidebar_cuisine" value="" />
+      <!-- The source LANE (web | video | social; docs/video-recipes-lane.md).
+           A facet like the others on the server; here it is the tab strip
+           below rather than a dropdown, because it is a view you live in,
+           not a criterion you refine. -->
+      <input type="hidden" id="sidebar_source" value="" />
       <input type="hidden" id="sidebar_ethnicity" value="" />
       <!-- Applied domain filter: holds the resolved HOST (seriouseats.com),
            while the dialog's visible input shows the friendly name. -->
@@ -2130,6 +2162,12 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       <select id="sidebar_sort">
         <!-- options auto-populated from SORT_ORDERS at page load -->
       </select>
+    </div>
+    <!-- Source lane tabs: All · Web · Video · Social, with cascaded counts.
+         Built from SOURCE_CLASSES; clicking writes #sidebar_source and reloads. -->
+    <div class="source-tabs" id="sourceTabs" role="tablist" aria-label="Recipe source">
+      <button type="button" class="info-dot" data-info-title="Web, video, social"
+              data-info="Every recipe here is the same kind of record; this is <b>where it came from</b>.<br><br><b>Web</b> is a page a publisher owns, fetched by us or captured in your browser.<br><b>Video</b> is a recipe whose source of record is a video platform we can read: today YouTube, via the description, the creator's comments or the transcript.<br><b>Social</b> is a recipe someone saved from Facebook, Instagram or TikTok through the browser or a screenshot; those networks cannot be read by a server, so social recipes are never ranked, only kept.<br><br>Video recipes are ranked in their own lane, by their place in the search results and the channel's standing, never by views or likes.">i</button>
     </div>
     <ul class="recipe-list" id="recipeList">
       <li class="empty-state">Loading...</li>
@@ -4145,7 +4183,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // The user_id, sort, and chapter filter survive reloads (the user
     // expects to come back to the same view). Search box is
     // intentionally NOT persisted — searches are transient queries.
-    const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort'];
+    const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort', 'sidebar_source'];
     // …but only these come BACK on load. `user_id` is still written (see
     // applySelfCollection below) and deliberately not read here: a page open
     // always starts on your own collection, never on whichever one you happened
@@ -4159,7 +4197,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // collection it was chosen against, and the collection does not survive a
     // reload, so neither can the filter. Sort is different and does persist: no
     // sort order can empty a list.
-    const SIDEBAR_RESTORE_KEYS = ['sidebar_sort'];
+    const SIDEBAR_RESTORE_KEYS = ['sidebar_sort', 'sidebar_source'];
     function persistSidebarState() {
       SIDEBAR_PERSIST_KEYS.forEach(id => {
         const el = document.getElementById(id);
@@ -4608,9 +4646,13 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // new facet is one entry here plus one row of markup — it cannot end up
     // filtered-but-not-shown or shown-but-not-filtered. Mirrors FACET_COLUMNS
     // in save_recipe_api.py, which is the server half of the same list.
-    const FILTER_FACETS = ['chapter', 'cuisine', 'ethnicity'];
+    const FILTER_FACETS = ['chapter', 'cuisine', 'ethnicity', 'source'];
     const FACET_ANY_LABEL = { chapter: 'Any chapter', cuisine: 'Any cuisine',
-                              ethnicity: 'Any ethnicity' };
+                              ethnicity: 'Any ethnicity', source: 'Any source' };
+    // The source lane's three classes, in tab order, with the words the tabs
+    // show. Mirrors SOURCE_CLASSES in save_recipe_api.py.
+    const SOURCE_CLASSES = [['', 'All'], ['web', 'Web'], ['video', 'Video'], ['social', 'Social']];
+    const SOURCE_CLASS_GLYPH = { video: '▶', social: '◎' };
     let _filterSeq = 0;         // same generation guard as the list
 
     const _filterEl = f => document.getElementById('filter_' + f);
@@ -4900,6 +4942,54 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         : 'Filters';
     }
 
+    // ---------- Source lane tabs ------------------------------------------
+    // All · Web · Video · Social above the list. The tab IS the `source` facet:
+    // it writes #sidebar_source (the same hidden input the criteria dialog's
+    // Source row writes) and reloads, so the badge, persistence and cascade
+    // all treat it as one more filter. Counts come from the search reply's
+    // facets, cascaded against the other active filters; a class with no rows
+    // under the current filters is shown disabled rather than hidden, so the
+    // strip never jumps.
+    function syncSourceTabs() {
+      const strip = document.getElementById('sourceTabs');
+      if (!strip) return;
+      const applied = _appliedEl('source')?.value || '';
+      const counts = {};
+      ((_listFacets || {}).source || []).forEach(({ value, count }) => { counts[value] = count; });
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      strip.querySelectorAll('.src-tab').forEach(b => b.remove());
+      const dot = strip.querySelector('.info-dot');
+      SOURCE_CLASSES.forEach(([cls, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'src-tab' + (cls === applied ? ' active' : '');
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', cls === applied ? 'true' : 'false');
+        b.dataset.source = cls;
+        const n = cls ? (counts[cls] || 0) : total;
+        // The active tab is never disabled: with the lane applied the cascade
+        // counts only that lane, and All must stay reachable.
+        if (cls && !n && cls !== applied) b.disabled = true;
+        b.textContent = label;
+        const nEl = document.createElement('span');
+        nEl.className = 'n';
+        nEl.textContent = String(n);
+        b.appendChild(nEl);
+        b.title = cls ? `${label} recipes under the current filters` : 'Every source';
+        b.addEventListener('click', () => {
+          const el = _appliedEl('source');
+          if (!el || el.value === cls) return;
+          el.value = cls;
+          const sel = _filterEl('source');
+          if (sel) sel.value = cls;
+          syncFilterButton();
+          persistSidebarState();
+          loadRecipes();
+        });
+        strip.insertBefore(b, dot);
+      });
+    }
+
     // ---------- Server-paged list state --------------------------------
     // _recipesCache holds the pages FETCHED SO FAR, not the whole collection.
     // That is the change: the list used to pull every row so it could filter
@@ -4965,6 +5055,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         _listFacets  = d.facets || {};
         _listSuggestions = Array.isArray(d.suggestions) ? d.suggestions : [];
         syncFilterButton();
+        syncSourceTabs();
         renderRecipes();
       } catch (err) {
         if (seq !== _listSeq) return;
@@ -5293,6 +5384,17 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         const title = document.createElement('div');
         title.className = 'title';
         title.textContent = getName(r) || '[Untitled]';
+        // Lane glyph: ▶ for a video recipe, ◎ for a social save; web shows
+        // nothing (it is the norm). Server-side class, so it is right even on
+        // rows saved before the capture stamp existed.
+        const glyph = SOURCE_CLASS_GLYPH[r.source_class];
+        if (glyph) {
+          const g = document.createElement('span');
+          g.className = 'src-glyph';
+          g.textContent = glyph;
+          g.title = r.source_class === 'video' ? 'Video recipe' : 'Saved from a social network';
+          title.prepend(g);
+        }
         body.appendChild(title);
 
         // Byline — sans small grey, hidden when no author.

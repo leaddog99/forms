@@ -196,10 +196,20 @@ Facebook and Instagram at harvest; any score built from view, like or
 subscriber counts; a public share URL for a saved social recipe (the
 contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
 
-## 9. Build order, when approved
+## 9. Build order (approved 2026-10-17)
 
-1. `source_class` column + facet + tab (one-off ALTER with vec loaded; the list
-   component and the dish cohort view).
+1. **BUILT 2026-10-17.** `source_class` column on both tables (SOURCE_CLASS_SQL in
+   save_recipe_api.py: capture kind first, then the source URL's host for rows
+   saved before the stamp existed; applied by `scripts/add_source_class_column.py`
+   with sqlite-vec loaded; the startup loop now says so instead of swallowing the
+   vec error), `(user_id, source_class)` index, `source` facet in FACET_COLUMNS
+   and the search endpoint (unknown class ignored, never an empty list), rows
+   return `source_class`, and the recipe list grows a tab strip All · Web · Video
+   · Social with cascaded counts, a Source row in the criteria dialog, a ▶ / ◎
+   glyph on video and social cards, persistence of the chosen lane, and the ⓘ.
+   First count on the live table: 13,248 web, 2 video (the curator's Butter
+   Chicken save and an older Fallow short-rib video), 0 social. The dish cohort
+   view is untouched until there is a video lane to show (step 3).
 2. `channels` table + ladder stamping `channel_id` + the channel editor.
 3. Harvest admission + the video lane in the refresh (ledger first, so the
    rung classes are counted before anything is seated).
