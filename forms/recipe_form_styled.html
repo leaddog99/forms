@@ -2395,8 +2395,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
               <a id="pageScreenshotLink" href="#" target="_blank" rel="noopener"
                  title="Open source page in new tab"
                  style="display:block;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);text-decoration:none">
+                <!-- Shown whole at its own ratio: the page-top capture is 800×427 and a
+                     3:2 cover box cut a fifth off its sides (curator, 2026-10-17). -->
                 <img id="pageScreenshotImg" src="" alt=""
-                     style="width:100%;display:block;aspect-ratio:3/2;object-fit:cover" />
+                     style="width:100%;height:auto;display:block" />
               </a>
             </div>
             <!-- Video (schema.org VideoObject). Editable: the URL field shows the
@@ -2937,6 +2939,24 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     const API = window.location.origin;
     const listEl = document.getElementById("recipeList");
     const feedback = document.getElementById("feedback");
+
+    // Which picture the hero well shows. The well renders an image WHOLE at its
+    // own ratio, but the cooped og:image thumbnail (`_source.previewImage`) is a
+    // 3:2 COVER crop made for tiles, so a 16:9 video still lost a fifth of its
+    // width in the editor ("DRE ON" for "ANDREW WONG", curator 2026-10-17).
+    // Prefer the recipe's own image[0] when it is OUR copy — hosted where the
+    // thumbnail is, or on this origin — and keep the thumbnail for a hotlinked
+    // image[0], so a save never writes a publisher's URL into previewImage.
+    function heroForDisplay(src, image) {
+      const preview = (src && src.previewImage || '').trim();
+      const first = Array.isArray(image)
+        ? ((image.find(s => typeof s === 'string' && s.trim()) || '').trim()) : '';
+      if (!preview) return first;
+      if (!first) return preview;
+      const host = u => { try { return new URL(u, location.origin).host; } catch (e) { return ''; } };
+      const ours = first.startsWith('/') || host(first) === location.host || host(first) === host(preview);
+      return ours ? first : preview;
+    }
 
     // Snapshot of the loaded recipe's `_source` so Save can preserve the
     // rich, non-editable provenance keys it doesn't surface as inputs —
@@ -5801,9 +5821,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       // coopt pipeline. Pre-coopt rows still display fine because
       // image[0] is the original schema.org URL; new rows get the
       // hosted version automatically.
-      const previewLoad = (r._source && r._source.previewImage || '').trim();
-      const firstImageLoad = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
-      heroImageUrl.value = previewLoad || firstImageLoad || '';
+      heroImageUrl.value = heroForDisplay(r._source, r.image);
       _heroImageMeta = r._imageMeta || null;   // restore stored image metadata
       _imageGenTweak = (r._imageMeta && r._imageMeta.tweak) || '';   // restore the saved generate tweak
       applyHeroImageFromUrl();
@@ -8597,9 +8615,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       // Hero image — prefer the cooped og:image thumbnail (locally
       // hosted, no hotlinking) when present; fall back to the
       // JSON-LD image[0] for pre-coopt rows.
-      const previewImg = (r._source && r._source.previewImage || '').trim();
-      const firstImage = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
-      heroImageUrl.value = previewImg || firstImage || '';
+      heroImageUrl.value = heroForDisplay(r._source, r.image);
       applyHeroImageFromUrl();
 
       // Page screenshot from a fresh extract — same logic as loadForm.
