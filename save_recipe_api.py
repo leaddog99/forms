@@ -15004,6 +15004,12 @@ async def stage_capture_endpoint(request: Request):
             yt = None
         if yt is not None:
             yt_extra = yt.capture_extra()
+            # `links` is passed explicitly below (capped at five); the ladder's
+            # copy must not ride in as well. It did on 2026-10-17 (Fallow,
+            # Butter Chicken): "got multiple values for keyword argument
+            # 'links'" turned every bookmarklet press on a watch page into a
+            # 500 while the pasted-URL door, which never calls this, worked.
+            yt_extra.pop("links", None)
             title = yt.title or title
             if yt.markdown:
                 md_text = yt.markdown
