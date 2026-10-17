@@ -157,6 +157,7 @@
       nothing: { title: 'Nothing to import', text: 'This page opens when you press the recipe bookmark on another site.' },
       failed: { title: 'Couldn’t read this page', text: 'The extraction did not complete.' },
       thin: { title: 'This one came through thin' },
+      noRecipe: { title: 'No recipe to read here' },
       got: (n, m) => `We found ${n} ingredient${n === 1 ? '' : 's'} and ${m} step${m === 1 ? '' : 's'}.`,
       openEditor: 'Open in the editor',
       openEditorAnyway: 'Open in the editor anyway',
@@ -459,6 +460,22 @@
       const data = await r.json();
       const capture = data.capture || null;
       if (capture && capture.kind && !captureSource) await loadCaptureSource();
+
+      // The polite reject: the server already looked (a YouTube video whose
+      // description, comments and transcript hold no recipe, or whose
+      // description points at a blog) and says so in a sentence. Nothing is
+      // extracted and nothing is spent; the one useful action is offered.
+      if (capture && capture.reject) {
+        stage.dataset.state = 'thin';
+        const rl = (capture.links || [])[0];
+        showOutcome({
+          title: STR.noRecipe.title,
+          text: String(capture.reject),
+          actions: [rl ? { label: STR.importFrom(hostOf(rl)), href: `${FORM}?url=${encodeURIComponent(rl)}`, primary: true } : null,
+                    { label: STR.openEditor, href: FORM }].filter(Boolean),
+        });
+        return;
+      }
 
       let outcome;
       try { outcome = await runExtraction(data, token, userId); }

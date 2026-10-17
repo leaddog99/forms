@@ -157,19 +157,36 @@ _SOURCES: tuple[CaptureSource, ...] = (
         kind="youtube", label="YouTube",
         hosts=("youtube.com", "youtu.be"),
         structure="video",
+        structure_by_path=((r"^/shorts/", "short"),),
+        verified=True,   # Fallow, "Michelin Beef Pie at Home", 2026-10-17
+        # The staged text is built by intake/youtube_source.py (the LADDER):
+        # the description, the creator's comments when the browser captured
+        # them, and the transcript — each under its own heading, with a
+        # "Recipe found in:" line saying which one held the recipe.
         model_note=(
-            "The text is a YouTube video description: the recipe, when present, is a "
-            "block of ingredients and brief steps between the intro and the links, "
-            "sometimes with timestamps. Strip timestamps, sponsor text, channel links "
-            "and 'subscribe' prompts. " + _SOCIAL_COMMON
+            "The text is a YouTube video's parts under headings. 'Video description' is "
+            "written by the creator: when it holds the recipe (ingredient list, method), "
+            "it is the recipe of record — strip timestamps, chapter lists, sponsor text, "
+            "channel links and 'subscribe' prompts. 'Comment N' is the creator's own "
+            "comment and counts as their text. 'Transcript' is the auto-generated caption "
+            "track: the cook SPEAKING, not a written recipe. When a written recipe is "
+            "present, use the transcript only to check order of steps, times and "
+            "temperatures, and to fill a step the description skips but the cook performs; "
+            "never let a spoken approximation overrule a written quantity. When the "
+            "transcript is the ONLY source ('Recipe found in: transcript'), keep quantities "
+            "as spoken ('a knob of butter', 'a couple of onions') and never invent a number "
+            "the cook did not say; put the dish's name from the title; steps follow the "
+            "order of the talk. " + _SOCIAL_COMMON
         ),
         user_note=(
-            "We read the video's description, not the video. Recipes there are usually "
-            "a short ingredient list with brief steps."
+            "We read the video's description, the creator's first comments and its "
+            "transcript, in that order — not the video itself. A recipe that exists only "
+            "in the transcript keeps the cook's spoken quantities."
         ),
         thin_result_note=(
-            "The description did not hold a usable recipe. If the creator links to a "
-            "blog, import from that page; the video itself is not read."
+            "Neither the description, the first comments nor the transcript held a recipe "
+            "we could read in full. If the creator links to a written recipe, import from "
+            "that page."
         ),
     ),
     CaptureSource(

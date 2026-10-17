@@ -46,7 +46,13 @@ window.__bccPayloadStarted = true;
   // instead of failing in some confusing way.
   // v4 (2026-10-06): the loader opens forms/importing.html — the in-progress
   // page — instead of a blank tab, and carries the CSP fallback capture.
-  const LOADER_V = 4;
+  // v5 (2026-10-17): the loader survives Trusted Types. YouTube enforces
+  // `require-trusted-types-for 'script'`, under which assigning a plain string
+  // to script.src THROWS — before the v4 loader had wired its fallback, so the
+  // popup waited forever. v5 creates a Trusted Types policy for the URL (YouTube
+  // allows a named policy), and when even that is refused it runs the capture
+  // fallback at once instead of after a timeout that never came.
+  const LOADER_V = 5;
   const loaderV = (function () {
     try { return parseInt(window.__bccLoaderV, 10) || 0; } catch (e) { return 0; }
   })();
@@ -155,6 +161,65 @@ window.__bccPayloadStarted = true;
       );
       popup.document.close();
     } catch (e) { /* cross-origin popup write blocked — fine, ignore */ }
+  }
+
+  // === YouTube: capture, don't convert =====================================
+  // A watch page's DOM is player chrome; converting it to markdown yields
+  // nothing a recipe lives in. What only the BROWSER can read is the expanded
+  // description and the first comment threads (YouTube loads comments on
+  // scroll, so a server never sees them). Capture those and hand them to the
+  // importing page by fragment — the same door as the CSP fallback — and the
+  // server climbs the ladder from there (intake/youtube_source.py: description
+  // → link → comment → transcript → polite reject), re-reading the description
+  // from the watch page itself and fetching the transcript.
+  if (/(^|\.)(youtube\.com|youtu\.be)$/i.test(location.hostname)) {
+    try {
+      const cap = await captureYouTube();
+      const enc = btoa(unescape(encodeURIComponent(JSON.stringify(cap))))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      popup.location.href = SPLASH_URL + '#capture=' + enc;
+    } catch (e) {
+      console.log('[recipe-bookmarklet] YouTube capture failed:', e && e.message);
+      try { popup.location.href = SPLASH_URL; } catch (e2) { /* the importer times out honestly */ }
+    }
+    return;
+  }
+
+  async function captureYouTube() {
+    const Q = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+    const T = (e) => e ? String(e.innerText || '').trim() : '';
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const scrollY0 = window.scrollY;
+    // 1. the description, expanded ("...more" is a tp-yt-paper-button#expand).
+    Q('tp-yt-paper-button#expand, #description-inline-expander #expand').forEach(b => { try { b.click(); } catch (e) {} });
+    await sleep(250);
+    const descNode = document.querySelector('ytd-text-inline-expander #expanded, ytd-text-inline-expander, #description-inline-expander');
+    let text = T(descNode);
+    if (text.length < 80) {   // layout drift: the longest text span is the description
+      const sp = Q('span[dir=auto],div[dir=auto]').sort((a, b) => T(b).length - T(a).length)[0];
+      text = T(sp);
+    }
+    // 2. the first comment threads — scroll them into view, give them a moment.
+    const comments = [];
+    const sec = document.querySelector('ytd-comments#comments');
+    if (sec) {
+      try { sec.scrollIntoView(); } catch (e) {}
+      for (let waited = 0; waited < 3000 && Q('ytd-comment-thread-renderer').length < 3; waited += 250) await sleep(250);
+      const visible = (el) => !!(el && el.offsetParent !== null);
+      Q('ytd-comment-thread-renderer').slice(0, 3).forEach(th => {
+        const body = T(th.querySelector('#content-text'));
+        if (!body) return;
+        const tags = [];
+        if (visible(th.querySelector('#pinned-comment-badge'))) tags.push('pinned');
+        if (visible(th.querySelector('#author-comment-badge'))) tags.push('creator');
+        comments.push((tags.length ? '[' + tags.join(', ') + '] ' : '') + body.slice(0, 3000));
+      });
+      try { window.scrollTo(0, scrollY0); } catch (e) {}
+    }
+    const og = document.querySelector('meta[property="og:image"]');
+    const title = document.title.replace(/^\(\d+\+?\)\s*/, '').replace(/\s*-\s*YouTube$/, '');
+    return { v: 1, url: location.href, title, text: text.slice(0, 30000), comments,
+             image: (og && og.content) || null, selected: false, via: 'payload' };
   }
 
   // === JSON-LD harvest (BEFORE cleanNode strips <script>) ===

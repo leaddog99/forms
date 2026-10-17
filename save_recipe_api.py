@@ -13656,7 +13656,8 @@ async def extract_from_markdown_endpoint(
             if isinstance(_c, dict) and (_c.get("kind") or _c.get("via")):
                 capture_meta = {k: _c[k] for k in ("kind", "label", "structure", "via",
                                                    "selected", "chars", "comments", "links",
-                                                   "verified") if k in _c}
+                                                   "verified", "rung", "channel", "length_s",
+                                                   "transcript_words", "caption_language") if k in _c}
         except Exception as e:
             print(f"[CAPTURE] ignoring malformed capture field: {e}")
     try:
@@ -13854,6 +13855,9 @@ async def extract_from_markdown_endpoint(
             _src = recipe.get("_source") or {}
             _src["capture"] = capture_meta
             recipe["_source"] = _src
+            if capture_meta.get("kind") == "youtube":
+                _attach_youtube_video(recipe, effective_url, title=effective_title or "",
+                                      channel=capture_meta.get("channel") or "")
             _n_ing = len(recipe.get("recipeIngredient") or [])
             _n_step = len(recipe.get("recipeInstructions") or [])
             # The runtime record of how typed captures fare — one line per
@@ -14075,8 +14079,20 @@ def extract_recipe_from_url(
     if _fetch_unblocker or _fetch_render:
         print(f"[EXTRACT] domain fetch policy: unblocker={_fetch_unblocker} render={_fetch_render}")
 
+    _yt_capture: Optional[dict] = None
     try:
-        if is_pdf:
+        from intake import youtube_source
+        if youtube_source.is_youtube_url(url):
+            # YouTube: the LADDER (intake/youtube_source.py) reads the watch
+            # page and the transcript and stages the part that holds the
+            # recipe; a link-out or an empty video raises with the sentence the
+            # form should show. Same markdown shape as html_to_markdown.
+            _t = time.perf_counter()
+            md_result = youtube_source.markdown_result(url)
+            timings["fetch_ms"] = int((time.perf_counter() - _t) * 1000)
+            _yt_capture = {"kind": "youtube", "label": "YouTube", "structure": "video",
+                           "via": "url", "verified": True, **md_result.get("youtube", {})}
+        elif is_pdf:
             md_result = pdf_url_to_markdown(url, timings, usage_log)
         else:
             md_result = html_to_markdown(url, timings, unblocker=_fetch_unblocker, render=_fetch_render)
@@ -14362,6 +14378,18 @@ def extract_recipe_from_url(
             recipe["_source"] = _src
     except Exception as e:
         print(f"[SITENAME] extract resolve failed (continuing): {e}")
+
+    if _yt_capture:
+        # A pasted watch URL is a typed capture like a bookmarklet grab of the
+        # same video: which rung held the recipe, the channel, the transcript
+        # size — findable later, same block the other doors stamp.
+        _src = recipe.get("_source") or {}
+        _src["capture"] = {k: v for k, v in _yt_capture.items() if v is not None and k != "reject"}
+        recipe["_source"] = _src
+        _attach_youtube_video(recipe, url, title=md_result.get("title") or "",
+                              channel=_yt_capture.get("channel") or "")
+        print(f"[CAPTURE] result kind=youtube structure=video via=url rung={_yt_capture.get('rung')} "
+              f"transcript_words={_yt_capture.get('transcript_words')}")
 
     # Moz scoring. Batch (pre_scored) trusts upstream numbers and skips the
     # Moz call to save quota; its authoritative override is applied AFTER
@@ -14695,11 +14723,33 @@ async def stage_markdown_endpoint(request: Request):
     # script run) is still that kind of page, so it is stamped here too — the
     # provenance must not depend on which door the grab came through.
     source_url = payload.get("source_url", "")
-    capture = _capture_meta_for(source_url, via="bookmarklet")
+    yt_extra: dict = {}
+    staged_title = payload.get("title", "")
+    try:
+        from intake import youtube_source
+        _is_yt = youtube_source.is_youtube_url(source_url)
+    except Exception:
+        _is_yt = False
+    if _is_yt:
+        # A watch page's DOM converted to markdown is player chrome, not the
+        # recipe. Climb the LADDER instead (intake/youtube_source.py): server
+        # read of the description, transcript, the rung that holds the recipe.
+        try:
+            yt = await asyncio.to_thread(youtube_source.ladder, source_url)
+            yt_extra = yt.capture_extra()
+            staged_title = yt.title or staged_title
+            if yt.markdown:
+                md_text = yt.markdown
+            elif yt.rung == "link":
+                yt_extra["reject"] = (f"This video's description does not hold the recipe; it links "
+                                      f"to {yt.links[0]}, where the written recipe should be.")
+        except Exception as e:  # noqa: BLE001
+            print(f"[YOUTUBE] ladder failed on /stage-markdown, keeping the payload: {type(e).__name__}: {e}")
+    capture = _capture_meta_for(source_url, via="bookmarklet", **yt_extra)
     _staged_markdown[token] = {
         "markdown": md_text,
         "source_url": source_url,
-        "title": payload.get("title", ""),
+        "title": staged_title,
         # The bookmarklet uploads the page's hero image bytes to /images
         # from inside the user's authenticated session (paywall-aware),
         # gets back a /generated/<file>.jpg URL, and stashes it here.
@@ -14715,6 +14765,23 @@ async def stage_markdown_endpoint(request: Request):
           f"local_hero={'yes' if _staged_markdown[token]['local_hero_image_url'] else 'no'}, "
           f"bcc_hints={bcc_hints or 'none'}, capture={capture['kind'] if capture else 'none'})")
     return {"token": token}
+
+
+def _attach_youtube_video(recipe: dict, source_url: str, *, title: str = "", channel: str = "") -> None:
+    """A recipe whose SOURCE is a YouTube video carries that video in the
+    form's video field (VideoObject.embedUrl, see video_lookup) — the source IS
+    the video, so no lookup; derived from the id like the form does. Never
+    replaces a video the page or the curator already supplied."""
+    from video_lookup import youtube_id
+    yid = youtube_id(source_url or "")
+    cur = recipe.get("video")
+    if not yid or (isinstance(cur, dict) and (cur.get("embedUrl") or cur.get("contentUrl"))):
+        return
+    recipe["video"] = {"@type": "VideoObject", "name": title or recipe.get("name") or "",
+                       "contentUrl": f"https://www.youtube.com/watch?v={yid}",
+                       "embedUrl": f"https://www.youtube-nocookie.com/embed/{yid}",
+                       "thumbnailUrl": f"https://i.ytimg.com/vi/{yid}/hqdefault.jpg",
+                       "uploadDate": "", "description": f"by {channel}" if channel else ""}
 
 
 def _capture_meta_for(source_url: str, *, via: str, **extra) -> Optional[dict]:
@@ -14783,9 +14850,40 @@ async def stage_capture_endpoint(request: Request):
 
     source = classify_capture_url(url)
     captured_at = datetime.now(timezone.utc).isoformat()
-    md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
-                                     captured_at=captured_at, source=source)
-    links = links_in_text(text, *comments, exclude_source=url)[:5]
+    yt_extra: dict = {}
+    if source and source.kind == "youtube":
+        # YouTube: the capture is the description the loader read plus the first
+        # comment threads. The LADDER (intake/youtube_source.py) re-reads the
+        # watch page server-side for the clean description, fetches the
+        # transcript, decides which part holds the recipe, and writes the staged
+        # text — or says, politely, that nothing does (capture.reject; the
+        # importing page shows it and spends nothing).
+        from intake import youtube_source
+        try:
+            yt = await asyncio.to_thread(youtube_source.ladder, url, description=text, comments=comments)
+        except Exception as e:  # noqa: BLE001 — the ladder is a courtesy over the plain capture
+            print(f"[YOUTUBE] ladder failed, staging the raw capture: {type(e).__name__}: {e}")
+            yt = None
+        if yt is not None:
+            yt_extra = yt.capture_extra()
+            title = yt.title or title
+            if yt.markdown:
+                md_text = yt.markdown
+            else:
+                md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
+                                                 captured_at=captured_at, source=source)
+            links = list(yt.links)[:5]
+            if yt.rung == "link":
+                yt_extra["reject"] = (f"This video's description does not hold the recipe; it links "
+                                      f"to {links[0]}, where the written recipe should be.")
+        else:
+            md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
+                                             captured_at=captured_at, source=source)
+            links = links_in_text(text, *comments, exclude_source=url)[:5]
+    else:
+        md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
+                                         captured_at=captured_at, source=source)
+        links = links_in_text(text, *comments, exclude_source=url)[:5]
 
     now = time.time()
     for k in [k for k, v in _staged_markdown.items() if v.get("expires_at", 0) < now]:
@@ -14793,7 +14891,7 @@ async def stage_capture_endpoint(request: Request):
     token = uuid.uuid4().hex
     capture = _capture_meta_for(url, via=via, selected=selected,
                                 chars=len(text), comments=len(comments),
-                                links=links or None)
+                                links=links or None, **yt_extra)
     if capture is None:
         # An ordinary page whose CSP still refused us (ChatGPT-style). Typed as
         # 'page' so the provenance records the door, with no platform note.
