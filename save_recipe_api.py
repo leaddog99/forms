@@ -139,6 +139,23 @@ print("[START] Starting API setup...")
 
 DB_PATH = "recipes.db"
 
+# The FTS5 index columns, in bm25 weight order (see _materialise_text_match and
+# the index build in setup). Changing this list rebuilds the index at startup.
+FTS_COLUMNS = ("name", "dish", "ingredients", "cuisine", "author", "domain")
+# Where a typed word may be aimed: `author:kenji`, `site:nytimes`. Several names
+# per column because people say chef, publisher and site for the same thing.
+FTS_FIELD_ALIASES = {
+    "name": "name", "title": "name",
+    "dish": "dish",
+    "ingredient": "ingredients", "ingredients": "ingredients", "ing": "ingredients",
+    "cuisine": "cuisine",
+    "author": "author", "chef": "author", "by": "author",
+    "domain": "domain", "site": "domain", "publisher": "domain", "host": "domain",
+}
+# The columns a hit must land in to count as ABOUT the query (tier 1): who and
+# what the recipe is, not what it contains.
+FTS_ABOUT_COLUMNS = ("name", "dish", "author", "domain")
+
 
 # Typographic characters that appear in recipe titles and would otherwise sort
 # above every letter. Mapped to the ASCII the same title uses elsewhere in the
@@ -1402,38 +1419,71 @@ def init_db():
             #                so — 31 master rows have shrimp AND corn in their
             #                ingredients and were invisible to search entirely
             #   cuisine      cheap, and lets a typed word stand in for the facet
+            #   author       who wrote it (author.name: 7,919 of 13,217 master
+            #                rows) — "kenji" finds the recipes BY Kenji
+            #   domain       who published it: the host, its words, the
+            #                publisher's display name and the page's own
+            #                og:site_name — so "serious eats", "seriouseats"
+            #                and "nyt cooking" all reach the publisher. Author
+            #                and domain added 2026-10-17 (curator).
             #
             # A content-carrying table (not content=) so ordinary INSERT/UPDATE/
             # DELETE by rowid work and the triggers stay readable. ~10MB.
+            #
+            # WHEN THE COLUMN LIST CHANGES, edit FTS_COLUMNS: an index built with
+            # a different column list is dropped and rebuilt from the rows (13k
+            # rows, a few seconds, once). Dropping a separate virtual table
+            # re-validates nothing on master_recipes, unlike an ALTER TABLE
+            # (feedback_alter_table_vec_triggers).
             for _tbl in ("master_recipes", "recipes"):
                 _fts = f"{_tbl}_fts"
+                _have = [r[1] for r in conn.execute(f"PRAGMA table_info({_fts})")]
+                if _have and _have != list(FTS_COLUMNS):
+                    print(f"[SETUP] {_fts}: columns {_have} -> {list(FTS_COLUMNS)}, rebuilding")
+                    conn.execute(f"DROP TABLE {_fts}")
                 conn.execute(
                     f"CREATE VIRTUAL TABLE IF NOT EXISTS {_fts} USING fts5("
-                    f"  name, dish, ingredients, cuisine,"
+                    f"  {', '.join(FTS_COLUMNS)},"
                     f"  tokenize='porter unicode61 remove_diacritics 2')"
                 )
                 # The ingredient list is a JSON array, flattened with json_each.
                 # Doing this in a TRIGGER rather than in Python means a row
                 # written by ANY path — server save, harvest job, migration
                 # script — lands in the index. That is the only way an index
-                # like this stays honest.
-                _cols = ("json_extract(NEW.data,'$.name'), "
-                         "json_extract(NEW.data,'$._identity.likelyDish'), "
-                         "(SELECT group_concat(value, ' ') "
-                         " FROM json_each(NEW.data, '$.recipeIngredient')), "
-                         "json_extract(NEW.data,'$._identity.cuisine')")
+                # like this stays honest. ONE column expression serves the
+                # triggers (row = NEW) and the backfill (row = t).
+                def _fts_cols(row: str) -> str:
+                    return (
+                        f"json_extract({row}.data,'$.name'), "
+                        f"json_extract({row}.data,'$._identity.likelyDish'), "
+                        f"(SELECT group_concat(value, ' ') "
+                        f" FROM json_each({row}.data, '$.recipeIngredient')), "
+                        f"json_extract({row}.data,'$._identity.cuisine'), "
+                        f"json_extract({row}.data,'$.author.name'), "
+                        # host as typed ("seriouseats.com"), host with the dots
+                        # as word breaks ("seriouseats com"), the publisher
+                        # record's display name ("Serious Eats") and the page's
+                        # og:site_name. source_host is a generated column, and
+                        # NEW.<generated> is readable in a trigger.
+                        f"COALESCE({row}.source_host, '') || ' ' || "
+                        f"replace(COALESCE({row}.source_host, ''), '.', ' ') || ' ' || "
+                        f"COALESCE((SELECT display_name FROM domains d "
+                        f"          WHERE d.domain = {row}.source_host), '') || ' ' || "
+                        f"COALESCE(json_extract({row}.data,'$._source.siteName'), '')"
+                    )
+                _col_list = ", ".join(FTS_COLUMNS)
                 for _sfx in ("ai", "au", "ad"):
                     conn.execute(f"DROP TRIGGER IF EXISTS {_tbl}_fts_{_sfx}")
                 conn.execute(
                     f"CREATE TRIGGER {_tbl}_fts_ai AFTER INSERT ON {_tbl} BEGIN "
-                    f"  INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
-                    f"  VALUES (NEW.id, {_cols}); END"
+                    f"  INSERT INTO {_fts}(rowid, {_col_list}) "
+                    f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"
                 )
                 conn.execute(
                     f"CREATE TRIGGER {_tbl}_fts_au AFTER UPDATE OF data ON {_tbl} BEGIN "
                     f"  DELETE FROM {_fts} WHERE rowid = OLD.id; "
-                    f"  INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
-                    f"  VALUES (NEW.id, {_cols}); END"
+                    f"  INSERT INTO {_fts}(rowid, {_col_list}) "
+                    f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"
                 )
                 conn.execute(
                     f"CREATE TRIGGER {_tbl}_fts_ad AFTER DELETE ON {_tbl} BEGIN "
@@ -1448,13 +1498,8 @@ def init_db():
                 ).fetchone()[0]
                 if _missing:
                     conn.execute(
-                        f"INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
-                        f"SELECT t.id, json_extract(t.data,'$.name'), "
-                        f"       json_extract(t.data,'$._identity.likelyDish'), "
-                        f"       (SELECT group_concat(value,' ') "
-                        f"        FROM json_each(t.data,'$.recipeIngredient')), "
-                        f"       json_extract(t.data,'$._identity.cuisine') "
-                        f"FROM {_tbl} t "
+                        f"INSERT INTO {_fts}(rowid, {_col_list}) "
+                        f"SELECT t.id, {_fts_cols('t')} FROM {_tbl} t "
                         f"WHERE NOT EXISTS (SELECT 1 FROM {_fts} f WHERE f.rowid = t.id)"
                     )
                     print(f"[SETUP] {_fts}: indexed {_missing} row(s)")
@@ -11708,12 +11753,21 @@ def _fts_query(raw: str) -> str:
         two words        -> both must appear (AND, not the OR FTS5 defaults to)
         "exact phrase"   -> kept together
         -word            -> excluded
-        word OR word     -> either
+        word OR word     -> either (and, or, not work in either case)
+        author:kenji     -> the word must be in THAT field (FTS_FIELD_ALIASES:
+        site:nytimes        name/title, dish, ingredient(s), cuisine,
+                            author/chef/by, domain/site/publisher/host);
+                            `site:"serious eats"` aims a phrase
 
     Bare-words-mean-AND is the important one. FTS5's implicit operator is OR, so
     passing "shrimp corn chowder" through untouched returns everything matching
     ANY of the three — thousands of rows, ranked plausibly enough that it looks
     like it worked.
+
+    Two operators in a row collapse to the LAST one ("chicken AND NOT lemon" ->
+    chicken NOT lemon): FTS5's NOT is binary, so the pair is a syntax error, and
+    before 2026-10-17 it reached MATCH and the search box showed "Failed to
+    load recipes".
     """
     raw = (raw or "").strip()
     if not raw:
@@ -11729,6 +11783,20 @@ def _fts_query(raw: str) -> str:
         if ch == "-" and i + 1 < n and not raw[i + 1].isspace():
             neg, i = True, i + 1
             ch = raw[i]
+        # A field prefix, read before the body so its colon survives the
+        # scrub: `author:kenji`, `site:"serious eats"`. An unknown prefix
+        # ("re:" in a title) is left in the body and scrubbed to a space.
+        col = ""
+        j = i
+        while j < n and (raw[j].isalpha()):
+            j += 1
+        if (j + 1 < n and raw[j] == ":" and not raw[j + 1].isspace()
+                and raw[i:j].lower() in FTS_FIELD_ALIASES):
+            col = FTS_FIELD_ALIASES[raw[i:j].lower()]
+            i = j + 1
+            ch = raw[i]
+        # "author: kenji" (a space after the colon) aims nothing: both words
+        # stay plain, the colon is scrubbed with the other punctuation.
         if ch == '"':                      # quoted phrase, to the next quote or end
             j = raw.find('"', i + 1)
             body = raw[i + 1:] if j == -1 else raw[i + 1:j]
@@ -11744,29 +11812,48 @@ def _fts_query(raw: str) -> str:
         body = "".join(c if (c.isalnum() or c.isspace()) else " " for c in body).strip()
         if not body:
             continue
-        if body.upper() in ("AND", "OR", "NOT") and not neg:
+        if body.upper() in ("AND", "OR", "NOT") and not neg and not col:
             tokens.append(body.upper())
             continue
-        tokens.append(("NOT " if neg else "") + '"' + body + '"')
+        term = '"' + body + '"'
+        if col:
+            term = f"{col} : {term}"
+        tokens.append(("NOT " if neg else "") + term)
     # Join with AND, but never around an operator — either one the user supplied
     # or the NOT this function generates for a -exclusion. FTS5's NOT is BINARY
     # ("a NOT b" = a and not b), so "AND NOT" is a syntax error rather than the
-    # emphasis it looks like.
+    # emphasis it looks like; two operators in a row keep the last.
     out: list[str] = []
     for t in tokens:
         starts_op = t.startswith("NOT ")
-        if (out and not starts_op and t not in ("AND", "OR", "NOT")
+        is_op = t in ("AND", "OR", "NOT")
+        if is_op and out and out[-1] in ("AND", "OR", "NOT"):
+            out[-1] = t
+            continue
+        if starts_op and out and out[-1] in ("AND", "OR", "NOT"):
+            out.pop()
+        if (out and not starts_op and not is_op
                 and out[-1] not in ("AND", "OR", "NOT")):
             out.append("AND")
         out.append(t)
     while out and out[-1] in ("AND", "OR", "NOT"):
         out.pop()
-    # A leading NOT has no left operand and is a syntax error. It comes from a
-    # query that is nothing but exclusions ("-clam"), which FTS5 cannot express
-    # — "everything except clam" needs something to subtract from. Treated as
-    # unusable rather than guessed at.
-    if out and (out[0] == "NOT" or out[0].startswith("NOT ")):
+    # A leading NOT has no left operand and is a syntax error. "-lemon chicken"
+    # means chicken without lemon, so the exclusions typed first are moved
+    # behind everything else, which is parenthesised so an OR in it stays
+    # whole: "(chicken OR turkey) NOT lemon". A query that is NOTHING but
+    # exclusions ("-clam") has nothing to subtract from — FTS5 cannot express
+    # "everything except clam" — and is treated as unusable rather than
+    # guessed at.
+    lead: list[str] = []
+    while out and out[0].startswith("NOT "):
+        lead.append(out.pop(0))
+    while out and out[0] in ("AND", "OR", "NOT"):
+        out.pop(0)
+    if not out:
         return ""
+    if lead:
+        return "(" + " ".join(out) + ") " + " ".join(lead)
     return " ".join(out)
 
 
@@ -11801,8 +11888,10 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
     # WEIGHTED bm25 (2026-09-05, the black-beans-rice search): unweighted, a
     # name hit counted the same as an ingredient-scatter hit, and bm25's
     # short-doc bias floated cocktails over the actual dish. Columns are
-    # (name, dish, ingredients, cuisine): a match in the NAME or canonical
-    # dish is the recipe being ABOUT the query; ingredients merely contain it.
+    # FTS_COLUMNS (name, dish, ingredients, cuisine, author, domain): a match
+    # in the NAME or canonical dish is the recipe being ABOUT the query;
+    # ingredients merely contain it; author and domain (2026-10-17) say whose
+    # it is, weighted between the two.
     #
     # THE MATCH TIER (2026-10-17, curator: "best match works great, switch the
     # sort to the blend and it lists a whole bunch of irrelevant dishes").
@@ -11814,14 +11903,15 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
     # carries which column it was found in, and every sort orders by that
     # tier FIRST while a query is present (_recipes_search_impl):
     #   0  identity dish member (the dish-aware layer below)
-    #   1  the query is in the name or the canonical dish - the recipe is
-    #      ABOUT it
+    #   1  the query is in the name, the canonical dish, the author or the
+    #      publisher (FTS_ABOUT_COLUMNS) - the recipe is ABOUT it, or is
+    #      whose it is
     #   2  found only in the ingredients or the cuisine - it CONTAINS it
     # Tier 2 stays in the set (the ingredients index exists so "shrimp" can
     # reach a dish whose title never says so) but never outranks tier 1.
     conn.execute(
         f"CREATE TEMP TABLE q_match AS "
-        f"SELECT rowid AS id, -bm25({fts}, 10.0, 8.0, 2.0, 1.0) AS rel, "
+        f"SELECT rowid AS id, -bm25({fts}, 10.0, 8.0, 2.0, 1.0, 6.0, 4.0) AS rel, "
         f"{MATCH_TIER_CONTAINS} AS tier "
         f"FROM {fts} WHERE {fts} MATCH ?",
         [expr],
@@ -11829,7 +11919,7 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
     conn.execute(
         f"UPDATE temp.q_match SET tier = {MATCH_TIER_ABOUT} WHERE id IN "
         f"(SELECT rowid FROM {fts} WHERE {fts} MATCH ?)",
-        ["{name dish} : (" + expr + ")"],
+        ["{" + " ".join(FTS_ABOUT_COLUMNS) + "} : (" + expr + ")"],
     )
     # The sort and the page both look rows up by id; CREATE TABLE AS gives no key.
     conn.execute("CREATE INDEX temp.q_match_id ON q_match(id)")

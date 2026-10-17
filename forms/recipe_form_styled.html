@@ -2083,6 +2083,18 @@
       <div class="search-row">
         <input type="search" id="sidebar_search" placeholder="Search recipes…"
                enterkeyhint="search" autocomplete="off" />
+        <!-- The query grammar, behind the shared ⓘ (library-shell.js). Keep in
+             step with _fts_query / FTS_FIELD_ALIASES in save_recipe_api.py. -->
+        <button type="button" class="info-dot" data-info-title="Searching recipes"
+                data-info="Words are matched in the title, the dish, the ingredients, the cuisine, the author and the publisher. Recipes that are <b>about</b> what you typed (title, dish, author or publisher) come first under any sort; recipes that merely list the words among their ingredients follow.<br><br>
+<code>lemon chicken</code> &mdash; both words, anywhere<br>
+<code>&quot;butter chicken&quot;</code> &mdash; the exact phrase<br>
+<code>chicken or turkey</code> &mdash; either (and / or / not, any case)<br>
+<code>chicken -lemon</code> or <code>chicken not lemon</code> &mdash; exclude a word<br>
+<code>author:kenji</code>, <code>chef:ottolenghi</code> &mdash; by that cook<br>
+<code>site:nytimes</code>, <code>site:&quot;serious eats&quot;</code> &mdash; from that publisher<br>
+<code>title:</code>, <code>dish:</code>, <code>ingredient:</code>, <code>cuisine:</code> aim a word at one field.<br><br>
+Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are ignored. There is no synonym list: <i>aubergine</i> does not find <i>eggplant</i> unless a dish alias says so.">i</button>
         <button type="button" id="sidebar_search_go" class="search-btn"
                 title="Search recipes" aria-label="Search recipes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

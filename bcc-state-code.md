@@ -11687,6 +11687,24 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   chicken OU sort now leads with Greek Lemon Chicken Soup / Lemon Chicken Breasts, 78 ms; black beans
   and rice 84 matches all tier 0, 24 ms. Note for the curator: "Quality blend" in the recipe list is
   OU → recipe-text score → recency, not the 70/30 OU/power percentile blend of the dish cohort.
+* **Search target widened (curator): author + publisher.** The FTS5 index gains `author`
+  (author.name, 7,919 of 13,217 master rows) and `domain` (host, host words, domains.display_name,
+  og:site_name — "serious eats", "seriouseats" and "nyt cooking" all reach the publisher); bm25 weights
+  10/8/2/1/6/4; the ABOUT tier is now name, dish, author, domain. The column list is `FTS_COLUMNS`
+  (defined above `init_db()`, which runs at import — the first cut put it below and the import failed;
+  caught on a database copy, never live). A differing column list drops and rebuilds the index at
+  startup once (13k rows, ~6 s); the triggers keep it current on every write, the per-boot backfill is
+  the self-heal. Query grammar: `author:kenji`, `chef:`, `by:`, `site:`, `publisher:`, `domain:`,
+  `title:`, `dish:`, `ingredient:`, `cuisine:` aim a word or a quoted phrase at one column; and/or/not
+  work in either case; `-word` excludes; two operators in a row collapse to the last ("chicken AND NOT
+  lemon" was a live 500); exclusions typed first move behind the rest, parenthesised. The grammar is
+  behind the shared ⓘ next to the search box (library-shell info-dot). Tests: `python test_fts_query.py`
+  (23 expressions proven to parse and to mean what the ⓘ says, against the real column list).
+  Vocabulary measured on the copy: 13,921 distinct stems (name 4,168 · dish 2,719 · ingredients 7,100 ·
+  author 3,228 · domain 3,727 · cuisine 123); no synonym layer — dish aliases are the only one.
+  **Needs the pending restart** (the rebuild happens then; old code's 4-weight bm25 still runs on the
+  6-column index, verified).
+
 * **Restart pending (curator):** BCC on MARLEY still runs pre-1897517 code; my restart attempt lost
   the UAC prompt. The ladder and the search tier both need it. Verify PID ≠ 1920, 8009 answering.
 * **Open:** dish-story prose verdict → commit → sweep on go · Buttercream cohort pass · live
