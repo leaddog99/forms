@@ -162,6 +162,7 @@
       openEditor: 'Open in the editor',
       openEditorAnyway: 'Open in the editor anyway',
       importFrom: (host) => `Import from ${host} instead`,
+      readFallback: { transcript: 'Read the transcript instead', comment: "Read the creator's comment instead" },
       installLink: 'Install the bookmark',
       retryHint: 'Select the recipe text on the post and press the bookmark again.',
     };
@@ -477,6 +478,10 @@
       // description, comments and transcript hold no recipe, or whose
       // description points at a blog) and says so in a sentence. Nothing is
       // extracted and nothing is spent; the one useful action is offered.
+      // A rung-2 video whose transcript (or comment) also holds the recipe
+      // stages that text beside the link; `fallback_rung` names it and the
+      // second action reads it. Nothing is spent until the curator picks.
+      const fallbackRung = capture && capture.fallback_rung;
       if (capture && capture.reject) {
         stage.dataset.state = 'thin';
         const rl = (capture.links || [])[0];
@@ -484,11 +489,17 @@
           title: STR.noRecipe.title,
           text: String(capture.reject),
           actions: [rl ? { label: STR.importFrom(hostOf(rl)), href: `${FORM}?url=${encodeURIComponent(rl)}`, primary: true } : null,
+                    fallbackRung ? { label: STR.readFallback[fallbackRung] || STR.readFallback.transcript,
+                                     onClick: () => { capture.rung = fallbackRung; capture.reject = null; extractStaged(); } } : null,
                     { label: STR.openEditor, href: FORM }].filter(Boolean),
         });
         return;
       }
+      await extractStaged();
 
+      // From here the staged text is read: at once for an ordinary grab, or
+      // when the curator picks the staged transcript over a rung-2 link.
+      async function extractStaged() {
       let outcome;
       try { outcome = await runExtraction(data, token, userId); }
       catch (e) { outcome = { ok: false, status: 0, result: { detail: String(e && e.message || e) } }; }
@@ -531,6 +542,7 @@
       }
       setProgress(1, PHASES.done);
       handOff(payload);
+      }
     })();
   </script>
 </body>

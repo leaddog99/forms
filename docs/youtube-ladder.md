@@ -21,7 +21,8 @@ recipe:
 | rung | source | who can read it | what it is |
 |---|---|---|---|
 | 1 | description | server (watch page) or browser | the recipe of record when it has one |
-| 2 | a link in the description | server or browser | a written recipe elsewhere — our ordinary URL path, offered instead |
+| 1b | description + transcript | server | the ingredient list is written, the method is spoken (an "Ingredients" heading with no steps, and a transcript); skipped when the description says the full recipe is at a link |
+| 2 | a link in the description | server or browser | a written recipe elsewhere — our ordinary URL path, offered instead. When the video also has a transcript (or a recipe comment), that text is staged beside the link (`fallback_rung`) and the importing page offers it as the second action; the pasted-URL door, which has no link-out, reads it outright and keeps the link on the capture |
 | 3 | the first comments | **browser only** (YouTube loads comments on scroll) | the creator's own comment, sometimes the recipe |
 | 4 | the transcript | server (our address) | the cook speaking; quantities stay as spoken |
 | 5 | polite reject | — | nothing above holds a recipe; one sentence says so, nothing is spent |
@@ -40,6 +41,13 @@ words rather than invent numbers.
 or sentences under a Method heading). Conservative on purpose: a description
 that says "full recipe on my blog" must not pass, or the ladder stops on the
 wrong rung and the written recipe behind the link is never offered.
+
+"Is this link a recipe?" is `is_recipe_host`: never a social network, a
+shop, a sponsor, a link shortener or affiliate wrapper (geni.us, bit.ly …), a
+bookshop or general retailer, or a shop/store/books subdomain of anything. A
+shortened address is never the recipe of record — Cooking Con Claudia's
+geni.us link (2026-10-19) was her cookbook, and the ladder sent the curator
+to a publisher's promo page.
 
 ## No YouTube Data API — decision 2026-10-16
 

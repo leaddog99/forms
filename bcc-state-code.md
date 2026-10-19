@@ -11760,3 +11760,51 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass ·
   Butter Chicken English search line (curator's call) · TTL + Sources-in · Substack authority switch ·
   ethnicity stamp + backfill · carried.
+
+## Session 2026-10-19 — restart + BAILEY clone; the morning's two YouTube failures; the ladder fixed
+
+* **Restart (curator, 11:03; PID 34864) and the BAILEY clone redone by hand** (`bcc_sync_standby.ps1
+  -Standby BAILEY -WithDbs -FreshBackup`, 11:07–11:13: fresh backup set 110837, BAILEY's server stopped,
+  DBs laid in, restarted, health 200, `== sync done ==`). The nightly 03:00 sync had also succeeded; the
+  Google Drive mirror tiers have failed on a Drive query-quota 403 on 10-18 and 10-19 (own OAuth client
+  since 10-14) — not touched. Last night's story automation ran live this morning: Carne Asada, created
+  07:40 and populated by the rematch (job #2766), was filled at the rematch's end (cohort 13).
+* **"Check the logs from this morning" (curator):** two failures, no tracebacks (the stderr ones are the
+  10-16 restart loop and the 10-17 `links` bug). (1) Cooking Con Claudia's carne asada (C5qcRGzyx4I, from
+  the phone, m.youtube.com, 07:46–07:51): the description HOLDS the recipe — an "Ingredients:" heading and
+  26 quantity lines — but no method (it is spoken), so rung 1's ingredients-AND-steps test failed, and
+  rung 2 offered `geni.us/Celebracion`, her cookbook's affiliate link, because geni.us was not on the
+  not-a-recipe host list and the link rung outranks the 700-word transcript. The importing page followed
+  it to a Penguin Random House promo page (phrase score 1, "proceeding anyway") and the URL door said
+  "does not hold the recipe; import from geni.us". (2) Not Another Cooking Show (6bWNngI6SbY, 07:52): rung
+  2 correctly pointed at the creator's post page, which holds NO recipe (2,917 visible chars, an episode
+  index; unblocker 700 chars; two bookmarklet captures 2,552 / 1,936) — every path produced 0 ingredients
+  and the form accepted it, while a 2,255-word transcript sat unread. The curator imported
+  fifteenspatulas.com's at 08:07 instead (master 20429).
+* **Ladder fixed (curator: "fix the ladder"), `intake/youtube_source.py` + both staging doors + importing
+  page:** (a) **rung 1b `description+transcript`** — `RecipeSignal.has_ingredient_list` (an Ingredients
+  heading with ≥3 quantity lines, or ≥6 without) plus a transcript is a recipe: the list is written, the
+  method is the cook speaking (the transcript's heading says so); sits between rung 1 and the link rung;
+  skipped when the description SAYS the full recipe is at a link (`points_elsewhere`), so a written page
+  keeps precedence. (b) **`is_recipe_host`**: shorteners and affiliate wrappers (geni.us, bit.ly, tinyurl,
+  rebrand.ly, linkin.bio, stan.store …), bookshops and general retail (fourthwall, bookshop.org, B&N, PRH,
+  target, walmart, etsy, gumroad …) and any shop/store/merch/books subdomain are never a recipe link.
+  (c) **the link rung stages its fallback**: `LadderResult.fallback_markdown/_rung` (the creator's
+  recipe comment first, else the transcript) is put in the staged slot beside the link; the reject
+  sentence says it exists; `forms/importing.html` offers "Read the transcript instead" as the second action
+  (the extraction half of the page is now `extractStaged()`, run at once or on that click; nothing is spent
+  until the curator picks); `fallback_rung` rides the capture whitelist. The pasted-URL door
+  (`markdown_result`) has no link-out, so with a fallback it reads the transcript outright and keeps the
+  link on the capture; a bare link still raises the "import from that page" sentence. Channel editor's
+  rung words gain the new rung; docs/youtube-ladder.md table + host rule. Live, no model: Claudia → rung
+  1b (15 lines + 700 words, links []); NACS → rung 2 with a 12.9k-char transcript staged beside it.
+  19 ladder tests (5 new). **Needs a restart** (ladder + doors); importing.html is static and live.
+* **Whisper on YouTube audio (curator asked):** no record of it — the ladder's rung 4 has only ever been
+  YouTube's own captions via youtube-transcript-api (docs/youtube-ladder.md). faster-whisper base.en
+  IS on this host for the cook voice (cook_stt.py, ~420 ms per utterance, measured 07-29); nothing has
+  pointed it at a video. It would need the audio track (yt-dlp — a ToS question the Data API decision
+  of 10-16 sidestepped) and ~minutes of CPU per video; the captions have been present on every video
+  the ladder has read so far. Not built.
+* **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
+  TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
+  cloud mirror · carried.

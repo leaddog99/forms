@@ -210,7 +210,7 @@
 
     // The domain editor's browse pickers (forms/domains.html loadDomainRecipes),
     // reading /channels/{id}/recipes; counts refresh on open.
-    const RUNG_WORDS = { description: 'from the description', comment: 'from a comment', transcript: 'from the transcript', link: 'linked page' };
+    const RUNG_WORDS = { description: 'from the description', 'description+transcript': 'ingredients written, method spoken', comment: 'from a comment', transcript: 'from the transcript', link: 'linked page' };
     async function loadChannelRecipes(id){
       const mp = $('#masterPicker'), up = $('#userPicker');
       if (!mp || !up) return;

@@ -205,6 +205,17 @@ class RecipeSignal:
             return True
         return False
 
+    @property
+    def has_ingredient_list(self) -> bool:
+        """The written half of a recipe: an ingredient list with no method —
+        the creator lists what to buy and SHOWS how. Cooking Con Claudia's
+        carne asada (2026-10-19): an "Ingredients:" heading, 26 quantity lines,
+        not one step, and the method spoken over 197 seconds. With a transcript
+        that is a recipe (rung 1b); without one it is not."""
+        if self.has_ingredient_heading and self.ingredient_lines >= 3:
+            return True
+        return self.ingredient_lines >= 6
+
 
 def recipe_signal(text: str) -> RecipeSignal:
     sig = RecipeSignal()
@@ -245,7 +256,19 @@ _NOT_A_RECIPE_HOST = (
     "linktr.ee", "beacons.ai", "spotify.com", "apple.com", "music.apple.com", "podcasts.apple.com",
     "teespring.com", "shopify.com", "merch", "google.com", "goo.gl", "epidemicsound.com",
     "artlist.io", "squarespace.com", "nordvpn", "expressvpn", "hellofresh", "skillshare",
+    # Link shorteners and affiliate wrappers: a shortened address is never the
+    # recipe of record — it hides a shop (geni.us wrapped a cookbook, 2026-10-19),
+    # and a written recipe is linked by its own URL.
+    "geni.us", "bit.ly", "tinyurl.com", "rebrand.ly", "buff.ly", "t.co", "cutt.ly",
+    "shorturl.at", "linkin.bio", "stan.store", "lnk.bio", "lnk.to", "ow.ly",
+    # Bookshops and general retail: the creator's cookbook, apron, knife.
+    "fourthwall.com", "bookshop.org", "barnesandnoble.com", "penguinrandomhouse.com",
+    "prh.com", "indiebound.org", "target.com", "walmart.com", "etsy.com", "gumroad.com",
+    "bigcartel.com", "shop.app", "ebay.com", "williams-sonoma.com", "surlatable.com",
 )
+# A shop under the creator's own domain: shop.example.com, store.example.com,
+# example-shop.fourthwall.com. The recipe lives at the apex or under /recipes.
+_SHOP_HOST_RE = re.compile(r"(?:^|[.-])(?:shop|store|merch|books?)\.", re.I)
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.I)
 
 
@@ -254,14 +277,23 @@ def _host(u: str) -> str:
     return m.group(1).lower() if m else ""
 
 
+def is_recipe_host(host: str) -> bool:
+    """False for the hosts above and for a shop/store subdomain."""
+    h = (host or "").lower()
+    if not h:
+        return False
+    if any(h == b or h.endswith("." + b) or b in h for b in _NOT_A_RECIPE_HOST):
+        return False
+    return not _SHOP_HOST_RE.search(h)
+
+
 def recipe_links(text: str) -> list[str]:
     """Outbound links in a description that could be a written recipe, the
     likeliest first (a URL that says 'recipe' outranks the channel homepage)."""
     seen, out = set(), []
     for m in _URL_RE.finditer(text or ""):
         u = m.group(0).rstrip(".,;:!?)")
-        h = _host(u)
-        if not h or any(h == b or h.endswith("." + b) or b in h for b in _NOT_A_RECIPE_HOST):
+        if not is_recipe_host(_host(u)):
             continue
         if u in seen:
             continue
@@ -332,7 +364,7 @@ class LadderResult:
     channel_id: str                     # the channels table key (intake/pipeline/channels_lib.py)
     handle: str
     thumbnail: str
-    rung: Optional[str]                 # description | link | comment | transcript | None
+    rung: Optional[str]                 # description | description+transcript | link | comment | transcript | None
     markdown: Optional[str]             # staged text; None for link / reject
     links: list[str]
     reject: Optional[str]               # user-facing sentence when nothing is extractable
@@ -341,6 +373,13 @@ class LadderResult:
     transcript_words: int
     caption_language: str
     length_s: int
+    # Rung 2 points at a page we have not read. When the video ALSO carries a
+    # spoken (or commented) recipe, that text is staged beside the link so the
+    # importing page can offer it the moment the link disappoints — Not Another
+    # Cooking Show's post page held no recipe at all (2026-10-19) and the
+    # curator was left with nothing while a 2,255-word transcript existed.
+    fallback_markdown: Optional[str] = None
+    fallback_rung: Optional[str] = None     # comment | transcript
 
     def capture_extra(self) -> dict:
         """The fields stamped on the staged grab's `capture` block and, from
@@ -350,7 +389,8 @@ class LadderResult:
                 "length_s": self.length_s or None,
                 "transcript_words": self.transcript_words or None,
                 "caption_language": self.caption_language or None,
-                "links": self.links or None, "reject": self.reject}
+                "links": self.links or None, "reject": self.reject,
+                "fallback_rung": self.fallback_rung}
 
 
 def _strip_title(t: str) -> str:
@@ -383,6 +423,8 @@ def build_markdown(info: Optional[VideoInfo], *, video_id: str, source_url: str,
             parts.append(f"\n## Comment {i}\n\n{c.strip()}")
     if transcript:
         role = ("the recipe itself — the cook speaking" if rung == "transcript"
+                else "the METHOD — the cook speaking; the ingredient list above is written"
+                if rung == "description+transcript"
                 else "corroboration of the written recipe above")
         parts.append(f"\n## Transcript ({'auto-generated' if transcript.is_generated else 'creator'} captions, "
                      f"{transcript.words} words{', cut at the limit' if transcript.truncated else ''}; {role})\n\n"
@@ -446,9 +488,34 @@ def ladder(url: str, *, description: Optional[str] = None, comments: Optional[li
         log(f"[YOUTUBE] {vid}: rung 1 — recipe in the description "
             f"({sig.ingredient_lines} ingredient lines, {sig.step_lines} step lines)")
         return LadderResult(rung=rung, markdown=md, reject=None, **base)
+    if sig.has_ingredient_list and transcript and not (links and sig.points_elsewhere):
+        # Rung 1b: the ingredient list is written, the method is spoken. Ahead
+        # of the link rung because a creator who lists the ingredients in the
+        # description and demonstrates the rest is giving THIS as the recipe;
+        # the links underneath are the cookbook and the apron. Unless the
+        # description SAYS the full recipe is at a link — then the written
+        # page is the recipe of record and rung 2 keeps it.
+        rung = "description+transcript"
+        md = build_markdown(info, video_id=vid, source_url=url, title=title, description=desc,
+                            comments=[], transcript=transcript, rung=rung)
+        log(f"[YOUTUBE] {vid}: rung 1b — ingredients in the description "
+            f"({sig.ingredient_lines} lines), method in the transcript ({transcript.words} words)")
+        return LadderResult(rung=rung, markdown=md, reject=None, **base)
     if links:
         log(f"[YOUTUBE] {vid}: rung 2 — description points at {links[0]}")
-        return LadderResult(rung="link", markdown=None, reject=None, **base)
+        fb_md, fb_rung = None, None
+        if comment_hits:
+            fb_rung = "comment"
+            fb_md = build_markdown(info, video_id=vid, source_url=url, title=title, description=desc,
+                                   comments=comment_hits, transcript=transcript, rung=fb_rung)
+        elif transcript:
+            fb_rung = "transcript"
+            fb_md = build_markdown(info, video_id=vid, source_url=url, title=title, description=desc,
+                                   comments=[], transcript=transcript, rung=fb_rung)
+        if fb_rung:
+            log(f"[YOUTUBE] {vid}: ... and the {fb_rung} is staged beside it, should that page hold no recipe")
+        return LadderResult(rung="link", markdown=None, reject=None,
+                            fallback_markdown=fb_md, fallback_rung=fb_rung, **base)
     if comment_hits:
         rung = "comment"
         md = build_markdown(info, video_id=vid, source_url=url, title=title, description=desc,
@@ -474,14 +541,23 @@ def markdown_result(url: str, *, log: Callable[[str], None] = print) -> dict:
     a reject or a link (the written recipe lives at the link; the caller
     surfaces it rather than extracting a description that has none)."""
     res = ladder(url, log=log)
+    extra = res.capture_extra()
+    markdown = res.markdown
     if res.rung == "link":
-        raise RuntimeError(f"This video's description does not hold the recipe; it links to "
-                           f"{res.links[0]} — import from that page.")
-    if not res.markdown:
+        if not res.fallback_markdown:
+            raise RuntimeError(f"This video's description does not hold the recipe; it links to "
+                               f"{res.links[0]} — import from that page.")
+        # The pasted-URL door has no link-out to offer (the form asked for a
+        # recipe, not a choice), so the spoken recipe is read and the link is
+        # kept on the capture for the editor to show.
+        log(f"[YOUTUBE] {res.video_id}: URL door — reading the {res.fallback_rung}; "
+            f"the description's link ({res.links[0]}) rides on the capture")
+        markdown, extra["rung"] = res.fallback_markdown, res.fallback_rung
+    if not markdown:
         raise RuntimeError(res.reject or "No recipe found in this video.")
     # og_meta is what the extractor's hero coopt and site-name stamp read for an
     # ordinary page; the video supplies the same three things.
-    return {"markdown": res.markdown, "source_url": url, "title": res.title,
-            "has_jsonld": False, "jsonld": [], "youtube": res.capture_extra(),
+    return {"markdown": markdown, "source_url": url, "title": res.title,
+            "has_jsonld": False, "jsonld": [], "youtube": extra,
             "hero_image_url": res.thumbnail,
             "og_meta": {"image": res.thumbnail, "siteName": "YouTube", "author": res.channel}}

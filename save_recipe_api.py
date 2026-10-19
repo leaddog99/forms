@@ -14023,7 +14023,8 @@ async def extract_from_markdown_endpoint(
                 capture_meta = {k: _c[k] for k in ("kind", "label", "structure", "via",
                                                    "selected", "chars", "comments", "links",
                                                    "verified", "rung", "channel", "channel_id", "handle",
-                                                   "length_s", "transcript_words", "caption_language") if k in _c}
+                                                   "length_s", "transcript_words", "caption_language",
+                                                   "fallback_rung") if k in _c}
         except Exception as e:
             print(f"[CAPTURE] ignoring malformed capture field: {e}")
     try:
@@ -15056,6 +15057,20 @@ async def measure_recipe_endpoint(request: Request):
     }
 
 
+
+def _youtube_link_reject(link: str, fallback_rung: Optional[str]) -> str:
+    """The importing page's sentence for a rung-2 video: the written recipe
+    should be behind the link; when the video also carries a spoken (or
+    commented) recipe, say so — the page offers it as the second action."""
+    s = (f"This video's description does not hold the recipe; it links to {link}, "
+         f"where the written recipe should be.")
+    if fallback_rung == "transcript":
+        s += " If that page has no recipe, the video's transcript can be read instead."
+    elif fallback_rung == "comment":
+        s += " If that page has no recipe, the creator's comment can be read instead."
+    return s
+
+
 @app.post("/stage-markdown")
 async def stage_markdown_endpoint(request: Request):
     print("[STAGE] Stage markdown endpoint called")
@@ -15107,8 +15122,9 @@ async def stage_markdown_endpoint(request: Request):
             if yt.markdown:
                 md_text = yt.markdown
             elif yt.rung == "link":
-                yt_extra["reject"] = (f"This video's description does not hold the recipe; it links "
-                                      f"to {yt.links[0]}, where the written recipe should be.")
+                yt_extra["reject"] = _youtube_link_reject(yt.links[0], yt.fallback_rung)
+                if yt.fallback_markdown:
+                    md_text = yt.fallback_markdown     # read only if the curator asks
         except Exception as e:  # noqa: BLE001
             print(f"[YOUTUBE] ladder failed on /stage-markdown, keeping the payload: {type(e).__name__}: {e}")
     capture = _capture_meta_for(source_url, via="bookmarklet", **yt_extra)
@@ -15241,13 +15257,14 @@ async def stage_capture_endpoint(request: Request):
             title = yt.title or title
             if yt.markdown:
                 md_text = yt.markdown
+            elif yt.rung == "link" and yt.fallback_markdown:
+                md_text = yt.fallback_markdown     # read only if the curator asks
             else:
                 md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
                                                  captured_at=captured_at, source=source)
             links = list(yt.links)[:5]
             if yt.rung == "link":
-                yt_extra["reject"] = (f"This video's description does not hold the recipe; it links "
-                                      f"to {links[0]}, where the written recipe should be.")
+                yt_extra["reject"] = _youtube_link_reject(links[0], yt.fallback_rung)
         else:
             md_text = build_capture_markdown(url=url, title=title, text=text, comments=comments,
                                              captured_at=captured_at, source=source)
