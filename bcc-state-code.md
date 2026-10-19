@@ -11805,6 +11805,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   pointed it at a video. It would need the audio track (yt-dlp — a ToS question the Data API decision
   of 10-16 sidestepped) and ~minutes of CPU per video; the captions have been present on every video
   the ladder has read so far. Not built.
+* **Verified live (13:34, after the curator's 12:34 restart):** the bookmarklet on Claudia's carne asada
+  took the CSP-fallback door (loader capture, `via=loader`, 1814 chars, links=0), the ladder logged
+  `rung 1b — ingredients in the description (15 lines), method in the transcript (700 words)`, the
+  canonical extraction returned 26 ingredients / 9 steps, and the save landed as user recipe 898
+  (Carne Asada, d=0.56 confident; channel @CookingConClaudia touched). The morning's geni.us
+  link-out is gone. One note from the run: the importing page met an expired session and held the
+  capture behind "Sign in to save this recipe" until the curator signed in; nothing was lost.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
