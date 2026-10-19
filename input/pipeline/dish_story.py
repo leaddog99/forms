@@ -7,8 +7,10 @@ winners, returned as four fields. Until 2026-10-16 this lived only behind the
 editor's ✨ button and filled the FORM for the curator to save, so 10 of 461
 dishes had a story while 226 of 508 domains did. Now the same call also FILLS
 BLANKS on its own — after a dish refresh (the cohort has just been rebuilt),
-on a dish save that leaves the fields empty, and as a one-off sweep — under
-one rule:
+when a saved recipe joins a dish's cohort (the save core queues a
+dish_story_fill job for that one dish), at the end of the nightly dish_rematch
+sweep (where a hole-born dish gains its first rows; `fill_where_blank`), and as
+the dish_story_fill sweep job — under one rule:
 
     fill what is blank, never overwrite what a curator wrote, stamp the source.
 
@@ -237,20 +239,96 @@ def _as_list(v) -> list[str]:
 
 def _ensure_signals(conn: sqlite3.Connection, name: str) -> Optional[int]:
     """The prompt is only as grounded as the signals. Stamp them when the dish
-    has none yet but does have a cohort (no LLM, one corpus scan)."""
-    row = conn.execute("SELECT cohort_signals FROM dishes WHERE name = ?", (name,)).fetchone()
-    if row and row[0]:
-        try:
-            return json.loads(row[0]).get("cohort_n")
-        except Exception:
-            return None
+    has none yet — or when the stored stamp no longer describes the cohort
+    (no LLM, one corpus scan, ~2-4 s).
+
+    The stamp's `cohort_n` is compared with the LIVE row count, not trusted:
+    Baked Chicken Breast was created from the holes report on 2026-08-31, its
+    signals stamped a minute later at cohort 0, and the rematch then handed it
+    61 rows. The stored 0 made every later fill (the 10-17 sweep included)
+    return "no cohort" without a word, and the dish stayed story-less for seven
+    weeks while 61 recipes sat under it. A stale stamp also grounds the prose in
+    LAST refresh's cohort, so a changed count re-stamps before the model reads."""
     n = conn.execute("SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ?",
                      (name,)).fetchone()[0]
     if not n:
         return 0
+    row = conn.execute("SELECT cohort_signals FROM dishes WHERE name = ?", (name,)).fetchone()
+    stored = None
+    if row and row[0]:
+        try:
+            stored = json.loads(row[0]).get("cohort_n")
+        except Exception:
+            stored = None
+    if stored == n:
+        return n
     from input.pipeline import dish_signals
     sig = dish_signals.stamp_signals(conn, name)
     return sig.get("cohort_n")
+
+
+def blank_fields(conn: sqlite3.Connection, name: str) -> list[str]:
+    """The editorial fields the AUTOMATIC fill owes this dish: blank, not the
+    curator's, and not already declined by the model. Cheap (one row read, no
+    model) — the save path and the rematch sweep ask this before they spend a
+    job on the dish. Unknown dish -> [].
+
+    A dish the model has already drafted (`editorial_enriched_at` set) with its
+    story in place owes nothing more: what the model left blank then, it left
+    blank on purpose — Broccoli, Cabbage, Fried Eggs and eight more have no
+    ethnicity or region to name (eleven dishes after the 10-17 sweep), and a
+    nightly redraft of each would be a Sonnet call that returns the same
+    silence. A blank STORY after a draft is different — every dish owes one —
+    so that is retried. `fill(force=True)` and the sweep job keep their own,
+    wider, meaning of blank."""
+    cols = ", ".join(f"{f}, {f}_source" for f in FIELDS)
+    row = conn.execute(f"SELECT {cols}, editorial_enriched_at, story FROM dishes WHERE name = ?",
+                       (name,)).fetchone()
+    if row is None:
+        return []
+    drafted_before = bool(row[2 * len(FIELDS)])
+    story_src = row[1]
+    if drafted_before and story_src != SOURCE_CURATOR and not _blank(row[-1]):
+        return []
+    if drafted_before and story_src == SOURCE_CURATOR:
+        return []
+    out = []
+    for i, f in enumerate(FIELDS):
+        v, src = row[2 * i], row[2 * i + 1]
+        if f == "cook_notes" and isinstance(v, str) and v.strip():
+            try:
+                v = json.loads(v)
+            except Exception:
+                pass
+        if src != SOURCE_CURATOR and _blank(v):
+            out.append(f)
+    return out
+
+
+def fill_where_blank(conn: sqlite3.Connection, *, log=print) -> dict:
+    """Fill every dish that has a cohort AND something blank. The automatic
+    half of the editorial: the refresh fills its own dish inline, the save path
+    queues one dish when a recipe joins a cohort, and the rematch sweep (where
+    a NEW dish gains its first rows, and where rows move between dishes) calls
+    this at its end. Dishes with nothing blank are never read twice."""
+    names = [r[0] for r in conn.execute(
+        "SELECT d.name FROM dishes d WHERE EXISTS (SELECT 1 FROM master_recipes m "
+        "WHERE m.dish_effective = d.name) ORDER BY d.name")]
+    out = {"filled": {}, "skipped": {}, "failed": {}}
+    for name in names:
+        if not blank_fields(conn, name):
+            continue
+        try:
+            r = fill(conn, name, log=log)
+        except Exception as e:  # noqa: BLE001
+            log(f"[DISH-STORY] {name}: FAILED {type(e).__name__}: {e}")
+            out["failed"][name] = f"{type(e).__name__}: {e}"
+            continue
+        if r["filled"]:
+            out["filled"][name] = r["filled"]
+        else:
+            out["skipped"][name] = r["skipped"] or "model left the fields empty"
+    return out
 
 
 def fill(conn: sqlite3.Connection, name: str, *, force: bool = False,

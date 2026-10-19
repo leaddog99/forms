@@ -11732,6 +11732,31 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Transcript video called 'thin' and 'low recipe-phrase score' (curator, Fallow chicken fricassee x4ecsmjZo-w).** Rung 4 (transcript only), 18,218 chars staged, extraction 19 ingredients / 9 steps — and the verdict was `rejected`: phrase score 6 against 7. The phrase list is WRITTEN-recipe vocabulary ('tsp', '1/2 cup', 'servings:'); a cook talking says 'half a cup'. The importing page shows the same thin card for `rejected` as for a missing part, and the editor repeats 'low recipe-phrase score'. Fix in the one place both read: `stamp_validation_on_recipe` now lets the EXTRACTED structure carry the verdict when the phrase score misses — name present, at least 5 ingredients and 3 steps (System → Harvest: `is_recipe_structure_min_ingredients` / `_steps`) — reason 'Recipe-phrase score 6 (threshold 7); accepted on structure: 19 ingredients, 9 steps', `_scoring.recipeVerdictBasis = structure` (declared on ScoringMetadata), the score itself stored as measured. A thin or nameless result stays rejected. No consumer ever dropped rows on `rejected` (grep: UI messages only). Tests `python test_recipe_verdict.py` (5). Noted, not changed: `recipeScore` still feeds the Quality-blend sort, so a transcript video ranks below a written page there — the instrument question for speech is open.
 * **Bookmarklet on a second YouTube video arrived with the FIRST video's picture (curator).** Log: the fried-rice press (456lX_v2kJI) re-fetched the fricassee's `i.ytimg.com/vi/x4ecsmjZo-w/maxresdefault.jpg` two seconds before staging. YouTube is a single-page app: after a click from one video to the next, the page's `og:image` meta still names the previous video, and the loader reads that meta. `forms/importing.html` now derives the hero from the video id in the URL (the same `img.youtube.com/vi/<id>/maxresdefault.jpg` still the ladder uses) and ignores the meta for YouTube; static file, live on the next press.
 * **Restart done (curator, 2026-10-18): channels step 2 verified live.** New worker PID 11392. `/channels` list (Fallow, live counts master=2), GET one, `/recipes` (two items, rung null — the backfill stamped identity only), unknown id 404, unauthenticated PATCH 401. `forms/channels.html` renders the list card, identity block with the url icons, the Standing block saying *not yet measured*, and the master picker; no console errors. The Corpus menu entry is perm-gated (edit_master) so a session-less tab does not show it; the served library-shell.js carries it. Still to see on the next YouTube save: `[CHANNEL] … touched` in the log and `_source.capture` kept on the row. Side task the same day: the ReciMe dossier rendered to PDF (`docs/research/recime-dossier.md` → Downloads) for the curator; Gmail connector authorised but the attachment send was dropped in favour of the file link.
+* **Dish story becomes automatic for new cohorts (curator, 2026-10-18 evening: "we did the story sweep
+  but didn't make it automatic for new recipes").** Until now the fill had two doors: inline after a dish
+  REFRESH and the sweep job. A dish whose cohort arrives any other way — created from the holes report
+  and populated by the auto-rematch, or grown by interactive master saves that stamp `_match` — never
+  got a story. Live count: 473 dishes, every one with a cohort, ONE story-less: Baked Chicken Breast
+  (61 rows, created 08-31, never refreshed). Two more doors now, through one cheap gate
+  (`dish_story.blank_fields`: blank, not the curator's, not already declined by the model): the save
+  core queues a `dish_story_fill` job for the dish a master row just joined (`_queue_dish_story_fill`,
+  entity `dish-story:<name>`, in-flight dedupe, spawned runner — never inline, a bookmarklet save must not
+  wait 12 s on Sonnet; refresh rows carry `_master.dish` and never reach it); and the nightly
+  `dish_rematch` ends with `dish_story.fill_where_blank` (covers create-dish, whose rematch is how a
+  hole-born dish gets its rows). **Latent bug found on the way:** `_ensure_signals` TRUSTED the stored
+  `cohort_signals.cohort_n`; Baked Chicken Breast's stamp read 0 (computed a minute after creation,
+  before the rematch handed it 61 rows), so every fill including the 10-17 sweep returned "no cohort"
+  without logging — the sweep log never mentions the dish. Now the stamp is compared with the live
+  COUNT and re-stamped when it differs (2–4 s corpus scan, only on the way to a model call), which also
+  grounds the prose in the current cohort rather than the last refresh's. Portuguese Kale Soup had the
+  same stale 0 (18 rows). **Retry guard:** eleven dishes (Broccoli, Cabbage, Fried Eggs, Blood Orange,
+  Strawberries, Yogurt…) have ethnicity/region the model left blank on purpose; a plain "blank" test
+  would redraft each nightly for the same silence, so a dish already drafted with its story in place
+  owes nothing more — only a missing STORY is retried. `fill(force=True)` and the sweep keep the wide
+  meaning. Baked Chicken Breast filled by job #2750 (all four fields, cohort 61, re-stamped). Live
+  check after: zero dishes owed. Tests `python test_dish_story_fill.py` (18, model and corpus scan
+  stubbed). **Needs the next restart** for the save-core hook; the rematch runs out of process and
+  picks the new code tonight.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass ·
   Butter Chicken English search line (curator's call) · TTL + Sources-in · Substack authority switch ·
   ethnicity stamp + backfill · carried.

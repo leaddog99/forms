@@ -9301,6 +9301,22 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
             print(f"[REMATCH] preview_image sweep: {n_prev} dish(es) updated")
     except Exception as e:  # noqa: BLE001
         print(f"[REMATCH] preview_image sweep failed (non-fatal): {e}")
+    # A dish that gained its FIRST rows here (a hole-born dish's cohort arrives
+    # by rematch, never by refresh) has no story yet; rows that moved may have
+    # emptied nothing but can have filled a blank dish. Fill whatever has a
+    # cohort and a blank field — dishes with nothing blank cost one row read.
+    try:
+        from input.pipeline import dish_story
+        def _fill():
+            with _db() as conn:
+                return dish_story.fill_where_blank(conn)
+        _st = await asyncio.to_thread(_fill)
+        if _st["filled"] or _st["failed"]:
+            print(f"[REMATCH] dish story fill: filled {list(_st['filled'])}"
+                  + (f"; failed {_st['failed']}" if _st["failed"] else ""))
+        summaries["dish_story"] = {k: len(v) for k, v in _st.items()}
+    except Exception as e:  # noqa: BLE001
+        print(f"[REMATCH] dish story fill failed (non-fatal): {e}")
     return summaries
 
 
@@ -11483,6 +11499,35 @@ def _spawn_job_runner(job_id: int) -> None:
         raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}") from e
 
 
+def _queue_dish_story_fill(dish_name: str, *, why: str) -> Optional[int]:
+    """Queue ONE dish's editorial fill (dish_story_fill job, params.dish_name)
+    when the dish has a blank field the model may write — nothing when it has
+    none, nothing when a fill for it is already queued or running. Called off
+    the request path by the save core when a recipe joins a cohort. Returns the
+    job id or None. Never raises."""
+    try:
+        from input.pipeline import dish_story
+        with _db() as conn:
+            blanks = dish_story.blank_fields(conn, dish_name)
+            if not blanks:
+                return None
+            ref = f"dish-story:{dish_name}"
+            existing = jobs_lib.find_in_flight_for_entity(conn, ref)
+            if existing:
+                print(f"[DISH-STORY] {dish_name!r}: fill job #{existing['id']} already "
+                      f"{existing['status']} — not queued twice")
+                return None
+            job_id = jobs_lib.enqueue_job(conn, type="dish_story_fill",
+                                          params={"dish_name": dish_name}, entity_ref=ref)
+        _spawn_job_runner(job_id)
+        print(f"[DISH-STORY] {dish_name!r}: fill job #{job_id} queued ({why}; blank: "
+              f"{', '.join(blanks)})")
+        return job_id
+    except Exception as e:  # noqa: BLE001
+        print(f"[DISH-STORY] {dish_name!r}: fill not queued ({type(e).__name__}: {e})")
+        return None
+
+
 @app.get("/jobs/{job_id}/stream")
 async def job_stream_endpoint(job_id: int):
     """Server-Sent Events stream for a job. Emits:
@@ -13191,6 +13236,10 @@ def _save_recipe_core(payload: dict) -> dict:
     except Exception as e:
         print(f"[GRADE] FAILED (continuing save): {e}")
 
+    # The dish whose cohort THIS save joined (a master row that had to be
+    # matched), read after the write so the editorial fill can be queued
+    # outside the transaction and off the request path.
+    _story_dish = None
     try:
         with _db() as conn:
             # Save clears source_changed_at: the user reviewing and saving is
@@ -13343,6 +13392,7 @@ def _save_recipe_core(payload: dict) -> dict:
                                     label=f"master recipe {seq_id}")
                                 dish_for_vec = (recipe_dict.get("_match") or {}).get("dish") or None
                             if _stamped:
+                                _story_dish = dish_for_vec
                                 # _match changed the row, so `data` goes back too.
                                 # compose_recipe_text never reads _match, so the
                                 # hash stamped above is still the right one.
@@ -13386,6 +13436,13 @@ def _save_recipe_core(payload: dict) -> dict:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+    # A recipe just joined a dish's cohort. If that dish still has blank
+    # editorial (story / ethnicity / region / cook's notes), fill it — as a
+    # job, so a bookmarklet save never waits ~12 s on a Sonnet call. Dish
+    # refreshes carry _master.dish and never reach this; their fill is inline.
+    if _story_dish:
+        _queue_dish_story_fill(_story_dish, why=f"master recipe {seq_id} joined the cohort")
 
     # WHY THERE IS NO SCORE. Scoring happens HERE, at save — but the form
     # clears itself on a successful save (the 2026-05-29 "each save is a
