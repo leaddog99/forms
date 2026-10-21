@@ -188,7 +188,8 @@ def test_recipe_links_drop_shorteners_bookshops_and_shop_subdomains():
     assert ys.recipe_links(INGREDIENTS_ONLY_DESC) == [], ys.recipe_links(INGREDIENTS_ONLY_DESC)
     assert ys.recipe_links(INGREDIENTS_PLUS_BLOG_DESC) == ["https://www.example-kitchen.com/recipes/carne-asada"]
     for h in ("geni.us", "bit.ly", "shop.example.com", "store.example.com", "example-shop.fourthwall.com",
-              "books.example.com", "bookshop.org", "sites.prh.com"):
+              "books.example.com", "bookshop.org", "sites.prh.com",
+              "kristasdesignstudio.com", "studio.example.com", "www.acme-design.co"):
         assert not ys.is_recipe_host(h), h
     for h in ("example-kitchen.com", "www.notanothercookingshow.tv", "bishopskitchen.com", "seriouseats.com"):
         assert ys.is_recipe_host(h), h

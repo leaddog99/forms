@@ -44,7 +44,8 @@ wrong rung and the written recipe behind the link is never offered.
 
 "Is this link a recipe?" is `is_recipe_host`: never a social network, a
 shop, a sponsor, a link shortener or affiliate wrapper (geni.us, bit.ly …), a
-bookshop or general retailer, or a shop/store/books subdomain of anything. A
+bookshop or general retailer, a shop/store/books subdomain of anything, or a
+design/studio host (the editor's credit at the foot of the description). A
 shortened address is never the recipe of record — Cooking Con Claudia's
 geni.us link (2026-10-19) was her cookbook, and the ladder sent the curator
 to a publisher's promo page.

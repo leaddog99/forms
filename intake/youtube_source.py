@@ -269,6 +269,11 @@ _NOT_A_RECIPE_HOST = (
 # A shop under the creator's own domain: shop.example.com, store.example.com,
 # example-shop.fourthwall.com. The recipe lives at the apex or under /recipes.
 _SHOP_HOST_RE = re.compile(r"(?:^|[.-])(?:shop|store|merch|books?)\.", re.I)
+# A credit, not a recipe: the editor's or designer's studio linked at the foot
+# of the description (kristasdesignstudio.com under Not Another Cooking Show,
+# 2026-10-21). Matched anywhere in the host, so a cook who names their site
+# "studio" would be missed — none has yet; revisit if one does.
+_CREDIT_HOST_RE = re.compile(r"(?:design|studio)", re.I)
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.I)
 
 
@@ -278,13 +283,13 @@ def _host(u: str) -> str:
 
 
 def is_recipe_host(host: str) -> bool:
-    """False for the hosts above and for a shop/store subdomain."""
+    """False for the hosts above, a shop/store subdomain, and a design/studio credit."""
     h = (host or "").lower()
     if not h:
         return False
     if any(h == b or h.endswith("." + b) or b in h for b in _NOT_A_RECIPE_HOST):
         return False
-    return not _SHOP_HOST_RE.search(h)
+    return not (_SHOP_HOST_RE.search(h) or _CREDIT_HOST_RE.search(h))
 
 
 def recipe_links(text: str) -> list[str]:
