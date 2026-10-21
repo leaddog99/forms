@@ -11868,6 +11868,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   above — the search-defaults endpoints (`GET /search-defaults`, `PATCH /users` with
   `search_defaults`) and the `users.search_defaults` column, `_CREDIT_HOST_RE` in the ladder's host
   rule, and the save-core dish-story hook from 10-18. Nothing owed on restart now.
+* **MARLEY moved (curator, 2026-10-21 afternoon):** this machine now sits in a less frequently used rack
+  while HESTIA is being set up; the transfer is near. Nothing changed in software — service, tunnel and
+  tasks ran through the move (worker 8036 still up). The move follows
+  `docs/new-host-cutover-playbook.md`: §2 build (account john, same paths, sshd + MARLEY key), §3 soak
+  on `hestia.tbotb.com` fed by `bcc_sync_standby.ps1 -Standby HESTIA` (rclone remote `hestia` must be
+  created first), §4 flip, §6 checklist. Watch MARLEY's temperatures in the new spot (rack airflow is
+  new; the 16 crashes were thermal).
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
