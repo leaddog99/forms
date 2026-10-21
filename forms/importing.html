@@ -473,6 +473,12 @@
       const data = await r.json();
       const capture = data.capture || null;
       if (capture && capture.kind && !captureSource) await loadCaptureSource();
+      // Back from the editor: the linked page held no recipe and the curator
+      // asked for the staged transcript (?read=<rung>#staged=<token>). The
+      // staged text IS the fallback already; only the rung and the card change.
+      const readBack = (params.get('read') || '').trim();
+      if (readBack && capture && capture.fallback_rung) { capture.rung = capture.fallback_rung; capture.reject = null; }
+      if (!srcHost && data.source_url) $('headline').innerHTML = STR.reading(escapeHtml(hostOf(data.source_url)));
 
       // The polite reject: the server already looked (a YouTube video whose
       // description, comments and transcript hold no recipe, or whose
@@ -488,7 +494,11 @@
         showOutcome({
           title: STR.noRecipe.title,
           text: String(capture.reject),
-          actions: [rl ? { label: STR.importFrom(hostOf(rl)), href: `${FORM}?url=${encodeURIComponent(rl)}`, primary: true } : null,
+          // The link carries the staged token: should that page come up
+          // empty, the editor offers the transcript there, without a trip back.
+          actions: [rl ? { label: STR.importFrom(hostOf(rl)),
+                           href: `${FORM}?url=${encodeURIComponent(rl)}` + (fallbackRung ? `&fallback=${encodeURIComponent(token)}&read=${encodeURIComponent(fallbackRung)}` : ''),
+                           primary: true } : null,
                     fallbackRung ? { label: STR.readFallback[fallbackRung] || STR.readFallback.transcript,
                                      onClick: () => { capture.rung = fallbackRung; capture.reject = null; extractStaged(); } } : null,
                     { label: STR.openEditor, href: FORM }].filter(Boolean),

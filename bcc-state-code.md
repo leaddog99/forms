@@ -11817,8 +11817,17 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   took the primary action, "Import from notanothercookingshow.tv instead", which re-fetched the post
   page (unblocker policy) and extracted 0 ingredients again — the morning's dead end, one click later.
   The staged transcript was still a click away on the card, but the card is gone once the link is
-  followed (same tab). Open question for the curator: carry the staged token along the link so the
-  form's thin result can offer the transcript, or open the link in a new tab so the card survives.
+  followed (same tab). Curator: "carry the token along, do the better one". Built: the card's link
+  action now carries `&fallback=<token>&read=<rung>` to the editor; the editor's URL path keeps that
+  as `urlFallback`, and when the linked page extracts thin or fails, the incomplete/failed dialog
+  says "The video's transcript is still staged — read it instead" with a "Read the video's
+  transcript instead" button (showErrorDialog gained `extraAction`; one new button in the dialog
+  markup, handler assigned not added). It returns to `importing.html?read=<rung>#staged=<token>`,
+  where the page takes the token from the hash as before and, seeing `read`, flips the capture's
+  rung to its fallback_rung and clears the reject so extractStaged runs without a card. Verified
+  live 11:55 on the NACS token: form thin dialog → button → importing read the 12,922-char
+  transcript → 22 ingredients / 11 steps → editor with the watch URL as source, capture rung
+  `transcript`, link kept. Both pages are static: no restart. docs/youtube-ladder.md rung-2 row.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.

@@ -1993,6 +1993,7 @@
       <p id="errorDialogMessage"></p>
     </div>
     <div class="modal-actions">
+      <button type="button" id="errorDialogExtraBtn" class="primary" style="display:none"></button>
       <button type="button" id="errorDialogImageBtn" class="primary" style="display:none">Try image extraction</button>
       <button type="button" id="errorDialogCloseBtn" class="secondary">Close</button>
     </div>
@@ -7764,10 +7765,11 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     const errorDialogTitle = document.getElementById('errorDialogTitle');
     const errorDialogMessage = document.getElementById('errorDialogMessage');
     const errorDialogImageBtn = document.getElementById('errorDialogImageBtn');
+    const errorDialogExtraBtn = document.getElementById('errorDialogExtraBtn');
     const errorDialogCloseBtn = document.getElementById('errorDialogCloseBtn');
     const imageFallbackInput = document.getElementById('imageFallbackInput');
 
-    function showErrorDialog({ title = 'Something went wrong', message = '', showImageButton = false } = {}) {
+    function showErrorDialog({ title = 'Something went wrong', message = '', showImageButton = false, extraAction = null } = {}) {
       // Don't clobber an existing open dialog. When /extract-from-url runs
       // autoFallbackToStagedImage and the staged screenshot doesn't arrive,
       // extractFromStagedImage already opens its OWN dialog. The outer
@@ -7788,6 +7790,12 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       const offerStaged = !!(showImageButton && stagedToken);
       errorDialogImageBtn.style.display = offerStaged ? '' : 'none';
       errorDialogImageBtn.textContent = 'Try staged screenshot';
+      // One caller-supplied action (label + onClick), e.g. the staged video
+      // transcript behind a link-out that came up empty. Assigned, not added,
+      // so a second dialog never stacks a stale handler.
+      errorDialogExtraBtn.style.display = extraAction ? '' : 'none';
+      errorDialogExtraBtn.textContent = extraAction ? extraAction.label : '';
+      errorDialogExtraBtn.onclick = extraAction ? () => { errorDialog.close(); extraAction.onClick(); } : null;
       if (typeof errorDialog.showModal === 'function') {
         errorDialog.showModal();
       } else {
@@ -7813,6 +7821,22 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // the save POST forces user_id=0 and stamps _master.dish + run +
     // kind="harvest" so the rescue attributes to its originating batch.
     let stagedBccHints = null;
+    // A rung-2 video's link-out carried the staged transcript's token
+    // (importing.html → ?url=<page>&fallback=<token>&read=<rung>). When the
+    // linked page yields nothing, the transcript is one click away here
+    // rather than a trip back to a card that no longer exists.
+    let urlFallback = null;
+    function urlFallbackAction() {
+      if (!urlFallback) return null;
+      const words = { transcript: "Read the video's transcript instead", comment: "Read the creator's comment instead" };
+      return { label: words[urlFallback.rung] || words.transcript,
+               onClick: () => { location.href = `${API}/forms/importing.html?read=${encodeURIComponent(urlFallback.rung)}#staged=${encodeURIComponent(urlFallback.token)}`; } };
+    }
+    function urlFallbackNote() {
+      if (!urlFallback) return '';
+      return urlFallback.rung === 'comment' ? " The creator's comment from the video is still staged — read it instead."
+                                            : " The video's transcript is still staged — read it instead.";
+    }
 
     // The full last-extracted recipe — kept so save can pass through fields
     // the form has no UI for (provenance, classification, _scoring) instead
@@ -8334,8 +8358,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
             if (!fellBack) {
               showErrorDialog({
                 title: 'URL extraction incomplete',
-                message: `The page didn't yield ${missing.join(', ')}. The page may be JS-rendered or paywalled. Try a screenshot or the bookmarklet.`,
+                message: `The page didn't yield ${missing.join(', ')}.` + (urlFallback ? urlFallbackNote()
+                         : ' The page may be JS-rendered or paywalled. Try a screenshot or the bookmarklet.'),
                 showImageButton: true,
+                extraAction: urlFallbackAction(),
               });
             }
           } else {
@@ -8349,8 +8375,9 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           if (!fellBack) {
             showErrorDialog({
               title: 'URL extraction failed',
-              message: result.detail || 'Server returned an error.',
+              message: (result.detail || 'Server returned an error.') + urlFallbackNote(),
               showImageButton: true,
+              extraAction: urlFallbackAction(),
             });
           }
         }
@@ -8360,8 +8387,9 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         if (!fellBack) {
           showErrorDialog({
             title: 'URL extraction failed',
-            message: (err && err.message) || 'Unable to reach the extraction server.',
+            message: ((err && err.message) || 'Unable to reach the extraction server.') + urlFallbackNote(),
             showImageButton: true,
+            extraAction: urlFallbackAction(),
           });
         }
       } finally {
@@ -9207,6 +9235,9 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       window.scrollTo({ top: 0 });
       const urlInput = document.getElementById('extractUrlInput');
       if (urlInput) urlInput.value = url;
+      // A link-out from a video with its transcript staged beside it.
+      const fbToken = (params.get('fallback') || '').trim();
+      if (fbToken) urlFallback = { token: fbToken, rung: (params.get('read') || 'transcript').trim() };
       // Strip the params so a reload doesn't re-fire the extraction.
       window.history.replaceState({}, '', window.location.pathname);
       extractFromUrl(url);
