@@ -1342,6 +1342,12 @@ def init_db():
             if "role" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'")
                 print("[MIGRATE] added users.role column (default 'member')")
+            # 2026-10-21: the user's own defaults for the recipe editor's search
+            # box (JSON: sort, source, chapter, cuisine, ethnicity, domain), the
+            # record Clear resets to; NULL inherits system_config search_default_*.
+            if "search_defaults" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN search_defaults TEXT")
+                print("[MIGRATE] added users.search_defaults column")
             _seed_users_from_recipes(conn)
 
             ensure_metabase_url_table(conn)
@@ -2937,6 +2943,85 @@ async def generate_recipe_image_endpoint(
 # integration replaces these with a wrapper around the Members API;
 # the column shape is already Ghost-compatible (see init_db users
 # section), so callers don't have to change.
+# ---- The recipe list's search defaults ----------------------------------
+# What Clear in the editor's search box resets every field to. Two records:
+# the user's own (users.search_defaults) over the system's (system_config
+# search_default_sort / search_default_source); fields the user never set
+# fall through. The box reads the MERGED record and nothing else.
+SEARCH_DEFAULT_FIELDS = ("sort", "source", "chapter", "cuisine", "ethnicity", "domain")
+
+
+def _system_search_defaults() -> dict:
+    from input.pipeline.system_config import get_setting
+    d = {k: "" for k in SEARCH_DEFAULT_FIELDS}
+    sort = str(get_setting("search_default_sort", DEFAULT_SORT) or DEFAULT_SORT)
+    d["sort"] = sort if sort in SORT_SQL else DEFAULT_SORT
+    src = str(get_setting("search_default_source", "") or "")
+    d["source"] = src if src in SOURCE_CLASSES else ""
+    return d
+
+
+def _clean_search_defaults(raw) -> Optional[dict]:
+    """Validate a user's search defaults. None (or an object with nothing set)
+    means nothing stored: the user inherits the system's."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="search_defaults must be an object or null")
+    out: dict = {}
+    for k, v in raw.items():
+        if k not in SEARCH_DEFAULT_FIELDS:
+            raise HTTPException(status_code=400,
+                                detail=f"unknown search default {k!r}; allowed: {list(SEARCH_DEFAULT_FIELDS)}")
+        v = ("" if v is None else str(v)).strip()
+        if k == "sort" and v and v not in SORT_SQL:
+            raise HTTPException(status_code=400, detail=f"unknown sort {v!r}; allowed: {list(SORT_SQL)}")
+        if k == "source" and v and v not in SOURCE_CLASSES:
+            raise HTTPException(status_code=400, detail=f"unknown source {v!r}; allowed: {list(SOURCE_CLASSES)}")
+        if v:
+            out[k] = v
+    return out or None
+
+
+def _parse_search_defaults_col(raw) -> Optional[dict]:
+    if not raw:
+        return None
+    try:
+        d = json.loads(raw)
+        return d if isinstance(d, dict) and d else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _user_search_defaults(conn, user_id: int) -> Optional[dict]:
+    row = conn.execute("SELECT search_defaults FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        d = json.loads(row[0])
+        return d if isinstance(d, dict) and d else None
+    except (TypeError, ValueError):
+        return None
+
+
+@app.get("/search-defaults")
+def get_search_defaults(user_id: int = PLACEHOLDER_USER_ID):
+    """The merged defaults the recipe editor's Clear resets to, plus both
+    records it was merged from and the keys a default may take."""
+    system = _system_search_defaults()
+    user = None
+    try:
+        with _db() as conn:
+            user = _user_search_defaults(conn, user_id)
+    except Exception as e:
+        print(f"[SEARCH] search-defaults: user record unreadable for {user_id}: {e}")
+    effective = dict(system)
+    effective.update({k: v for k, v in (user or {}).items() if k in SEARCH_DEFAULT_FIELDS and v})
+    effective["q"] = ""
+    return {"user_id": user_id, "user": user, "system": system, "effective": effective,
+            "sorts": list(SORT_SQL.keys()), "sources": list(SOURCE_CLASSES)}
+
+
 @app.get("/users")
 def list_users():
     try:
@@ -2946,7 +3031,7 @@ def list_users():
             rows = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
                 "subscription_tier, role, created_at, updated_at, password_hash, "
-                "COALESCE(email_verified, 0), email_verified_at "
+                "COALESCE(email_verified, 0), email_verified_at, search_defaults "
                 "FROM users ORDER BY user_id"
             ).fetchall()
             return [
@@ -2967,6 +3052,7 @@ def list_users():
                     # false, which is accurate rather than a problem to fix.
                     "email_verified": bool(r[10]),
                     "email_verified_at": r[11],
+                    "search_defaults": _parse_search_defaults_col(r[12]),
                 }
                 for r in rows
             ]
@@ -3625,13 +3711,18 @@ async def update_user(user_id: int, request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
 
-    allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid", "role"}
+    allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid", "role", "search_defaults"}
     sets = []
     params: list = []
     for k in allowed:
         if k not in payload:
             continue
         v = payload[k]
+        if k == "search_defaults":
+            cleaned = _clean_search_defaults(v)
+            sets.append("search_defaults = ?")
+            params.append(json.dumps(cleaned) if cleaned else None)
+            continue
         if isinstance(v, str):
             v = v.strip()
             if v == "" and k in ("email", "subscription_tier", "ghost_uuid"):
@@ -3665,7 +3756,7 @@ async def update_user(user_id: int, request: Request):
                 raise HTTPException(status_code=404, detail="User not found")
             row = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
-                "subscription_tier, role, created_at, updated_at "
+                "subscription_tier, role, created_at, updated_at, search_defaults "
                 "FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
@@ -3674,6 +3765,7 @@ async def update_user(user_id: int, request: Request):
             "name": row[3], "status": row[4], "subscription_tier": row[5],
             "role": row[6] or "member",
             "created_at": row[7], "updated_at": row[8],
+            "search_defaults": _parse_search_defaults_col(row[9]),
         }
     except HTTPException:
         raise

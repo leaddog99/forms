@@ -169,6 +169,27 @@
       return out.join('');
     }
 
+    // The user's recipe-list defaults: the two selects list the keys the server
+    // accepts, with the system's current value named on the blank option.
+    const SORT_WORDS = { relevance: 'Best match', updated_desc: 'Last modified (newest)', created_desc: 'Date added (newest)',
+                         name_asc: 'Name (A–Z)', ou_desc: 'OU score (highest)', pa_desc: 'Page authority (highest)',
+                         power_desc: 'Power — DA+PA (highest)', chapter_asc: 'Chapter (A–Z)', quality: 'Quality blend',
+                         hotlist: 'Hotlist (publisher flagship)' };
+    const SOURCE_WORDS = { web: 'Web', video: 'Video', social: 'Social' };
+    async function fillSearchDefaults(u){
+      const sortSel = $('#f_def_sort'), srcSel = $('#f_def_source');
+      if (!sortSel || !srcSel) return;
+      let d = null;
+      try { const r = await fetch(`/search-defaults?user_id=${u.user_id}`); if (r.ok) d = await r.json(); } catch (e) {}
+      if (!d) { sortSel.innerHTML = '<option value="">(unavailable)</option>'; srcSel.innerHTML = sortSel.innerHTML; return; }
+      const mine = d.user || {};
+      const opt = (v, label, sel) => `<option value="${escapeHtml(v)}" ${sel ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      sortSel.innerHTML = opt('', `System default (${SORT_WORDS[d.system.sort] || d.system.sort})`, !mine.sort)
+        + (d.sorts || []).filter(k => k !== 'relevance').map(k => opt(k, SORT_WORDS[k] || k, mine.sort === k)).join('');
+      srcSel.innerHTML = opt('', `System default (${d.system.source ? (SOURCE_WORDS[d.system.source] || d.system.source) : 'every source'})`, !mine.source)
+        + (d.sources || []).map(k => opt(k, SOURCE_WORDS[k] || k, mine.source === k)).join('');
+    }
+
     function renderDetail(u){
       $('#page').innerHTML = `
         <div class="ed-kicker">
@@ -200,6 +221,14 @@
             <div class="ed-field"><label for="f_role">Role</label><select id="f_role">${ROLES.map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
             <div class="ed-field"><label for="f_status">Account status</label><select id="f_status">${STATUSES.map(s => `<option ${s === (u.status || 'test') ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
             <div class="ed-field full"><label for="f_tier">Subscription tier</label><input id="f_tier" type="text" value="${escapeHtml(u.subscription_tier || '')}" placeholder="e.g. Pro, Basic, Admin (optional)"></div>
+          </div>
+        </section>
+        <section class="ed-block">
+          <h3 class="ed-block-label">Recipe list defaults</h3>
+          <div class="ed-callout info"><span class="mark">○</span><span>What <strong>Clear</strong> in the recipe editor's search box resets to for this user. A blank field inherits the system default (Settings → Recipe list).</span></div>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="f_def_sort">Default sort</label><select id="f_def_sort"><option value="">Loading…</option></select></div>
+            <div class="ed-field"><label for="f_def_source">Default source lane</label><select id="f_def_source"><option value="">Loading…</option></select></div>
           </div>
         </section>
 
@@ -262,6 +291,7 @@
         p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
       });
       $('#saveBtn').addEventListener('click', () => doSave(u));
+      fillSearchDefaults(u);
       $('#loginBtn').addEventListener('click', () => login(u.user_id));
       $('#deleteBtn').addEventListener('click', () => doDelete(u));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
@@ -496,6 +526,8 @@
       if (!name){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Name is required'; $('#f_name').focus(); return; }
       if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Enter a valid email'; $('#f_email').focus(); return; }
       const body = { name, email, role: $('#f_role').value, status: $('#f_status').value, subscription_tier: $('#f_tier').value.trim() };
+      { const sort = $('#f_def_sort')?.value || '', source = $('#f_def_source')?.value || '';
+        body.search_defaults = (sort || source) ? { sort, source } : null; }
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {
         const r = await fetch(`/users/${u.user_id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

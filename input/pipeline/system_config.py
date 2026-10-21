@@ -920,6 +920,29 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "quota — a bug that mails every subscriber in a loop should hit a wall "
                        "here long before it hits the provider's plan limit.",
     },
+    # --- Recipe list: what Clear in the editor's search box resets to -------
+    # The system's defaults; a user's own (users.search_defaults, set in the
+    # users editor) override them field by field. GET /search-defaults merges.
+    {
+        "key": "search_default_sort",
+        "value": "updated_desc",
+        "type": "string",
+        "category": "Recipe list",
+        "label": "Default sort of the recipe list",
+        "description": "The sort Clear resets the recipe editor's search box to, for a user "
+                       "who has not chosen their own. One of the list's sort keys: "
+                       "updated_desc, created_desc, name_asc, ou_desc, pa_desc, power_desc, "
+                       "chapter_asc, quality, hotlist.",
+    },
+    {
+        "key": "search_default_source",
+        "value": "",
+        "type": "string",
+        "category": "Recipe list",
+        "label": "Default source lane of the recipe list",
+        "description": "web, video or social; blank for every source. Same fallback rule as "
+                       "the default sort.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

@@ -339,6 +339,23 @@
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
     .sidebar-controls .search-btn[hidden] { display: none; }
+    /* The subform's two verbs, at its foot. Search is ARMED (accent) the
+       moment any field differs from what the list shows; no field change
+       runs a search on its own. Clear resets every field to the defaults. */
+    .sidebar-controls .search-actions { display: flex; gap: 6px; }
+    .sidebar-controls .search-actions button {
+      flex: 1 1 0; padding: 8px 10px; font-family: inherit; font-size: 0.9em; font-weight: 600;
+      color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: #fff;
+      cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .sidebar-controls .search-actions button:hover {
+      border-color: var(--accent); color: var(--accent); background: var(--accent-soft, #faf3ee);
+    }
+    .sidebar-controls .search-actions .search-go.armed {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .sidebar-controls .search-actions .search-go.armed:hover { filter: brightness(0.95); }
+    .sidebar-controls .search-actions .search-reset { flex: 0 0 auto; min-width: 76px; color: var(--ink-muted, #666); }
 
     .recipe-list { list-style: none; }
 
@@ -2106,8 +2123,10 @@
       <!-- Search is SUBMITTED, not live. Typing does nothing until Search
            (or Enter) is pressed — a keystroke-by-keystroke filter re-rendered
            the whole list on every letter, which is unusable on a tablet once
-           the corpus is in the thousands. Clear only appears once a search is
-           actually applied. -->
+           the corpus is in the thousands. The same rule covers EVERY field in
+           this box (sort, criteria, lane): they are a draft until the Search
+           button at the foot runs it; Clear beside it resets them to the
+           user's defaults (users.search_defaults, else the system's). -->
       <div class="search-row">
         <input type="search" id="sidebar_search" placeholder="Search recipes…"
                enterkeyhint="search" autocomplete="off" />
@@ -2123,20 +2142,6 @@
 <code>site:nytimes</code>, <code>site:&quot;serious eats&quot;</code> &mdash; from that publisher<br>
 <code>title:</code>, <code>dish:</code>, <code>ingredient:</code>, <code>cuisine:</code> aim a word at one field.<br><br>
 Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are ignored. There is no synonym list: <i>aubergine</i> does not find <i>eggplant</i> unless a dish alias says so.">i</button>
-        <button type="button" id="sidebar_search_go" class="search-btn"
-                title="Search recipes" aria-label="Search recipes">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-        </button>
-        <button type="button" id="sidebar_search_clear" class="search-btn clear"
-                title="Clear search" aria-label="Clear search" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </button>
       </div>
       <!-- Chapter moved into the criteria dialog alongside cuisine and
            ethnicity: one filter surface that grows by adding a row, rather
@@ -2163,12 +2168,18 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       <select id="sidebar_sort">
         <!-- options auto-populated from SORT_ORDERS at page load -->
       </select>
-    </div>
     <!-- Source lane tabs: All · Web · Video · Social, with cascaded counts.
-         Built from SOURCE_CLASSES; clicking writes #sidebar_source and reloads. -->
+         Built from SOURCE_CLASSES; clicking writes #sidebar_source and arms
+         Search — one more field of the draft, not a switch of its own. -->
     <div class="source-tabs" id="sourceTabs" role="tablist" aria-label="Recipe source">
       <button type="button" class="info-dot" data-info-title="Web, video, social"
               data-info="Every recipe here is the same kind of record; this is <b>where it came from</b>.<br><br><b>Web</b> is a page a publisher owns, fetched by us or captured in your browser.<br><b>Video</b> is a recipe whose source of record is a video platform we can read: today YouTube, via the description, the creator's comments or the transcript.<br><b>Social</b> is a recipe someone saved from Facebook, Instagram or TikTok through the browser or a screenshot; those networks cannot be read by a server, so social recipes are never ranked, only kept.<br><br>Video recipes are ranked in their own lane, by their place in the search results and the channel's standing, never by views or likes.">i</button>
+    </div>
+      <div class="search-actions">
+        <button type="button" id="sidebar_search_go" class="search-go" title="Search recipes">Search</button>
+        <button type="button" id="sidebar_search_reset" class="search-reset"
+                title="Reset every field to your defaults and search">Clear</button>
+      </div>
     </div>
     <ul class="recipe-list" id="recipeList">
       <li class="empty-state">Loading...</li>
@@ -4506,47 +4517,102 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // presses Search / Enter, or Clear.
     let _searchQuery = '';
 
-    function syncSearchControls() {
-      const clearBtn = document.getElementById('sidebar_search_clear');
-      if (clearBtn) clearBtn.hidden = !_searchQuery;
-    }
+    // THE SUBFORM AND THE LIST ARE TWO THINGS (curator, 2026-10-21). The box's
+    // fields - text, sort, criteria, lane - are a DRAFT the user edits; the
+    // list shows what was last SEARCHED. They meet only on Search (the
+    // criteria dialog's Show recipes is the same verb). No field change runs
+    // anything by itself, and nothing here changes a field for the user: the
+    // relevance swap that used to flip the sort when text appeared is gone.
+    // The one exception is Clear, which resets every field to the user's
+    // defaults (users.search_defaults, else system_config search_default_*)
+    // and searches.
+    const SEARCH_FIELDS = ['q', 'sort', 'chapter', 'cuisine', 'ethnicity', 'source', 'domain'];
+    let _applied = null;              // what the list shows; null until the first load
+    let _searchDefaults = null;       // { uid, fields } from GET /search-defaults
 
-    // Searching means "find this", so order by how well it matches. Browsing
-    // means "show me the collection", so go back to the order that was chosen
-    // for it. Only ever moves between relevance and the previous choice — a
-    // deliberate pick of OU or Name while a query is active is left alone.
-    let _sortBeforeSearch = null;
-    function applyRelevanceDefault() {
-      const sel = document.getElementById('sidebar_sort');
-      if (!sel) return;
-      if (_searchQuery && sel.value !== 'relevance') {
-        _sortBeforeSearch = sel.value;
-        sel.value = 'relevance';
-      } else if (!_searchQuery && sel.value === 'relevance') {
-        sel.value = _sortBeforeSearch || 'updated_desc';
-        _sortBeforeSearch = null;
+    function _draftSearch() {
+      const d = { q: ((document.getElementById('sidebar_search')?.value) || '').trim().toLowerCase(),
+                  sort: document.getElementById('sidebar_sort')?.value || 'updated_desc' };
+      FILTER_FACETS.forEach(f => { d[f] = _appliedEl(f)?.value || ''; });
+      d.domain = _appliedEl('domain')?.value || '';
+      return d;
+    }
+    function _searchDiff(a, b) {
+      return SEARCH_FIELDS.filter(k => (a ? a[k] : undefined) !== (b ? b[k] : undefined));
+    }
+    // The Search button carries the state (the rule of the save button):
+    // armed while the draft differs from the list, plain when they agree.
+    function armSearch() {
+      const btn = document.getElementById('sidebar_search_go');
+      if (!btn) return;
+      const changed = _applied ? _searchDiff(_draftSearch(), _applied) : [];
+      btn.classList.toggle('armed', changed.length > 0);
+      btn.title = changed.length ? 'Search with the changed ' + changed.join(', ') : 'The list shows this search';
+    }
+    function syncSearchControls() { armSearch(); }
+
+    // Search: work out what changed and do the least that answers it.
+    //   text or criteria changed  -> a new fetch, the sort left as it is set
+    //   only the sort changed     -> re-order the rows already here, when ALL
+    //                                of them are here and the order can be
+    //                                computed locally (relevance cannot: bm25
+    //                                lives in the index); otherwise one fetch
+    //   nothing changed           -> a refresh of page 0
+    function runSearch() {
+      const draft = _draftSearch();
+      const changed = _applied ? _searchDiff(draft, _applied) : SEARCH_FIELDS.slice();
+      _searchQuery = draft.q;
+      persistSidebarState();
+      const sortOnly = changed.length === 1 && changed[0] === 'sort';
+      const spec = SORT_ORDERS[draft.sort];
+      if (sortOnly && !_listHasMore && spec && draft.sort !== 'relevance' && _recipesCache.length) {
+        _recipesCache.sort(makeComparator(spec.order));
+        _applied = draft;
+        resetListWindow();
+        renderRecipes();
+        armSearch();
+        return;
       }
+      loadRecipes();              // snapshots _applied itself
     }
+    function applySearch() { runSearch(); }
 
-    function applySearch() {
-      const el = document.getElementById('sidebar_search');
-      const next = ((el && el.value) || '').trim().toLowerCase();
-      if (next === _searchQuery) return;   // nothing to re-render
-      _searchQuery = next;
-      applyRelevanceDefault();
-      syncSearchControls();
-      loadRecipes();          // the server does the matching now, not the cache
-    }
-
+    // Escape in the box: the TEXT goes back to what the list shows. Nothing runs.
     function clearSearch() {
       const el = document.getElementById('sidebar_search');
-      if (el) el.value = '';
-      if (!_searchQuery) { syncSearchControls(); return; }
-      _searchQuery = '';
-      applyRelevanceDefault();
-      syncSearchControls();
-      loadRecipes();
-      if (el) el.focus();
+      if (el) { el.value = _applied ? _applied.q : ''; el.blur(); }
+      armSearch();
+    }
+
+    // Clear: every field back to the defaults, then search. The collection
+    // being browsed decides whose defaults; the server merges user over system.
+    async function ensureSearchDefaults() {
+      const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+      if (_searchDefaults && _searchDefaults.uid === uid) return _searchDefaults.fields;
+      let fields = null;
+      try {
+        const r = await fetch(`${API}/search-defaults?user_id=${encodeURIComponent(uid)}`);
+        if (r.ok) { const d = await r.json(); fields = d.effective || null; }
+      } catch (e) { /* unreachable: the built-in shape below */ }
+      if (!fields) fields = { q: '', sort: 'updated_desc', source: '', chapter: '', cuisine: '', ethnicity: '', domain: '' };
+      _searchDefaults = { uid, fields };
+      return fields;
+    }
+    async function resetSearch() {
+      const d = await ensureSearchDefaults();
+      const sb = document.getElementById('sidebar_search'); if (sb) sb.value = d.q || '';
+      const sel = document.getElementById('sidebar_sort');
+      if (sel) sel.value = [...sel.options].some(o => o.value === d.sort) ? d.sort : 'updated_desc';
+      FILTER_FACETS.forEach(f => {
+        const el = _appliedEl(f); if (el) el.value = d[f] || '';
+        const fe = _filterEl(f); if (fe) fe.value = d[f] || '';
+      });
+      { const el = _appliedEl('domain'); if (el) el.value = d.domain || '';
+        const fe = _filterEl('domain'); if (fe) fe.value = _domainTextForHost(d.domain || ''); }
+      const fq = document.getElementById('filter_q'); if (fq) fq.value = d.q || '';
+      syncFilterButton();
+      syncSourceTabs();
+      runSearch();
     }
 
     let _listWindow = null;         // retained for the reset path
@@ -4916,14 +4982,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         if (el) el.value = draft[f];
       });
       { const el = _appliedEl('domain'); if (el) el.value = draft.domain || ''; }
-      _searchQuery = (draft.q || '').toLowerCase();
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = draft.q || '';
-      applyRelevanceDefault();
-      syncSearchControls();
-      persistSidebarState();
       closeFilterDialog();
-      loadRecipes();
+      runSearch();
     }
 
     // Clear all removes the filters, not just the form's memory of them. It
@@ -4935,18 +4997,14 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       if (qEl) qEl.value = '';
       FILTER_FACETS.forEach(f => { const sel = _filterEl(f); if (sel) sel.value = ''; });
       { const el = _filterEl('domain'); if (el) el.value = ''; }
-      _searchQuery = '';
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = '';
-      applyRelevanceDefault();
       FILTER_FACETS.forEach(f => { const el = _appliedEl(f); if (el) el.value = ''; });
       { const el = _appliedEl('domain'); if (el) el.value = ''; }
-      syncSearchControls();
-      persistSidebarState();
       // The dialog stays open — you cleared in order to choose something else,
       // so leaving it up saves a click. The list and badge update behind it.
       refreshFilterFacets();
-      loadRecipes();
+      runSearch();
     }
 
     // Show the active-filter count on the trigger. A filtered list that looks
@@ -5004,8 +5062,8 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           const sel = _filterEl('source');
           if (sel) sel.value = cls;
           syncFilterButton();
-          persistSidebarState();
-          loadRecipes();
+          syncSourceTabs();         // the strip shows the DRAFT lane
+          armSearch();
         });
         strip.insertBefore(b, dot);
       });
@@ -5033,14 +5091,11 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
 
     function _listQuery(offset) {
       const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-      // A TYPED QUERY means relevance ordering (2026-09-05, the black-beans-
-      // rice search: results were date-ordered, so recency beat aboutness).
-      // The user's explicit sort choice still wins — only the date defaults
-      // are overridden while a query is present — and the server applies that
-      // choice WITHIN the match tier, so an OU sort cannot float an
-      // ingredient-only hit above the recipes that are about the query.
-      let sort = document.getElementById('sidebar_sort')?.value || 'updated_desc';
-      if (_searchQuery && (sort === 'updated_desc' || sort === 'created_desc')) sort = 'relevance';
+      // The sort is sent AS SET. It used to be swapped to relevance whenever a
+      // query was typed (2026-09-05); since 2026-10-21 the field is the user's
+      // alone. Aboutness still leads: the server orders by match tier first
+      // while a query is present, and the chosen sort within each tier.
+      const sort = document.getElementById('sidebar_sort')?.value || 'updated_desc';
       const p = new URLSearchParams({
         user_id: uid,
         sort,
@@ -5060,6 +5115,11 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // Fetch page 0 and replace the list. Every filter/sort/store change lands here.
     async function loadRecipes() {
       const seq = ++_listSeq;
+      // The list is about to show THIS. The text is _searchQuery, not the box:
+      // a collection switch or a post-save refresh fetches with the applied
+      // text even if the box holds something not yet searched.
+      _applied = Object.assign(_draftSearch(), { q: _searchQuery });
+      armSearch();
       _listLoading = true;
       resetListWindow();
       listEl.innerHTML = '<li class="empty-state">Loading…</li>';
@@ -5588,18 +5648,21 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         });
       }
       // Search is submitted, never live (see the markup note). Enter or the
-      // magnifier applies it; the ✕ unapplies it. Not persisted across loads.
+      // Search button runs it; Escape puts the text back; Clear resets the
+      // whole box to the defaults and runs. Typing only arms the button.
       const searchEl = document.getElementById('sidebar_search');
       if (searchEl) {
         searchEl.addEventListener('keydown', e => {
-          if (e.key === 'Enter') { e.preventDefault(); applySearch(); searchEl.blur(); }
+          if (e.key === 'Enter') { e.preventDefault(); runSearch(); searchEl.blur(); }
           else if (e.key === 'Escape') { clearSearch(); }
         });
+        searchEl.addEventListener('input', armSearch);
       }
       const searchGoBtn = document.getElementById('sidebar_search_go');
-      if (searchGoBtn) searchGoBtn.addEventListener('click', applySearch);
-      const searchClearBtn = document.getElementById('sidebar_search_clear');
-      if (searchClearBtn) searchClearBtn.addEventListener('click', clearSearch);
+      if (searchGoBtn) searchGoBtn.addEventListener('click', runSearch);
+      const searchResetBtn = document.getElementById('sidebar_search_reset');
+      if (searchResetBtn) searchResetBtn.addEventListener('click', resetSearch);
+      ensureSearchDefaults();       // warm, so Clear is instant
       syncSearchControls();
       // Criteria dialog. Selections cascade live inside it (each change asks
       // the server what is still reachable, with limit=1 so it costs counts and
@@ -5652,13 +5715,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         if (e.key === 'Enter') { e.preventDefault(); refreshFilterFacets(); }
       });
       syncFilterButton();
-      // Re-FETCH, not re-render: the order is decided server-side now, so a
-      // local re-render would just redraw the previous ordering.
+      // A sort change is a draft edit like any other: it arms Search, which
+      // then re-orders locally when every row is here, or fetches.
       const sortEl = document.getElementById('sidebar_sort');
-      if (sortEl) sortEl.addEventListener('change', () => {
-        persistSidebarState();
-        loadRecipes();
-      });
+      if (sortEl) sortEl.addEventListener('change', armSearch);
     })();
 
     function loadForm(recipe) {

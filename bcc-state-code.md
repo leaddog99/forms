@@ -11828,6 +11828,42 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   live 11:55 on the NACS token: form thin dialog → button → importing read the 12,922-char
   transcript → 22 ingredients / 11 steps → editor with the watch URL as source, capture rung
   `transcript`, link kept. Both pages are static: no restart. docs/youtube-ladder.md rung-2 row.
+* **Design/studio hosts are credits** (10b604a): `_CREDIT_HOST_RE` in `is_recipe_host`; restart owed.
+* **The search box: the subform and the list are two things** (curator: "get rid of the search icon
+  next to the term and put a search button at the bottom of the box... when a recipe is searched by
+  that button ONLY (not incremental after a field is changed) it redoes the search INTELLIGENTLY...
+  only the user changes the fields in the search subform not the system... 'Clear' initializes the
+  search to default values stored in the user record and a fall back to the system record").
+  Built: the magnifier and ✕ are gone; the lane tabs moved inside the box; **Search** and **Clear**
+  close it. Every field (text, sort, criteria, lane) is a DRAFT; `_applied` is what the list shows
+  (snapshotted in loadRecipes with the applied text, not the box); `armSearch` puts the state on the
+  Search button (accent while draft ≠ applied, title names the changed fields). `runSearch` diffs:
+  text/criteria changed → fetch with the sort AS SET (the 09-05 relevance swap in `_listQuery` and
+  `applyRelevanceDefault` are both gone - the server's match tier keeps aboutness first); only the
+  sort changed → `_recipesCache.sort(makeComparator(...))` + render when every row is here
+  (`!_listHasMore`) and the order is local (not relevance), else one fetch; nothing changed →
+  refresh. Tabs and the sort select only arm; the criteria dialog's Show recipes / Clear all run
+  `runSearch` (they are the verb). Clear: `GET /search-defaults?user_id` (effective = user over
+  system) → every field reset, then search. Server: `users.search_defaults` TEXT/JSON (migration
+  beside role), `PATCH /users/{id}` accepts/validates it (sort ∈ SORT_SQL, source ∈ SOURCE_CLASSES),
+  `/users` lists it, `GET /search-defaults` merges; system_config seeds `search_default_sort`
+  (updated_desc) and `search_default_source` ('') under category "Recipe list"; users.html gets a
+  "Recipe list defaults" block (two selects, blank = system default, saved with the row). Verified
+  live on the static form (server endpoints need the restart; until then Clear falls back to the
+  built-in shape): sort change arms → Search re-ordered (fetch, since 142 > the 100-row page);
+  typing arms → Search found chicken with the sort KEPT at name_asc; Clear → text '', sort default,
+  button plain. TestClient: GET/PATCH/400/null round trip on user 1 (left as it was: null).
+  Restart owed for the two endpoints and the column.
+* **How the search executes (curator asked, 2026-10-21):** lexical first, vector only on a miss.
+  `_materialise_text_match` turns the text into an FTS5 MATCH (bare words AND, quotes, -word, OR,
+  field: aliases), weighted bm25 (name 10, dish 8, ingredients 2, cuisine 1, author 6, domain 4),
+  each hit tagged a tier (0 identity-dish member via the dish-aware layer: a catalog dish name or
+  alias pulls every row RESOLVING to that dish; 1 about: name/dish/author/domain; 2 contains:
+  ingredients/cuisine); every sort orders tier first while a query is present. The vector index
+  (sqlite-vec, master only) is consulted ONLY when matched == 0 (and offset 0, and the text made a
+  usable expression): `embed_text(q)` → `find_similar_master_recipes(k=6)` → cosine ≥ 0.45 → returned
+  as `suggestions` ("You might mean"), never merged into rows. So it is a sequential hybrid with the
+  vector leg as a fallback, not a blend: a thin-but-nonzero lexical result gets no vector help.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
