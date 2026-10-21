@@ -11812,6 +11812,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   (Carne Asada, d=0.56 confident; channel @CookingConClaudia touched). The morning's geni.us
   link-out is gone. One note from the run: the importing page met an expired session and held the
   capture behind "Sign in to save this recipe" until the curator signed in; nothing was lost.
+* **NACS via the bookmarklet (2026-10-21 11:49):** the ladder logged rung 2 with "the transcript is
+  staged beside it" (2,255 words, links=2); the importing page showed the choice card and the curator
+  took the primary action, "Import from notanothercookingshow.tv instead", which re-fetched the post
+  page (unblocker policy) and extracted 0 ingredients again — the morning's dead end, one click later.
+  The staged transcript was still a click away on the card, but the card is gone once the link is
+  followed (same tab). Open question for the curator: carry the staged token along the link so the
+  form's thin result can offer the transcript, or open the link in a new tab so the card survives.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
