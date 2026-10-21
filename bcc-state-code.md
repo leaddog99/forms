@@ -11864,6 +11864,10 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   usable expression): `embed_text(q)` → `find_similar_master_recipes(k=6)` → cosine ≥ 0.45 → returned
   as `suggestions` ("You might mean"), never merged into rows. So it is a sequential hybrid with the
   vector leg as a fallback, not a blend: a thin-but-nonzero lexical result gets no vector help.
+* **Restart done (curator, 2026-10-21 15:40; worker PID 8036, parent 7724):** picks up everything owed
+  above — the search-defaults endpoints (`GET /search-defaults`, `PATCH /users` with
+  `search_defaults`) and the `users.search_defaults` column, `_CREDIT_HOST_RE` in the ladder's host
+  rule, and the save-core dish-story hook from 10-18. Nothing owed on restart now.
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
