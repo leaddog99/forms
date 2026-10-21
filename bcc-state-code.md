@@ -11817,7 +11817,7 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   took the primary action, "Import from notanothercookingshow.tv instead", which re-fetched the post
   page (unblocker policy) and extracted 0 ingredients again — the morning's dead end, one click later.
   The staged transcript was still a click away on the card, but the card is gone once the link is
-  followed (same tab). Curator: "carry the token along, do the better one". Built: the card's link
+  followed (same tab); a staged grab lives `_STAGE_TTL_SECONDS` = 10 minutes, not until a restart. Curator: "carry the token along, do the better one". Built: the card's link
   action now carries `&fallback=<token>&read=<rung>` to the editor; the editor's URL path keeps that
   as `urlFallback`, and when the linked page extracts thin or fails, the incomplete/failed dialog
   says "The video's transcript is still staged — read it instead" with a "Read the video's
