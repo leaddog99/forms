@@ -9368,8 +9368,11 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
                     conn, db_path=DB_PATH, table=table)
         return out
     summaries = await asyncio.to_thread(_run)
+    all_flags = []
     for table, summary in summaries.items():
         moves = summary.pop("moves", [])
+        all_flags += summary.pop("flags", [])
+        summary["flagged"] = sum(1 for f in all_flags if f["table"] == table)
         print(f"[REMATCH] {table}: {summary}")
         # Each changed row logs BOTH matched-dish fields with their prior
         # values, but only the fields that actually moved — a verdict flip,
@@ -9384,6 +9387,13 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
             print(f"[REMATCH]   {table} {rid}: {' · '.join(bits) or 'distance moved'}")
         if len(moves) > 50:
             print(f"[REMATCH]   ... {len(moves) - 50} more")
+    # Questionable moves (and held cross-chapter ones) reach staff as ONE
+    # email: four log lines were the only witness to Sauce Jean Vignard
+    # (2026-10-23). alert_curator banners the log too and never raises.
+    if all_flags:
+        from input.pipeline import alerts, dish_match as _dm
+        _subj, _body = _dm.flag_digest(all_flags)
+        alerts.alert_curator(_subj, _body)
     # Rows moved between dishes — the stored card thumbnails may point at
     # recipes that left. Full sweep (~300ms nightly), prints what changed.
     try:
@@ -12849,7 +12859,7 @@ def _stamp_dish_match(conn, recipe_dict: dict, rec_vec, *, label: str) -> bool:
     m = _dm.build_match(
         conn, rec_vec, max_dist=_dm.max_distance(),
         likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""),
-        text=_dm.evidence_text(recipe_dict))
+        text=_dm.evidence_text(recipe_dict), chapter=_dm.recipe_chapter(recipe_dict))
     if not m:
         return False
     recipe_dict["_match"] = m

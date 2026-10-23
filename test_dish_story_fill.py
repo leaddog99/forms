@@ -37,15 +37,18 @@ def db():
         story TEXT, story_source TEXT, ethnicity TEXT, ethnicity_source TEXT,
         origin_region TEXT, origin_region_source TEXT, cook_notes TEXT, cook_notes_source TEXT,
         cohort_signals TEXT, editorial_enriched_at TEXT, updated_at TEXT)""")
-    c.execute("CREATE TABLE master_recipes (id INTEGER PRIMARY KEY, dish_effective TEXT)")
+    c.execute("CREATE TABLE master_recipes (id INTEGER PRIMARY KEY, dish_effective TEXT, "
+              "dish_effective_source TEXT)")
     return c
 
 
-def seed(c, name, rows, signals=None, **fields):
+def seed(c, name, rows, signals=None, nearest=0, **fields):
+    """`rows` member recipes (matched) plus `nearest` rows that only GUESS the dish."""
     cols = ["name", "cohort_signals"] + list(fields)
     vals = [name, json.dumps(signals) if signals is not None else None] + list(fields.values())
     c.execute(f"INSERT INTO dishes ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
-    c.executemany("INSERT INTO master_recipes (dish_effective) VALUES (?)", [(name,)] * rows)
+    c.executemany("INSERT INTO master_recipes (dish_effective, dish_effective_source) VALUES (?, ?)",
+                  [(name, "matched")] * rows + [(name, "nearest")] * nearest)
 
 
 # --- stubs: get_dish reads the real schema, stamp_signals scans the corpus, draft bills ---
@@ -130,6 +133,19 @@ check("Curated's story untouched, stays curator", row[:2], ("curator wrote", "cu
 check("stale stamp re-stamped on the way", "Hole Born" in STAMPED, True)
 out2 = dish_story.fill_where_blank(c, log=lambda m: None)
 check("second pass: nothing left to fill, model not called", (out2["filled"], len(DRAFTED)), ({}, 3))
+
+# 5: guesses are not members (Sauce Jean Vignard, 2026-10-23: four nearest guesses, no member)
+STAMPED.clear(); DRAFTED.clear()
+seed(c, "Sauce Jean Vignard", 0, nearest=4)
+check("member_count ignores nearest guesses", dish_story.member_count(c, "Sauce Jean Vignard"), 0)
+out3 = dish_story.fill_where_blank(c, log=lambda m: None)
+check("guess-only dish is not selected by the sweep", "Sauce Jean Vignard" in DRAFTED, False)
+r = dish_story.fill(c, "Sauce Jean Vignard", log=lambda m: None)
+check("direct fill (refresh / save hook) skips it with a reason, no model, no scan",
+      (r["filled"], "needed" in (r["skipped"] or ""), DRAFTED, STAMPED), ([], True, [], []))
+seed(c, "Thin But Real", 1, nearest=6)
+r = dish_story.fill(c, "Thin But Real", log=lambda m: None)
+check("one real member is enough at the default", r["filled"], ["story", "ethnicity", "origin_region", "cook_notes"])
 
 print("-" * 60)
 print("ALL PASSED" if not FAILS else f"{FAILS} FAILED")

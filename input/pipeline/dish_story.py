@@ -36,6 +36,10 @@ OPERATION = "dish_story_draft"
 MODEL = "claude-sonnet-5"
 SOURCE_ENRICH = "enrich"
 SOURCE_CURATOR = "curator"
+# The rungs of dish_effective that make a recipe a MEMBER of the dish. The third
+# rung, 'nearest', is a rejected match's best guess: evidence for the signals,
+# never a reason to write a story (see member_count).
+MEMBER_SOURCES = ("assigned", "matched")
 
 
 _NOTE = {"type": "string",
@@ -267,6 +271,33 @@ def _ensure_signals(conn: sqlite3.Connection, name: str) -> Optional[int]:
     return sig.get("cohort_n")
 
 
+def member_count(conn: sqlite3.Connection, name: str) -> int:
+    """Recipes that ARE the dish: assigned, or confidently matched. A dish needs
+    `dish_story_min_members` of them (system_config, default 1) before the
+    automatic fill writes about it.
+
+    Why not the whole cohort: Sauce Jean Vignard was created on 2026-10-23 with
+    no recipes of its own; the rematch made it the NEAREST guess of four
+    unmatched rows (a demi-glace, a champagne sauce, a brown sauce and a chestnut
+    soup, all at distance 0.77-0.88 against a 0.6 bar) and the fill wrote its
+    story from them as 'cohort=4'. The same rule the search's dish layer has kept
+    since 2026-09-05: a dish means recipes that are the dish, nothing looser."""
+    ph = ", ".join("?" * len(MEMBER_SOURCES))
+    return conn.execute(
+        f"SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ? "
+        f"AND dish_effective_source IN ({ph})", (name, *MEMBER_SOURCES)).fetchone()[0]
+
+
+def _min_members() -> int:
+    n = 1
+    try:
+        from input.pipeline import system_config as _cfg
+        n = int(_cfg.get_setting("dish_story_min_members", n) or n)
+    except Exception:
+        pass
+    return max(1, n)
+
+
 def blank_fields(conn: sqlite3.Connection, name: str) -> list[str]:
     """The editorial fields the AUTOMATIC fill owes this dish: blank, not the
     curator's, and not already declined by the model. Cheap (one row read, no
@@ -311,9 +342,11 @@ def fill_where_blank(conn: sqlite3.Connection, *, log=print) -> dict:
     queues one dish when a recipe joins a cohort, and the rematch sweep (where
     a NEW dish gains its first rows, and where rows move between dishes) calls
     this at its end. Dishes with nothing blank are never read twice."""
+    ph = ", ".join("?" * len(MEMBER_SOURCES))
     names = [r[0] for r in conn.execute(
         "SELECT d.name FROM dishes d WHERE EXISTS (SELECT 1 FROM master_recipes m "
-        "WHERE m.dish_effective = d.name) ORDER BY d.name")]
+        f"WHERE m.dish_effective = d.name AND m.dish_effective_source IN ({ph})) "
+        "ORDER BY d.name", MEMBER_SOURCES)]
     out = {"filled": {}, "skipped": {}, "failed": {}}
     for name in names:
         if not blank_fields(conn, name):
@@ -355,6 +388,12 @@ def fill(conn: sqlite3.Connection, name: str, *, force: bool = False,
             kept.append(f)
     if not targets:
         return {"filled": [], "kept": kept, "skipped": "nothing blank", "cohort_n": None}
+    members, need = member_count(conn, name), _min_members()
+    if members < need:
+        log(f"[DISH-STORY] {name}: skipped - {members} member recipe(s), {need} needed "
+            f"(nearest guesses do not count)")
+        return {"filled": [], "kept": kept, "cohort_n": None,
+                "skipped": f"{members} member recipe(s); {need} needed before a story is written"}
     cohort_n = _ensure_signals(conn, name)
     if not cohort_n:
         return {"filled": [], "kept": kept, "skipped": "no cohort to ground the story in",

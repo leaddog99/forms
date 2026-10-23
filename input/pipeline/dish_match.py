@@ -161,7 +161,8 @@ def qualifier_contradiction(dish_name: str, text: str,
 def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
                 likely_dish: str = "",
                 names: Optional[dict] = None,
-                text: str = "") -> Optional[dict]:
+                text: str = "",
+                chapter: str = "") -> Optional[dict]:
     """The `_match` block for a recipe vector, or None if the dish index is
     empty. Reuses the vector the caller already has — no embed, no API call.
 
@@ -206,6 +207,26 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
                 confident = best["distance"] <= max_dist
                 dish = best["name"] if confident else None
                 method = "qualifier"
+    # AN UNCONFIDENT GUESS STAYS IN THE RECIPE'S CHAPTER (2026-10-23). The
+    # nearest rung is what dish_effective serves when nothing matched, so it
+    # decides which cohort an orphan counts in. Sauce Jean Vignard: a chestnut
+    # soup (Soups & Stews) had 'Poulet a la Moutarde' (Poultry) as its guess,
+    # then the new sauce. When the recipe has a chapter, the guesses come from
+    # that chapter; the cross-chapter nearest is kept on `off_chapter` (hides
+    # nothing). `distance` stays the overall best - it is the confidence
+    # measure. No in-chapter dish at all = the old list, marked. A confident
+    # match is never reordered: distance under the bar outranks a chapter label
+    # the classifier may have got wrong (the rematch holds a confident
+    # cross-chapter MOVE for review instead).
+    off_chapter = None
+    ch = (chapter or "").strip()
+    if not confident and ch and ch != "Uncertain" and _dish_chapter(conn, best["name"]) != ch:
+        inside = vector_store.find_similar_dishes(conn, rec_vec, k=3, chapter=ch)
+        off_chapter = {"dish": best["name"], "distance": round(best["distance"], 4)}
+        if inside:
+            cands = inside
+        else:
+            off_chapter["no_dish_in_chapter"] = True
     out = {
         "dish": dish,
         "distance": round(best["distance"], 4),
@@ -218,7 +239,19 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
     }
     if method:
         out["method"] = method
+    if off_chapter:
+        out["off_chapter"] = off_chapter
     return out
+
+
+def _dish_chapter(conn: sqlite3.Connection, name: str) -> Optional[str]:
+    row = conn.execute("SELECT chapter FROM dishes WHERE name = ?", (name,)).fetchone()
+    return row[0] if row else None
+
+
+def recipe_chapter(recipe_dict: dict) -> str:
+    """The recipe's own chapter (the classifier's), '' when it has none."""
+    return str(((recipe_dict.get("classification") or {}).get("chapter")) or "")
 
 
 def evidence_tier(share: float, median: float, n: int) -> Optional[str]:
@@ -456,7 +489,14 @@ def same_verdict(old: Optional[dict], new: Optional[dict]) -> bool:
         return False
     return (old.get("dish") == new.get("dish")
             and bool(old.get("confident")) == bool(new.get("confident"))
-            and old.get("distance") == new.get("distance"))
+            and old.get("distance") == new.get("distance")
+            # the nearest rung is what dish_effective serves an orphan; since the
+            # in-chapter guess (2026-10-23) it can move while the distance holds
+            and _nearest(old) == _nearest(new))
+
+
+def _nearest(m: Optional[dict]) -> Optional[str]:
+    return (((m or {}).get("candidates") or [{}])[0]).get("dish")
 
 
 def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None,
@@ -495,16 +535,20 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
 
     scanned = confident = changed = failed = 0
     moves: list[tuple] = []
+    flags: list[dict] = []                    # questionable moves, for the staff digest
+    held = 0
 
     names = name_index(conn)
+    dinfo = dish_info(conn)
     for n, (rid, dj, blob) in enumerate(rows, 1):
         try:
             d = json.loads(dj)
             prev = d.get("_match") or None
             likely = ((d.get("_identity") or {}).get("likelyDish") or "")
+            rch = recipe_chapter(d)
             new = build_match(conn, bytes_to_vec(blob), max_dist=max_dist,
                               likely_dish=likely, names=names,
-                              text=evidence_text(d))
+                              text=evidence_text(d), chapter=rch)
             scanned += 1
             if new is None:
                 continue
@@ -512,6 +556,20 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
                 confident += 1
             if same_verdict(prev, new):
                 continue                      # <- the whole point: no write
+
+            # A CONFIDENT dish that would change CHAPTER is held, not written
+            # (curator 2026-10-23: "a reassignment shouldn't make a chapter
+            # migration"). The row keeps its dish; the move goes to the digest
+            # for staff to apply by hand or to answer with a dish fix.
+            p_dish = (prev or {}).get("dish")
+            if (p_dish and new["confident"] and new["dish"] and new["dish"] != p_dish
+                    and dinfo.get(p_dish, {}).get("chapter") != dinfo.get(new["dish"], {}).get("chapter")):
+                held += 1
+                flags.append(_flag(table, rid, d, rch, "match", p_dish, new["dish"], dinfo,
+                                   ["held: confident match would change chapter "
+                                    f"({dinfo.get(p_dish, {}).get('chapter')} -> "
+                                    f"{dinfo.get(new['dish'], {}).get('chapter')})"]))
+                continue
 
             changed += 1
             # BOTH matched-dish fields, before -> after (curator request
@@ -524,6 +582,9 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
             _p_near = (((prev or {}).get("candidates") or [{}])[0]).get("dish")
             _n_near = ((new.get("candidates") or [{}])[0]).get("dish")
             moves.append((rid, (prev or {}).get("dish"), new["dish"], _p_near, _n_near))
+            f = _questionable(table, rid, d, rch, prev, new, _p_near, _n_near, dinfo)
+            if f:
+                flags.append(f)
             if dry_run:
                 continue
 
@@ -553,6 +614,93 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
         "changed": changed,
         "unchanged": scanned - changed,
         "failed": failed,
+        "held": held,
         "threshold": max_dist,
         "moves": moves,
+        "flags": flags,
     }
+
+
+# --- the staff digest: which moves deserve a human look (2026-10-23) ---------
+# Sauce Jean Vignard was created at 08:54 with no recipes; by 08:56 the rematch
+# had made it the nearest guess of four orphans and a story had been written
+# from them. Nothing said so except four log lines. These are the shapes that
+# warrant a person, sent as one email after the sweep; a quiet night sends none.
+
+def _cfg_int(key: str, default: int) -> int:
+    try:
+        from input.pipeline import system_config as _cfg
+        return int(_cfg.get_setting(key, default) or default)
+    except Exception:
+        return default
+
+
+def dish_info(conn: sqlite3.Connection) -> dict:
+    """{dish: {chapter, created_at, members}} in two queries, once per sweep.
+    `members` = assigned or confidently matched master rows (dish_story's rule)."""
+    from input.pipeline.dish_story import MEMBER_SOURCES
+    out = {r[0]: {"chapter": r[1], "created_at": r[2], "members": 0}
+           for r in conn.execute("SELECT name, chapter, created_at FROM dishes")}
+    ph = ", ".join("?" * len(MEMBER_SOURCES))
+    for name, n in conn.execute(
+            f"SELECT dish_effective, COUNT(*) FROM master_recipes "
+            f"WHERE dish_effective_source IN ({ph}) GROUP BY 1", MEMBER_SOURCES):
+        if name in out:
+            out[name]["members"] = n
+    return out
+
+
+def _flag(table, rid, d, rch, rung, frm, to, dinfo, reasons) -> dict:
+    return {"table": table, "id": rid, "recipe": d.get("name") or "", "recipe_chapter": rch,
+            "rung": rung, "from": frm, "to": to,
+            "to_chapter": dinfo.get(to, {}).get("chapter"), "reasons": reasons}
+
+
+def _questionable(table, rid, d, rch, prev, new, p_near, n_near, dinfo) -> Optional[dict]:
+    """A written move that deserves a look, or None. Reasons, any of:
+    a NEW confident match into another chapter than the recipe's; a guess with
+    no dish in the recipe's chapter to fall back on; a move into a dish created
+    in the last `rematch_flag_young_days` (7); a move into a dish with fewer than
+    `rematch_flag_thin_members` (5) member recipes."""
+    p_dish = (prev or {}).get("dish")
+    if new["dish"] and new["dish"] != p_dish:
+        rung, frm, to = "match", p_dish, new["dish"]
+    elif n_near and n_near != p_near:
+        rung, frm, to = "nearest", p_near, n_near
+    else:
+        return None
+    reasons = []
+    to_ch = dinfo.get(to, {}).get("chapter")
+    if rung == "match" and rch and rch != "Uncertain" and to_ch and to_ch != rch:
+        reasons.append(f"new match is in {to_ch}, the recipe is {rch}")
+    if rung == "nearest" and (new.get("off_chapter") or {}).get("no_dish_in_chapter"):
+        reasons.append(f"no {rch} dish to guess, so the guess is {to_ch}")
+    created = dinfo.get(to, {}).get("created_at")
+    young_days = _cfg_int("rematch_flag_young_days", 7)
+    if created:
+        try:
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(created)
+            if age.days < young_days:
+                reasons.append(f"{to} was created {age.days} day(s) ago")
+        except ValueError:
+            pass
+    members = dinfo.get(to, {}).get("members", 0)
+    thin = _cfg_int("rematch_flag_thin_members", 5)
+    if members < thin:
+        reasons.append(f"{to} has {members} member recipe(s)")
+    return _flag(table, rid, d, rch, rung, frm, to, dinfo, reasons) if reasons else None
+
+
+def flag_digest(flags: list[dict]) -> tuple[str, str]:
+    """(subject, body) for the curator email."""
+    n_held = sum(1 for f in flags if f["reasons"][0].startswith("held"))
+    subject = (f"Dish rematch: {len(flags)} move(s) to check"
+               + (f", {n_held} held" if n_held else ""))
+    lines = ["The nightly dish rematch made (or, where marked held, refused) these",
+             "moves. 'match' = the recipe's confident dish; 'nearest' = the guess an",
+             "unmatched recipe counts under.", ""]
+    for f in flags:
+        lines.append(f"- {f['table']} {f['id']} {f['recipe']!r} ({f['recipe_chapter'] or 'no chapter'}): "
+                     f"{f['rung']} {f['from']!r} -> {f['to']!r}")
+        lines += [f"    {r}" for r in f["reasons"]]
+    return subject, "\n".join(lines)
