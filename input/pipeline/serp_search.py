@@ -47,6 +47,22 @@ def _serp_retry_cfg() -> tuple[int, float]:
     return max(1, attempts), max(0.0, backoff)
 
 
+def _serp_dry_cfg() -> int:
+    """Consecutive pages that add NO new usable result (dead page, all blocked hosts,
+    dropped off-topic) before a line stops paging. Config-overridable (system_config
+    `serp_dry_pages`); default 3. Why: 'Sauce Jean Vignard' #2788 (2026-10-23) - a thin
+    dish whose Google answer is mostly Pinterest/YouTube paged to p19 on a line whose
+    usable count sat at 15 from p9, dead pages never two in a row; the curator
+    cancelled at 13 min and the 32 usable URLs went with the job."""
+    n = 3
+    try:
+        from input.pipeline import system_config as _cfg
+        n = int(_cfg.get_setting("serp_dry_pages", n) or n)
+    except Exception:
+        pass
+    return max(1, n)
+
+
 # Pages that exhausted their retries this process — each one is ~10 lost
 # candidates. Harvest runs pop this at the end and ALERT (input.pipeline.alerts)
 # instead of letting the loss hide in a mid-log line (curator, 2026-08-26).
@@ -430,6 +446,8 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
     out: list[dict] = []
     seen: set[str] = set()
     empty_streak = 0   # see _scaleserp: Google leaves dead pages mid-results
+    dry_limit = _serp_dry_cfg()
+    dry_streak, last_usable = 0, 0   # pages in a row that added no usable result
     for p in range(max(1, pages)):
         _cancel_check(should_cancel, "serpapi", p + 1)
         params = {"engine": "google", "q": query, "num": _PAGE_SIZE,
@@ -445,17 +463,30 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
         org = data.get("organic_results") or []
         if not org:
             empty_streak += 1
-            if empty_streak < 2:
-                print(f"  [serpapi] page {p + 1}: empty page — Google's dead page, stepping "
-                      f"over it ({len(out)} collected)")
-                continue
-            print(f"  [serpapi] page {p + 1}: second empty page in a row — end of results "
-                  f"({len(out)} collected)")
-            break
+            dry_streak += 1
+            if empty_streak >= 2:
+                print(f"  [serpapi] page {p + 1}: second empty page in a row — end of results "
+                      f"({len(out)} collected)")
+                break
+            if dry_streak >= dry_limit:
+                print(f"  [serpapi] page {p + 1}: empty, and {dry_streak} pages in a row added "
+                      f"nothing usable — stopping with {last_usable} usable")
+                break
+            print(f"  [serpapi] page {p + 1}: empty page — Google's dead page, stepping "
+                  f"over it ({len(out)} collected)")
+            continue
         empty_streak = 0
         usable = _collect_page(org, out, seen, skip, label="serpapi", page=p + 1)
         if want is not None and usable >= want:
             break
+        if usable > last_usable:
+            dry_streak, last_usable = 0, usable
+        else:
+            dry_streak += 1
+            if dry_streak >= dry_limit:
+                print(f"  [serpapi] page {p + 1}: {dry_streak} pages in a row added nothing "
+                      f"usable — stopping with {usable} usable")
+                break
     return _trim(out, want)
 
 
@@ -473,6 +504,8 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
     out: list[dict] = []
     seen: set[str] = set()
     empty_streak = 0   # consecutive empty pages; Google leaves DEAD pages mid-results
+    dry_limit = _serp_dry_cfg()
+    dry_streak, last_usable = 0, 0   # pages in a row that added no usable result
     for p in range(1, max(1, pages) + 1):
         _cancel_check(should_cancel, "scaleserp", p)
         # filter=0 = Google's "show omitted similar results". The SerpApi path
@@ -557,13 +590,18 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                     # loss to alert on — it is Google's answer); two in a row is the
                     # end. Bounded waste: one extra credit per line at the true end.
                     empty_streak += 1
-                    if empty_streak < 2:
-                        print(f"  [scaleserp] page {p}: empty on every try — Google's dead "
-                              f"page, stepping over it ({len(out)} collected)")
-                        continue
-                    print(f"  [scaleserp] page {p}: second empty page in a row — end of "
-                          f"results ({len(out)} collected)")
-                    break
+                    dry_streak += 1
+                    if empty_streak >= 2:
+                        print(f"  [scaleserp] page {p}: second empty page in a row — end of "
+                              f"results ({len(out)} collected)")
+                        break
+                    if dry_streak >= dry_limit:
+                        print(f"  [scaleserp] page {p}: empty, and {dry_streak} pages in a row "
+                              f"added nothing usable — stopping with {last_usable} usable")
+                        break
+                    print(f"  [scaleserp] page {p}: empty on every try — Google's dead "
+                          f"page, stepping over it ({len(out)} collected)")
+                    continue
         empty_streak = 0
         if _off_topic_page(query, org):
             # A stranger's results. Ask again; a page that stays off-topic is
@@ -599,8 +637,21 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                 print(f"  [scaleserp] page {p}: still off-topic - page DROPPED")
                 _page_losses.append({"label": "scaleserp", "page": p, "query": query,
                                      "error": "off-topic results (provider served another query)"})
+                dry_streak += 1
+                if dry_streak >= dry_limit:
+                    print(f"  [scaleserp] page {p}: {dry_streak} pages in a row added nothing "
+                          f"usable — stopping with {last_usable} usable")
+                    break
                 continue
         usable = _collect_page(org, out, seen, skip, label="scaleserp", page=p)
         if want is not None and usable >= want:
             break
+        if usable > last_usable:
+            dry_streak, last_usable = 0, usable
+        else:
+            dry_streak += 1
+            if dry_streak >= dry_limit:
+                print(f"  [scaleserp] page {p}: {dry_streak} pages in a row added nothing "
+                      f"usable — stopping with {usable} usable")
+                break
     return _trim(out, want)
