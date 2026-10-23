@@ -12030,6 +12030,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   pull the 16 GB and keep it as a spare. 2 × 32 GB = 64 GB: Crucial Pro kit ~$1,029-1,198 (Walmart
   09-17, Amazon third-party 10-06, Newegg), Kingston Fury Beast $1,169.99 shipped by Newegg (its
   tracker low was $170 in 2025-03). Roughly 4x the money for 2x the memory; no decision yet.
+  **Correction an hour later (curator opened the Best Buy page): the 2 × 16 Crucial Pro kit is $549,
+  not $261** — the Slickdeals figure was already dead. A second search shows the same spread
+  everywhere: Best Buy snapshot $335.99 (stale), Amazon first-party out of stock with third parties at
+  $460, eBay new $636, Crucial storefront reseller $680, Newegg $692 (Crucial) / $740 (Kingston Fury
+  Beast), no-name kits (NEMIX, A-Tech) $490-540. Prices are moving by the day in this spike, so no
+  figure here is a quote; the single-stick route ($260-280 for one 16 GB) is now the cheaper way to 32
+  GB if a stick can be found in stock. Nothing bought.
 * **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
