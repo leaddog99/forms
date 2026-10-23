@@ -161,10 +161,16 @@ password manager (keys — if maintained, see G3).
 
 ## 6. Known gaps and standing decisions
 
-- **G1 — ADAM has no retention.** `Backups\recipes-db` was 58.8GB at audit time,
-  growing ~1.1GB/night (a 465MB db + 580MB training + 70MB dump per run, forever).
-  ADAM will fill. Needs a pruning policy (e.g. keep dailies 30d, then weeklies) —
-  **a decision, not yet built.**
+- **G1 — CLOSED 2026-10-22.** `Backups\recipes-db` had reached 169 GB / 671 files
+  (every nightly set since 2026-05-30, never pruned). `prune_backups.py` now runs in
+  the nightly right after the backup: recipes sets — all of the last 14 days, one a
+  week (the week's latest) to 90 days, one a month after; training — all of the last
+  7 days, then one a month; the newest set of each kind always; env.backup,
+  media_latest.db and anything not a dated set untouched. First run deleted 304 sets
+  / 553 files / 131 GB; ADAM free went 131 → 262 GB. ADAM's share has the Synology
+  Recycle Bin on, so a deleted set only MOVES to `#recycle` — the nightly also empties
+  `#recycle\Backups\recipes-db` (949 recycled sets were sitting there). Dry run:
+  `python prune_backups.py` (no flags) prints what would go.
 - **G2 — CLOSED 2026-08-24**, the day it was found: media.db, generated/ and the
   freshest training.db now ride to Drive nightly (`forms-mirror/` +
   `db-latest/`). Residual: the cloud holds ONE rolling copy of each — dated
@@ -220,7 +226,7 @@ password manager (keys — if maintained, see G3).
      backups fail silently.
 
   BAILEY stays fresh during the soak via `bcc_sync_standby.ps1 -Standby BAILEY`
-  (parameterised 2026-10-17; `-Standby HESTIA` feeds the new desktop) — one-way
+  (parameterised 2026-10-17; `-Standby MARLEY2` feeds the new desktop) — one-way
   incremental rclone-over-SFTP (code+assets live; `-WithDbs` stops the
   server, lays in the newest ADAM backup set, restarts; `-FreshBackup`
   snapshots first). BAILEY runs a complete, verified, parallel instance

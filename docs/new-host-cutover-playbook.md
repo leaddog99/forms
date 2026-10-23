@@ -26,7 +26,7 @@ results have been diffed against it.
    as **john** with a local profile at `C:\Users\john`, or spend a day editing
    paths. Do not let Windows name the profile folder after a Microsoft-account
    email.
-2. **Host name: HESTIA** (named 2026-10-17). It is the rclone remote (`hestia`),
+2. **Host name: MARLEY2** (named HESTIA 2026-10-17, renamed by the curator 2026-10-21; built as `MARLEY2`, no underscore, confirmed 2026-10-22 — it registers on the LAN as `MARLEY2` / 192.168.1.196). Soak hostname `marley2.tbotb.com`, rclone remote `marley2`. It is the rclone remote (`marley2`),
    the soak tunnel hostname, and the memory rule "restart = service + host +
    script" after the flip.
 3. **Edition.** MARLEY is Windows 11 Home. Pro is nicer (no Home autologon
@@ -94,7 +94,7 @@ Expect two to three hours including downloads. BAILEY's bare-metal restore took
 35 minutes with three surprises; this is the same work plus the dev tooling.
 
 1. **Windows.** Account **john**, local profile. Updates to current. Name the
-   machine `HESTIA`. Power settings from §0.4. Turn on **OpenSSH Server**
+   machine `MARLEY2`. Power settings from §0.4. Turn on **OpenSSH Server**
    (Settings → Optional features), set it to Automatic, and add MARLEY's
    `id_ed25519.pub` to `C:\ProgramData\ssh\administrators_authorized_keys`
    (john is an administrator, so the per-user `authorized_keys` is ignored).
@@ -160,21 +160,21 @@ Do **not** yet create the scheduled tasks on the new box. Two hosts running
 ## 3. Soak (one to two weeks, MARLEY stays live)
 
 1. **Reach it from outside** without touching production: in the Zero Trust
-   dashboard create a second tunnel (`hestia`) with public hostname
-   `hestia.tbotb.com → http://localhost:8009`, install its token as the
+   dashboard create a second tunnel (`marley2`) with public hostname
+   `marley2.tbotb.com → http://localhost:8009`, install its token as the
    Cloudflared service on the new box. This mirrors `bailey.tbotb.com`. Use
    the bookmarklet, the iPad and the voice loop against that hostname.
    `bcc_link_domain` in system_config stays `recipes.tbotb.com`, so links the
    soak instance mints still point at production — correct.
 2. **Keep it fresh** from MARLEY. Create the rclone remote once:
    ```
-   rclone config create hestia sftp host HESTIA user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none
+   rclone config create marley2 sftp host MARLEY2 user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none
    ```
-   then `.\bcc_sync_standby.ps1 -Standby HESTIA` (code, assets and the three
-   sibling packages; the server stays up) or `-WithDbs` (stops HESTIA's
+   then `.\bcc_sync_standby.ps1 -Standby MARLEY2` (code, assets and the three
+   sibling packages; the server stays up) or `-WithDbs` (stops MARLEY2's
    service, lays in the newest ADAM set with size-verified copies, restarts).
-   The nightly only syncs BAILEY; add a HESTIA line to
-   `bcc_backup_scheduled.bat` once HESTIA's sshd and remote exist, not before,
+   The nightly only syncs BAILEY; add a MARLEY2 line to
+   `bcc_backup_scheduled.bat` once MARLEY2's sshd and remote exist, not before,
    or every morning's check reports a failed sync.
 3. **Watch for the drill's four lessons:** editable package missing (boot
    fails at import), backslashes in requirements, a server started from an
@@ -214,7 +214,7 @@ each reversible until step 6.
    (the token is in Zero Trust → Networks → Tunnels → the recipes tunnel →
    Configure). Same tunnel, same hostname, no DNS change: within a minute
    `https://recipes.tbotb.com/auth/me` is served by the new box (confirm with
-   the worker PID in `uvicorn_stdout.log`). Keep `hestia.tbotb.com` on the
+   the worker PID in `uvicorn_stdout.log`). Keep `marley2.tbotb.com` on the
    second tunnel if you want a permanent back door; otherwise delete it.
 6. **Give the new box the jobs.** Create the four tasks (run as john,
    Interactive, "run with highest privileges" not needed):
@@ -247,7 +247,7 @@ each reversible until step 6.
   evidence.
 - **Paper that names the host:** `docs/disaster-recovery.md` §5 (service and
   tasks table), the memory rule "restart = service + host + script" (BCC on
-  HESTIA), `bcc_lock_if_idle.ps1` header, `bcc-state-code.md` START HERE,
+  MARLEY2), `bcc_lock_if_idle.ps1` header, `bcc-state-code.md` START HERE,
   the default `-Standby` in `bcc_sync_standby.ps1` (BAILEY → whatever stands by next). `docs/host-stability-and-
   watchdog.md` gets its closing entry.
 - **Then, and only then, Postgres 18** on the new box: install, `pip install
@@ -268,14 +268,14 @@ each reversible until step 6.
 [ ] venv at C:\Users\john\PyCharm\venv, requirements-frozen.txt, playwright chromium, pre-commit install
 [ ] .env · OPENAI_API_KEY (User) · .ssh · rclone.conf · cmdkey adam · .claude
 [ ] soak DBs + generated + input laid in; NSSM BCC installed; §2.8 proof passes
-[ ] soak tunnel hestia.tbotb.com; bookmarklet, iPad, voice tried against it
-[ ] nightly sync MARLEY → HESTIA for the soak; thermal baseline under a dish batch
+[ ] soak tunnel marley2.tbotb.com; bookmarklet, iPad, voice tried against it
+[ ] nightly sync MARLEY → MARLEY2 for the soak; thermal baseline under a dish batch
 --- cut-over ---
 [ ] MARLEY tasks disabled, BCC stopped + disabled, backup_db --verify RESTORE OK
 [ ] final copy of the four DBs (checkpointed), generated, input, .env; git pull x3
 [ ] new box started; row counts equal; proof passes
-[ ] Cloudflared: MARLEY stopped + disabled, production token installed on HESTIA, recipes.tbotb.com answers from HESTIA
+[ ] Cloudflared: MARLEY stopped + disabled, production token installed on MARLEY2, recipes.tbotb.com answers from MARLEY2
 [ ] four tasks created, limits + wake set, autologon on, backup run by hand = RESTORE OK
-[ ] BAILEY sync run from HESTIA; rclone client-ID script run on HESTIA
-[ ] docs + memory renamed to HESTIA; MARLEY frozen one week, then off
+[ ] BAILEY sync run from MARLEY2; rclone client-ID script run on MARLEY2
+[ ] docs + memory renamed to MARLEY2; MARLEY frozen one week, then off
 ```

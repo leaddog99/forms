@@ -22,6 +22,15 @@ REM shipped unrestorable twice, and both times nobody noticed because
 REM only hand-run backups ever verified). Worth the ~1 min at 3 AM.
 python backup_db.py --verify --dest "\\Adam\tbotb\Backups\recipes-db" >> backup.log 2>&1
 echo exit code: %ERRORLEVEL% >> backup.log
+REM Retention (DR gap G1, CLOSED 2026-10-22): the dated sets had never been
+REM pruned - 169 GB / 671 files. prune_backups.py keeps every recipes set from
+REM the last 14 days, one a week to 90 days, one a month after; training: 7
+REM days then one a month; the newest set of each kind always. ADAM is a
+REM Synology with the share's Recycle Bin ON, so a deleted set only moves to
+REM #recycle - the second line empties OUR part of it (nothing else in there).
+python prune_backups.py --apply --quiet >> backup.log 2>&1
+echo prune exit code: %ERRORLEVEL% >> backup.log
+del /q "\\Adam\tbotb\#recycle\Backups\recipes-db\recipes_20*" "\\Adam\tbotb\#recycle\Backups\recipes-db\training_20*" >nul 2>&1
 REM Offsite tier (2026-08-24, replaces the retired git-side dump): the
 REM restore-VERIFIED .sql.gz dumps, and only those, go to Google Drive —
 REM rolling 14 days (~1GB). The fat .db copies and env.backup (PLAINTEXT
@@ -65,7 +74,13 @@ REM 'bailey' rclone remote (configured by HOSTNAME) resolves fresh each night.
 REM Delayed expansion: %%ERRORLEVEL%% inside a ( ) block is expanded when cmd
 REM PARSES the block, before the sync runs - it printed 0 on every failure.
 setlocal enabledelayedexpansion
-if /I not "%COMPUTERNAME%"=="MARLEY_SVR" (
+REM 2026-10-21: the successor box is MARLEY2 (playbook step 6 gives it this
+REM task); it pushes to BAILEY exactly as MARLEY_SVR did. BAILEY itself and any
+REM other host still skip.
+set "BCC_PRIMARY=0"
+if /I "%COMPUTERNAME%"=="MARLEY_SVR" set "BCC_PRIMARY=1"
+if /I "%COMPUTERNAME%"=="MARLEY2" set "BCC_PRIMARY=1"
+if "%BCC_PRIMARY%"=="0" (
   echo bailey sync skipped: running on %COMPUTERNAME% >> backup.log
 ) else (
   ipconfig /flushdns >nul 2>&1

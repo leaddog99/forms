@@ -2,23 +2,23 @@
 # bcc_sync_standby.ps1 — ONE-WAY incremental sync MARLEY -> a standby host.
 #
 # Was bcc_sync_bailey.ps1 (2026-08-24 → 2026-10-17); parameterised when the
-# new desktop HESTIA arrived, so ONE script serves every standby. Keeps a
+# new desktop MARLEY2 arrived, so ONE script serves every standby. Keeps a
 # standby instance fresh during a soak without a full reload (the 2026-08-24
-# restore drill built BAILEY; this maintains it — and builds HESTIA's soak).
+# restore drill built BAILEY; this maintains it — and builds MARLEY2's soak).
 # rclone over SFTP (remote named after the host, lower-case, same SSH key as
 # the drill) diffs by size+modtime, so an unchanged tree transfers nothing.
 #
 #   .\bcc_sync_standby.ps1                      # BAILEY, code + assets only (server stays up)
-#   .\bcc_sync_standby.ps1 -Standby HESTIA      # same, for HESTIA
+#   .\bcc_sync_standby.ps1 -Standby MARLEY2      # same, for MARLEY2
 #   .\bcc_sync_standby.ps1 -WithDbs             # + databases: STOPS the standby's server,
 #                                               #   copies the newest ADAM backup set, restarts it
-#   .\bcc_sync_standby.ps1 -Standby HESTIA -WithDbs -FreshBackup
+#   .\bcc_sync_standby.ps1 -Standby MARLEY2 -WithDbs -FreshBackup
 #                                               # runs backup_db.py first so the DBs are
 #                                               #   to-the-minute, then as above
 #
 # The rclone remote must exist: one per standby, named like the host in lower
 # case. Create one with (key = the drill key, host = the machine name):
-#   rclone config create hestia sftp host HESTIA user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none
+#   rclone config create marley2 sftp host MARLEY2 user john key_file C:/Users/john/.ssh/id_ed25519 shell_type cmd md5sum_command none sha1sum_command none
 # and the standby's C:\ProgramData\ssh\administrators_authorized_keys must
 # hold that key's .pub (john is an administrator there, so the per-user
 # authorized_keys is ignored by Windows OpenSSH).
@@ -39,7 +39,7 @@ param(
 )
 
 $Standby = $Standby.ToUpper()
-$remote  = $Standby.ToLower()          # rclone remote name: bailey, hestia
+$remote  = $Standby.ToLower()          # rclone remote name: bailey, marley2
 $who     = "john@$Standby"             # ssh target; the SSH key is the drill key
 $rc    = "C:\Users\john\bin\rclone.exe"
 $ssh   = "C:\Windows\System32\OpenSSH\ssh.exe"   # full path: not on PATH in every shell (2026-09-08)
