@@ -12043,6 +12043,11 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   (dell.com US; its DDR5 upgrades page shows $799.99; UK £902); third parties $190-245 (ITO Solutions
   $206.89 long lead, memorystock $244.95, eBay open-box $190). Kingston's configurator lists its
   16 GB DDR5-5600 non-ECC UDIMM as compatible — any JEDEC 5600 stick pairs with the Dell one.
+  **ORDERED (curator, 2026-10-23): one Crucial 16 GB DDR5-5600 UDIMM (CT16G56C46U5) from Best Buy** →
+  32 GB dual-channel alongside the Dell 4N59R stick. On arrival: BCC stopped, power off, seat in DIMM2,
+  confirm `Win32_PhysicalMemory` shows two 16 GB modules at 5600 and Task Manager says 2 of 2 slots /
+  dual-channel, run Windows Memory Diagnostic (extended) or MemTest86 inside the return window, then
+  update the host-stability doc §1 Memory row.
 * **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
