@@ -20,7 +20,8 @@ Related: `memory/project_host_thermal_shutdowns.md`, `memory/project_restart_zom
 | | |
 |---|---|
 | Name | `MARLEY_SVR` (unchanged across the move) |
-| Hardware | Dell Slim ECS1250 · board 0YCC47 · Dell BIOS **1.18.2** (2026-08-10) · 16 GB · 1 TB SanDisk NVMe |
+| Hardware | Dell Slim ECS1250 · board 0YCC47 · Dell BIOS **1.18.2** (2026-08-10) · 1 TB SanDisk NVMe |
+| Memory | **16 GB = one DDR5-5600 UDIMM in DIMM1, DIMM2 empty** → single-channel today. 2 slots, max 64 GB. Upgrade: add a matching 16 GB DDR5-5600 non-ECC UDIMM (desktop size, not SODIMM; low-profile for the Slim chassis) = 32 GB dual-channel, or 2 × 32 GB = 64 GB. Read 2026-10-23 via `Win32_PhysicalMemoryArray` / `Win32_PhysicalMemory` (SMBIOSMemoryType 34, SK hynix die, part `K4N59R-HYA-K`) |
 | CPU | Intel Core **Ultra 7 265** (Arrow Lake — not in the Raptor Lake Vmin-shift family) |
 | IP (wired) | **192.168.1.196** · `Ethernet 2` Realtek GbE · MAC `40-BA-09-EB-AC-61` · **DHCP static lease** on the Verizon gateway (set 2026-10-23) |
 | Wi-Fi | MediaTek MT7920 present, **disconnected** — the clone runs wired only |
