@@ -12011,6 +12011,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   BAILEY), and the same ssh key / rclone remotes that let those tasks reach them. Stop + disable
   Cloudflared and BCC and disable the tasks there first; remove the ssh key and rclone.conf when it has
   nothing left to do. IP (DHCP by MAC) and activation (its own firmware key) are not a problem.
+* **LAN address pinned (curator, same afternoon):** 192.168.1.196 is now a DHCP **static lease** on the
+  Verizon gateway for the wired Realtek MAC `40-BA-09-EB-AC-61` (Windows adapter stays automatic — a
+  reservation, not a static config). Nothing in code, scripts or `.env` names a LAN address; the one
+  consumer is the ADAM watchdog design. `docs/host-stability-and-watchdog.md` §1 host table rewritten
+  for the clone (Dell Slim ECS1250 · board 0YCC47 · BIOS 1.18.2 · Core Ultra 7 265, Arrow Lake, not the
+  Raptor Lake family the doc diagnoses; Wi-Fi present but disconnected) with the HP rows kept as a note,
+  and §5.5's two-IP liveness rule (.177/.250) reduced to the one address.
 * **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·

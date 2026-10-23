@@ -11,15 +11,20 @@ Related: `memory/project_host_thermal_shutdowns.md`, `memory/project_restart_zom
 
 ## 1. The host
 
+> **2026-10-23 — the host is new hardware.** The HP box this document diagnoses (§2–§6) was
+> imaged on 2026-10-22 and restored onto a **Dell Slim ECS1250**; the restore kept the computer
+> name, so the clone is still `MARLEY_SVR` and the HP box becomes `MARLEY-OLD` off the network.
+> The table below is the clone. The HP rows it replaces: wired 192.168.1.177, Wi-Fi 192.168.1.250
+> (`VerizonWifI-250`), i7-13700 Raptor Lake Model 183, HP 8B3B · AMI F.45, microcode 0x12F.
+
 | | |
 |---|---|
-| Name | `MARLEY_SVR` |
-| IP (wired) | 192.168.1.177 · Ethernet |
-| IP (wifi) | 192.168.1.250 · `VerizonWifI-250` |
+| Name | `MARLEY_SVR` (unchanged across the move) |
+| Hardware | Dell Slim ECS1250 · board 0YCC47 · Dell BIOS **1.18.2** (2026-08-10) · 16 GB · 1 TB SanDisk NVMe |
+| CPU | Intel Core **Ultra 7 265** (Arrow Lake — not in the Raptor Lake Vmin-shift family) |
+| IP (wired) | **192.168.1.196** · `Ethernet 2` Realtek GbE · MAC `40-BA-09-EB-AC-61` · **DHCP static lease** on the Verizon gateway (set 2026-10-23) |
+| Wi-Fi | MediaTek MT7920 present, **disconnected** — the clone runs wired only |
 | Gateway | 192.168.1.1 |
-| CPU | 13th Gen Intel Core i7-13700 — Family 6 **Model 183 Stepping 1** (Raptor Lake) |
-| Board / BIOS | HP 8B3B · AMI **F.45** (2025-10-14) |
-| Microcode | **0x12F** (`Update Revision` = `2F 01 00 00`) |
 | App | FastAPI behind NSSM Windows service **`BCC`**, Automatic, `127.0.0.1:8009` |
 | Tunnel | `Cloudflared` service, Automatic → recipes.tbotb.com |
 | Backup target | **ADAM** = Synology NAS, 192.168.1.235, `\\Adam\tbotb\Backups\recipes-db` |
@@ -254,8 +259,9 @@ The naive version — "ping fails, cut power" — will cause damage. Three guard
 
 **Discriminate hung from merely-unhealthy.** Ping the host *and* check port 8009.
 ICMP answering but the port dead is an *app* problem; restarting the service is the fix,
-not a power cut. Only network-layer silence earns a power cycle. Check **both** IPs
-(.177 and .250) — alive on either means alive.
+not a power cut. Only network-layer silence earns a power cycle. The clone has one
+address, **192.168.1.196** (static lease, wired only) — check that; the HP box's
+two-IP rule (.177 wired, .250 Wi-Fi: alive on either meant alive) no longer applies.
 
 **Do not false-fire on your own network.** Before declaring the host dead, confirm the
 gateway (192.168.1.1) still answers. Otherwise a router hiccup power-cycles a healthy
