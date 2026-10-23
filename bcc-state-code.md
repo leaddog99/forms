@@ -12018,6 +12018,18 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   for the clone (Dell Slim ECS1250 · board 0YCC47 · BIOS 1.18.2 · Core Ultra 7 265, Arrow Lake, not the
   Raptor Lake family the doc diagnoses; Wi-Fi present but disconnected) with the HP rows kept as a note,
   and §5.5's two-IP liveness rule (.177/.250) reduced to the one address.
+* **Memory on the clone (curator asked about an upgrade):** `Win32_PhysicalMemoryArray` says **2 slots,
+  64 GB max**; one 16 GB DDR5-5600 UDIMM sits in DIMM1 (SK hynix die, part `K4N59R-HYA-K`), DIMM2 empty —
+  so single-channel today, and a second stick doubles bandwidth as well as capacity. Recorded in the
+  host-stability doc §1. **Prices 2026-10-23 (search snapshots; crucial.com / Newegg / trackers block
+  fetches, so verify live):** DDR5 is in a shortage spike and Micron is retiring the Crucial consumer
+  brand early 2026, so everything is 2-4x a year ago. One 16 GB stick (Crucial CT16G56C46U5): $259.99
+  Adorama/Best Buy per the tracker, $279.99 Best Buy listing (marked unavailable), Kingston
+  KVR56U46BS8-16 $418 third-party on Newegg. **Best buy for the money: Crucial Pro 2 × 16 GB kit
+  (CP2K16G56C46U5) at Best Buy, $260.99 on Slickdeals** — a matched pair for the price of one stick;
+  pull the 16 GB and keep it as a spare. 2 × 32 GB = 64 GB: Crucial Pro kit ~$1,029-1,198 (Walmart
+  09-17, Amazon third-party 10-06, Newegg), Kingston Fury Beast $1,169.99 shipped by Newegg (its
+  tracker low was $170 in 2025-03). Roughly 4x the money for 2x the memory; no decision yet.
 * **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
