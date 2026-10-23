@@ -9509,7 +9509,7 @@ two-host-safe. MARLEY: still the live host (tunnel), crash #16 tonight.
    `cmdkey /add:Adam /user:admin /pass:<ADAM admin password>`
    `schtasks /Change /TN "BCC Recipes DB Backup" /RU john /RP <john's Windows password>`
    then `schtasks /Run /TN "BCC Recipes DB Backup"` and read `backup.log`:
-   expect `copied -> \Adam\tbotb\Backups\recipes-db\...` and cloud exit 0.
+   expect `copied -> \\Adam\tbotb\Backups\recipes-db\...` and cloud exit 0.
    (Alternative if BAILEY is headless-only: keep SYSTEM and add the Adam
    credential under SYSTEM + copy rclone.conf to the systemprofile path —
    messier; not done.)
@@ -11723,7 +11723,7 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **YouTube as a harvest source - experiment (curator: 'nearly all the native recipes are youtube').** Butter Chicken Hindi refresh: 33 of 36 SERP results were YouTube/Facebook (blocked hosts), 3 pages left, Moz data for none, saved 2 by reserve. Measured on 4 ranking watch pages: Moz = 3 uncrawled, the 4th PA 75 / DA 100 / OU 26 (meaningless against DA 100), 16 rows for 4 URLs -> wrong instrument. SEMrush URL-level organic WORKS (Fallow ~250 US visits/mo on 20 butter-chicken keywords, #3 for 'butter chicken recipe'; Get Curried ~270 IN/mo) but the India DB has NOTHING for the Devanagari query. Ladder: 3 of 4 rung 1. Design sketch written into docs/youtube-ladder.md (admit youtube.com when rung 1/3, rank by SERP position where Moz is absent, channel = publisher row); NOT built, awaiting the curator.
 * **Butter Chicken refresh found ZERO candidates - `gl=hi`.** The line's country field held the Hindi LANGUAGE code: the row editor derived gl from hl at save with its own copy of the language->country table (missing hi) and stored it, and Scale SERP rejects a non-country gl outright. Fixed three ways: the editor stores a blank country blank (server resolves at run time, one table), `_GL_FOR_LANG` gains hi/ta/te/bn/ur/he/fa/ar/vi/... , and `validate_query_rows` rejects a gl outside ISO 3166 with the right country in the message. The one stored row repaired (Butter Chicken gl hi -> in; only row affected across 467 dishes); refresh re-run out-of-process (log `logs/dish_refresh_butter_chicken_2026-10-17.log`).
 * **Prose cook's notes committed (20ac7e9); sweep DONE 14:25** (job #2713, 467 dishes in 101 min, 0 errors: 467 of 469 dishes now carry a story - 457 enrich, 10 curator kept untouched; 3 dishes had only ethnicity/region filled because the curator's story and notes were already there). Originally: `python -m jobs run dish_story_fill` = job #2713, 467 dishes, ~12 s each (~95 min), log `logs/dish_story_sweep_2026-10-17.log`. **First live bookmarklet press on YouTube found two defects** (Fallow Butter Chicken 8V6Krk8DDuc): `/stage-capture` passed `links` twice -> 500 on every watch page (the pasted-URL door never calls it, so that worked); and `*Step by Step*` was not a method heading, so a description holding the whole recipe fell to the transcript rung. Both fixed + tested (14 ladder tests); live ladder now rung 1 on both Fallow videos. **Restart owed** for the two fixes.
-* **The new box is HESTIA; sync script parameterised.** `bcc_sync_bailey.ps1` -> `bcc_sync_standby.ps1 -Standby <HOST>` (default BAILEY; rclone remote = host in lower case, fails loudly with the `rclone config create` line when the remote is missing; now also syncs imagekit and llmkit beside recipe-core). Nightly bat calls the new name; backup_check markers unchanged. Verified: code-only sync to BAILEY clean with the new script; HESTIA path fails as designed until its sshd + remote exist. Playbook renamed throughout to HESTIA.
+* **The new box is MARLEY2 (named HESTIA this day, renamed 2026-10-21); sync script parameterised.** `bcc_sync_bailey.ps1` -> `bcc_sync_standby.ps1 -Standby <HOST>` (default BAILEY; rclone remote = host in lower case, fails loudly with the `rclone config create` line when the remote is missing; now also syncs imagekit and llmkit beside recipe-core). Nightly bat calls the new name; backup_check markers unchanged. Verified: code-only sync to BAILEY clean with the new script; MARLEY2 path fails as designed until its sshd + remote exist. Playbook renamed throughout to MARLEY2.
 * **Restart done (curator, ~14:10):** new worker PID 36420, FTS index rebuilt with six columns, 13,217
   rows; ten live searches verified (tiers monotone across 415 rows, author/site prefixes, operators).
 * **Restart done (curator, ~15:20): source tabs verified live.** New worker PID 45852; `/recipes/search?source=video` -> the two YouTube rows, facets web 13,258 · video 2, an unknown class ignored. The tab strip rendered with the right counts but the wrong look (grey pills on two rows, count glued to the label): its CSS was scoped under `.sidebar-controls` and the strip sits BESIDE that element, so a generic button style won. Rescoped to the strip (ceb6129); single row, Video filters to the two ▶ cards, lane persists across reload, All clears the Filters badge.
@@ -11869,12 +11869,149 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   `search_defaults`) and the `users.search_defaults` column, `_CREDIT_HOST_RE` in the ladder's host
   rule, and the save-core dish-story hook from 10-18. Nothing owed on restart now.
 * **MARLEY moved (curator, 2026-10-21 afternoon):** this machine now sits in a less frequently used rack
-  while HESTIA is being set up; the transfer is near. Nothing changed in software — service, tunnel and
+  while MARLEY2 is being set up; the transfer is near. Nothing changed in software — service, tunnel and
   tasks ran through the move (worker 8036 still up). The move follows
   `docs/new-host-cutover-playbook.md`: §2 build (account john, same paths, sshd + MARLEY key), §3 soak
-  on `hestia.tbotb.com` fed by `bcc_sync_standby.ps1 -Standby HESTIA` (rclone remote `hestia` must be
+  on `marley2.tbotb.com` fed by `bcc_sync_standby.ps1 -Standby MARLEY2` (rclone remote `marley2` must be
   created first), §4 flip, §6 checklist. Watch MARLEY's temperatures in the new spot (rack airflow is
   new; the 16 crashes were thermal).
 * **Open:** video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 on the
   cloud mirror · carried.
+
+## Session 2026-10-21 (evening) — pre-cutover backup refresh for the MARLEY2 restore
+
+* **Full backup set refreshed by hand (curator: "restore the new machine to this machine's backup...
+  need the backup refreshed and git and all our other necessary files backed up first").** Ran the
+  nightly task itself (`schtasks /Run /TN "BCC Recipes DB Backup"`, 17:33–18:20) rather than a
+  one-off, so the restore reads the same set the playbook names. Results in backup.log:
+  `recipes_2026-10-21_173447.db` + `.sql.gz`, `training_2026-10-21_173447.db`, `media_latest.db`,
+  `env.backup` on ADAM, integrity ok, **RESTORE OK** (every table's row count matches, 13,471
+  embedding BLOBs intact); dump cloud sync 0; forms-mirror robocopy 1 (ok) — mirror `.git` HEAD
+  df5c2f5 = local, 290/290 SEMrush xlsx, 11,847/11,847 `generated/` files; recipe-core mirror 0;
+  BAILEY standby push 0 (stopped, DBs laid in, restarted, health 200); cloud media/training 0;
+  **cloud forms-mirror tier FAILED** on the Drive queries-per-minute 403 (consumer project
+  202264815644 — the shared rclone client, open since 10-18; G4 unchanged). ADAM holds the full set.
+* **SEMrush exports ARE in the normal backup (curator asked):** `input/` is inside the project folder
+  and the forms-mirror robocopy excludes only the live SQLite files, caches and `__pycache__`, so every
+  xlsx rides to ADAM nightly (and 297 of them are tracked in git). The fifteen exports from
+  10-15..10-19 were untracked at session start; the commit was refused by the session's permission
+  layer and is left to the curator (`git add input/semrush/*.xlsx && git commit && git push`).
+* **New folder `\\Adam\tbotb\Backups\marley-host-extras\`** for the per-machine pieces the mirror
+  never carries (playbook §1): `claude-code\` (= `C:\Users\john\.claude`, 1,340 files / 115 MB,
+  shell-snapshots + debug skipped), `nssm\` (= `C:\tools\nssm`), `rclone.exe` (the bin copy the bats
+  call by path). **Not copied — refused as credential handling:** `C:\Users\john\.ssh\` (id_ed25519
+  that BAILEY trusts) and `%APPDATA%\rclone\rclone.conf` (gdrive token + bailey SFTP remote); curator
+  to robocopy both into `marley-host-extras\ssh` and `\rclone-config` by hand (same never-leaves-ADAM
+  policy as env.backup). Still hand-recreated on MARLEY2: User env var OPENAI_API_KEY, `cmdkey
+  /add:adam`, the Cloudflared tunnel token, Autologon.
+* **MARLEY is on Wi-Fi in the new rack.** `Get-NetAdapter`: Realtek GbE *Disconnected*, the only link
+  up is `VerizonWifI-250` (802.11ax, 1.2 Gbps nominal). The nightly took 11 min wired on 10-21 03:00;
+  this run took 47 min, the DB stage alone ~30 (1 GB recipes copy + 1.2 GB training over the air).
+  **Plug the cable in before cut-over day** — playbook §4 steps 2–3 (final consistent set + delta to
+  MARLEY2) and the `-WithDbs` standby sync assume a wired link. Side note: the sync chose last night's
+  `training_2026-10-21_030110.db` over tonight's copy because both carry the same preserved mtime
+  (10-20 23:04; training.db unchanged) — identical content, nothing lost.
+* **Repos:** forms clean on origin at df5c2f5 (plus the fifteen xlsx owed); imagekit and llmkit each
+  ONE COMMIT BEHIND origin here, nothing unpushed — MARLEY2 clones from origin per the playbook, so
+  the move is unaffected; `git pull` both on MARLEY at some point.
+* **Open:** the fifteen-xlsx commit · ssh + rclone.conf into marley-host-extras · cable MARLEY ·
+  video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line · TTL +
+  Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) · carried.
+* **The new box is MARLEY2, not HESTIA (curator, same evening).** Renamed everywhere: playbook, DR doc,
+  `bcc_sync_standby.ps1` header, memory, this log (the 10-17 entry keeps the history). DNS cannot carry
+  an underscore, so the soak hostname is `marley2.tbotb.com` (tunnel `marley2`) and the rclone remote
+  is `marley2` (= `-Standby MARLEY2` lower-cased; `rclone config create marley2 sftp host MARLEY2
+  …`). `bcc_backup_scheduled.bat`'s BAILEY-push gate now accepts MARLEY2 beside MARLEY_SVR
+  (`BCC_PRIMARY` flag), so playbook §4 step 7 works without an edit on cut-over day; BAILEY still skips.
+* **2026-10-22 — the box is `MARLEY2`, no underscore (curator).** Confirmed from MARLEY: it registers as
+  MARLEY2 / 192.168.1.196 (DNS + LLMNR); sshd not yet on, ping blocked by the default firewall — both
+  expected before playbook §2. Every MARLEY_2 → MARLEY2 (`-Standby MARLEY2`, rclone remote `marley2`,
+  backup-bat gate `BCC_PRIMARY`). Also on the way: the curator's OOBE accepted the Windows-Backup restore
+  and it pulled BAILEY's cloud profile (settings/Store list/OneDrive only — reads the cloud copy, cannot
+  touch BAILEY or MARLEY; BAILEY confirmed up over ssh). Check on first login: profile = `C:\Users\john`
+  (else create local admin john and build from it), OneDrive folder backup OFF, power plan per §0.4.
+
+* **ADAM retention — DR gap G1 CLOSED (curator: "we should get rid of any obsolete backups").**
+  `Backups\recipes-db` held every nightly set since 2026-05-30: 671 files / 169 GB (532 recipes files
+  87 GB, 137 training copies 82 GB), never pruned. Three policies costed; curator chose **A**:
+  recipes — all of the last 14 days, one set a week (the week's latest) to 90 days, one a month after;
+  training — all of the last 7 days, then one a month; the newest set of each kind always; env.backup,
+  media_latest.db and anything not a dated set untouched. New `prune_backups.py` (dry run by default,
+  `--apply` deletes, decides per SET never per file). Dry run matched the costing exactly; applied:
+  304 sets / 553 files / 131 GB deleted, 44 sets / 116 files / 37.5 GB kept (oldest recipes 05-31,
+  oldest training 07-31). **ADAM's share has the Synology Recycle Bin on**, so the deletes only
+  MOVED to `#recycle` (free space did not change) — `#recycle\Backups\recipes-db` held 949 recycled
+  sets (older deletions too); emptied by hand, free space 131 → 262 GB. Nightly: the bat now runs
+  `prune_backups.py --apply --quiet` right after the verified backup and then `del`s our part of
+  `#recycle`. Verified from PowerShell: dry run finds 0 further sets.
+* **Tooling lesson (cost an hour):** this session's Bash tool collapses `\\` to `\` in the command
+  text before the shell sees it, even inside quoted heredocs — `\\Adam\tbotb` became `\Adam\tbotb`
+  and, via Python escapes, `\t`/`\r` became a TAB and a carriage return in the DR doc, the bat and
+  the state log. All repaired; every Windows path/UNC edit now goes through PowerShell or the
+  Write/Edit tools. The nightly's prune line was tested from PowerShell, the way cmd will run it.
+* **Full-image route (curator wants it; piecemeal is painful):** MARLEY C: 954 GB NVMe, 301 GB used,
+  UEFI/GPT, Windows 11 Home OEM_DM (HP firmware key). Curator has an unopened 2 TB SanDisk Extreme
+  portable SSD → image to it over USB (~15 min), restore on MARLEY2 from it (Veeam Agent for Windows
+  free, bare-metal to dissimilar hardware; recovery stick 8 GB). First boot: drivers, Activation
+  (works only if MARLEY2 shipped with Home — check on MARLEY2 now), rename MARLEY_SVR → MARLEY2
+  BEFORE MARLEY is back on the LAN (same hostname, tunnel token, tasks), Intel VMD → AHCI if
+  "inaccessible boot device", HP bloat + power plan to clean. Playbook §2–3 collapse into this.
+* **MARLEY imaged to the SanDisk SSD — the rehearsal image (2026-10-22 15:18–15:28).** D: (SanDisk
+  Extreme 2 TB, USB 3) quick-formatted exFAT → NTFS by full path (`C:\Windows\System32\format.com` —
+  bare `format` on this box runs PyCharm's `format.bat`, which sits ahead of System32 on PATH).
+  Veeam Agent for Microsoft Windows 13.1.1.700 installed via `winget install Veeam.VeeamAgent`
+  (service VeeamEndpointBackupSvc). Freeze: BCC stopped (elevated via UAC), the three recurring tasks
+  disabled (`Disable-ScheduledTask`; `schtasks /Change /DISABLE` through Start-Process lost its quotes
+  and silently did nothing), WAL checkpointed on all four DBs, no sidecars. Entire-computer backup to
+  `D:\VeeamBackup\Job MARLEY_SVR\` → `Job MARLEY_SVR2026-10-22T151800.vbk` **174.87 GB** (+ .vbm), log
+  `Session result: "Success"`, 10 min wall. Unfrozen after. **Restore plan on MARLEY2:** boot the Veeam
+  recovery stick, Bare Metal Recovery → Entire computer → the .vbk on the SSD; MARLEY off (same
+  hostname, tunnel token, tasks); first boot rename MARLEY_SVR → MARLEY2 before anything else, Windows
+  Update for drivers, check Activation (image = Home/OEM_DM; works unaided only if MARLEY2 shipped with
+  Home), Intel VMD → AHCI if "inaccessible boot device". Today's image is the rehearsal; cut-over day
+  repeats freeze → image → restore → tunnel flip, replacing playbook §4 steps 2–3. Still open on MARLEY2:
+  edition/activation, disk size, VMD setting (curator to read off the box). Cleanup script for MARLEY
+  (`marley_cleanup.ps1`, dry run by default; tiers) was written but the permission layer blocks local
+  deletes from the session — curator runs it; not run before this image.
+
+## Session 2026-10-23 — first session ON the restored clone; serp_dry_pages pulled and live
+
+* **This machine is the clone.** The Veeam bare-metal restore of the 10-22 image is up on the new
+  hardware: **Dell Slim ECS1250** (not HP), Windows 11 Home / OEM_DM, LicenseStatus 1 (activated,
+  unaided), 16 GB, 1 TB SanDisk NVMe (the 2 TB SanDisk Extreme image SSD and the 8 GB recovery stick
+  still plugged in), `Ethernet 2` wired 1 Gbps, 192.168.1.196 (the lease MARLEY2 registered under on
+  10-22). Boot 13:01. **The restore carried the computer name: hostname is still `MARLEY_SVR`.**
+  Curator decision: the clone KEEPS MARLEY_SVR; the old box is renamed **MARLEY-OLD** while it is off
+  the network. So "BCC on MARLEY" in the restart rule now means this box, and the hostname no longer
+  tells old from new — the Dell model string does (`Get-ComputerInfo CsModel`). The playbook's
+  "rename MARLEY_SVR → MARLEY2 at first boot" step is dropped; `marley2.tbotb.com`, `-Standby MARLEY2`
+  and the rclone `marley2` remote were soak-only names and are moot once this box is primary.
+* **git pull → 3d5128b (13:07):** SERP paging stops a line after N pages in a row that add no usable
+  result (dead page, all-blocked/duplicate page, off-topic drop) — `serp_dry_pages` in system_config,
+  default 3, both providers. Born of Sauce Jean Vignard #2788 the same morning: usable stuck at 15 from
+  p9, paged to p19 because dead pages never came two in a row, curator cancelled at 13 min and the 32
+  usable URLs went with the job. Stubbed replay of line 2: p20 / 30 calls / 15 usable → p12 / 14 calls
+  / 15 usable. Committed from the other session at 12:25.
+* **Restart done (curator, 2026-10-23 13:10:28; nssm 15428 → python 37548 → worker PID 11896 on
+  127.0.0.1:8009)** — three minutes AFTER the pull, so the worker carries 3d5128b. `/healthz` 200,
+  `/` 200 (`/health` is 404 — not a route; the standby sync probes `/auth/me`). Cloudflared service
+  Running on the SAME tunnel token the old box holds. Jobs #2792 (dish-rematch all) and #2793
+  (béchamel refresh) ran 12:53, on the pre-pull code.
+* **Carried in by the image, still owed here:** the three tasks disabled for the 10-22 freeze are still
+  *Disabled* (BCC Recipes DB Backup, BCC Backup Check, BCC Dish Schedule; Lock After Autologon Ready)
+  — re-enable when this box is declared primary; the backup bat's gate already accepts MARLEY_SVR so
+  nothing to edit. The working copy is the old box's at image time: uncommitted 10-21/22 edits to this
+  log, the backup bat, `bcc_sync_standby.ps1`, the DR doc and the playbook, plus fifteen untracked
+  SEMrush xlsx and `prune_backups.py` — commit from here.
+* **Before MARLEY-OLD comes back on the LAN (curator asked whether the rename alone is enough — no):**
+  the name collision is the only thing the rename fixes. The old box still holds the same tunnel token
+  (a second connector would split recipes.tbotb.com traffic onto the frozen DB), its three tasks were
+  re-enabled after the 10-22 image (a 03:00 run would push stale DBs over this box's set on ADAM and
+  BAILEY), and the same ssh key / rclone remotes that let those tasks reach them. Stop + disable
+  Cloudflared and BCC and disable the tasks there first; remove the ssh key and rclone.conf when it has
+  nothing left to do. IP (DHCP by MAC) and activation (its own firmware key) are not a problem.
+* **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
+  commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
+  TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
+  PG 18 conversion starts after a week's soak as primary · carried.
