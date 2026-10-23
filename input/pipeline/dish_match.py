@@ -659,9 +659,11 @@ def _flag(table, rid, d, rch, rung, frm, to, dinfo, reasons) -> dict:
 def _questionable(table, rid, d, rch, prev, new, p_near, n_near, dinfo) -> Optional[dict]:
     """A written move that deserves a look, or None. Reasons, any of:
     a NEW confident match into another chapter than the recipe's; a guess with
-    no dish in the recipe's chapter to fall back on; a move into a dish created
-    in the last `rematch_flag_young_days` (7); a move into a dish with fewer than
-    `rematch_flag_thin_members` (5) member recipes."""
+    no dish in the recipe's chapter to fall back on; a move into a dish with
+    fewer than `rematch_flag_thin_members` (5) member recipes. Youth alone is
+    not a reason (the 2026-10-23 dry run: 73 of 83 flags were young dishes that
+    already had a cohort) — a thin dish created in the last
+    `rematch_flag_young_days` (7) just says so, the Sauce Jean Vignard shape."""
     p_dish = (prev or {}).get("dish")
     if new["dish"] and new["dish"] != p_dish:
         rung, frm, to = "match", p_dish, new["dish"]
@@ -675,30 +677,44 @@ def _questionable(table, rid, d, rch, prev, new, p_near, n_near, dinfo) -> Optio
         reasons.append(f"new match is in {to_ch}, the recipe is {rch}")
     if rung == "nearest" and (new.get("off_chapter") or {}).get("no_dish_in_chapter"):
         reasons.append(f"no {rch} dish to guess, so the guess is {to_ch}")
-    created = dinfo.get(to, {}).get("created_at")
-    young_days = _cfg_int("rematch_flag_young_days", 7)
-    if created:
-        try:
-            age = datetime.now(timezone.utc) - datetime.fromisoformat(created)
-            if age.days < young_days:
-                reasons.append(f"{to} was created {age.days} day(s) ago")
-        except ValueError:
-            pass
     members = dinfo.get(to, {}).get("members", 0)
-    thin = _cfg_int("rematch_flag_thin_members", 5)
-    if members < thin:
-        reasons.append(f"{to} has {members} member recipe(s)")
+    if members < _cfg_int("rematch_flag_thin_members", 5):
+        why = f"{to} has {members} member recipe(s)"
+        created = dinfo.get(to, {}).get("created_at")
+        if created:
+            try:
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(created)
+                if age.days < _cfg_int("rematch_flag_young_days", 7):
+                    why += f" and was created {age.days} day(s) ago"
+            except ValueError:
+                pass
+        reasons.append(why)
     return _flag(table, rid, d, rch, rung, frm, to, dinfo, reasons) if reasons else None
 
 
 def flag_digest(flags: list[dict]) -> tuple[str, str]:
-    """(subject, body) for the curator email."""
+    """(subject, body) for the curator email. Past `rematch_digest_max` (40)
+    flags — a catalog change or the first night of the chapter rule re-aiming
+    every guess at once — the body is counts per target dish plus the held
+    moves; the full list is in the job log either way."""
     n_held = sum(1 for f in flags if f["reasons"][0].startswith("held"))
     subject = (f"Dish rematch: {len(flags)} move(s) to check"
                + (f", {n_held} held" if n_held else ""))
     lines = ["The nightly dish rematch made (or, where marked held, refused) these",
              "moves. 'match' = the recipe's confident dish; 'nearest' = the guess an",
              "unmatched recipe counts under.", ""]
+    cap = _cfg_int("rematch_digest_max", 40)
+    if len(flags) > cap:
+        by_dish: dict = {}
+        for f in flags:
+            by_dish.setdefault((f["to"], f["to_chapter"]), []).append(f)
+        lines += [f"Too many to list ({len(flags)} > rematch_digest_max {cap}); the full list is",
+                  "in the dish-rematch job log. Moves by target dish:", ""]
+        for (to, ch), fs in sorted(by_dish.items(), key=lambda kv: -len(kv[1])):
+            lines.append(f"- {to!r} ({ch or 'no chapter'}): {len(fs)}  e.g. {fs[0]['reasons'][0]}")
+        flags = [f for f in flags if f["reasons"][0].startswith("held")]
+        if flags:
+            lines += ["", "Held (not written, need a decision):"]
     for f in flags:
         lines.append(f"- {f['table']} {f['id']} {f['recipe']!r} ({f['recipe_chapter'] or 'no chapter'}): "
                      f"{f['rung']} {f['from']!r} -> {f['to']!r}")

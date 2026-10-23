@@ -9392,6 +9392,9 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
     # (2026-10-23). alert_curator banners the log too and never raises.
     if all_flags:
         from input.pipeline import alerts, dish_match as _dm
+        for f in all_flags:                   # the full list; the email may be counts only
+            print(f"[REMATCH] flag {f['table']} {f['id']} {f['recipe']!r}: {f['rung']} "
+                  f"{f['from']!r} -> {f['to']!r} | {'; '.join(f['reasons'])}")
         _subj, _body = _dm.flag_digest(all_flags)
         alerts.alert_curator(_subj, _body)
     # Rows moved between dishes — the stored card thumbnails may point at
