@@ -12037,6 +12037,12 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   Beast), no-name kits (NEMIX, A-Tech) $490-540. Prices are moving by the day in this spike, so no
   figure here is a quote; the single-stick route ($260-280 for one 16 GB) is now the cheaper way to 32
   GB if a stick can be found in stock. Nothing bought.
+  **The installed stick IS a Dell part:** its SMBIOS part number `K4N59R-HYA-K` carries Dell part code
+  **4N59R** = Dell Memory Upgrade 16 GB 1Rx8 DDR5 UDIMM 5600 MT/s, SKU AC774044 / SNP4N59RC/16G,
+  compatibility list includes the Slim ECS1250. Dell's own price for the identical card: **$879.20**
+  (dell.com US; its DDR5 upgrades page shows $799.99; UK £902); third parties $190-245 (ITO Solutions
+  $206.89 long lead, memorystock $244.95, eBay open-box $190). Kingston's configurator lists its
+  16 GB DDR5-5600 non-ECC UDIMM as compatible — any JEDEC 5600 stick pairs with the Dell one.
 * **Open:** re-enable the three tasks on this box · MARLEY-OLD decommission list above · the fifteen-xlsx
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
