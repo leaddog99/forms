@@ -6112,10 +6112,14 @@ def branding_config():
     bcc_link_domain) so a self-hoster's install page bakes THEIR host into the
     loader with no code change (portable-package)."""
     from input.pipeline.config import BRAND_NAME, BRAND_LOGO_URL, BRAND_HOME_URL
-    from input.pipeline.system_config import public_base_url
+    from input.pipeline.system_config import public_base_url, get_setting
     return {
         "name": BRAND_NAME, "logo_url": BRAND_LOGO_URL, "home_url": BRAND_HOME_URL,
         "bookmarklet_api_base": public_base_url(),
+        # The iOS share-sheet Shortcut, once built on a phone and shared as an
+        # iCloud link (system_config.share_shortcut_url; empty until then). The
+        # install page shows a one-tap "Get the shortcut" when it is set.
+        "share_shortcut_url": str(get_setting("share_shortcut_url", "") or ""),
     }
 
 
@@ -15322,9 +15326,15 @@ async def stage_capture_endpoint(request: Request):
     path with no knowledge of this door. Also pulls outbound links out of the
     comments: when the author's comment is only `Recipe >>>> https://blog…`, the
     recipe's real address is that link, and the importer offers it."""
+    return await _stage_capture(await request.json())
+
+
+async def _stage_capture(payload: dict) -> dict:
+    """The staging itself, shared by /stage-capture (the loader's CSP fallback)
+    and /stage-share (the iOS Shortcut door, 2026-10-26). Same body, same
+    `_staged_markdown` entry, same return shape {token, capture, title}."""
     from intake.capture_sources import (classify_capture_url, build_capture_markdown,
                                         links_in_text)
-    payload = await request.json()
     url = (payload.get("url") or "").strip()
     text = (payload.get("text") or "").strip()
     if not url or not text:
@@ -15408,6 +15418,113 @@ async def stage_capture_endpoint(request: Request):
           f"structure={capture.get('structure')} via={via} selected={selected} "
           f"chars={len(text)} comments={len(comments)} links={len(links)} url={url[:80]}")
     return {"token": token, "capture": capture, "title": envelope_title or title}
+
+
+def _share_text_from_html(html_text: str) -> dict:
+    """What a phone's own fetch of a shared post yields, read without a DOM:
+    the Open Graph title, description and picture. Instagram and Facebook put
+    the WHOLE caption in og:description, prefixed with the counts
+    ('4,268 likes, 66 comments - handle on February 28, 2021: "caption"',
+    verified 2026-10-26 on a public reel, anonymous fetch, full 1.9k-char
+    caption). `caption` is True only when that shape was found — a login wall
+    or a profile page ('104M Followers, 94 Following…') is not a caption."""
+    import html as _html
+    h = html_text or ""
+
+    def meta(*names: str) -> str:
+        for n in names:
+            pat = re.escape(n)
+            m = (re.search(r'<meta\s+(?:property|name)=["\']' + pat + r'["\']\s+content=["\']([^"\']*)["\']', h, re.I)
+                 or re.search(r'<meta\s+content=["\']([^"\']*)["\']\s+(?:property|name)=["\']' + pat + r'["\']', h, re.I))
+            if m and m.group(1).strip():
+                return _html.unescape(m.group(1)).strip()
+        return ""
+
+    title = meta("og:title", "twitter:title")
+    if not title:
+        m = re.search(r"<title[^>]*>(.*?)</title>", h, re.I | re.S)
+        title = _html.unescape(m.group(1)).strip() if m else ""
+    desc = meta("og:description", "twitter:description", "description")
+    image = meta("og:image", "twitter:image")
+    author = ""
+    caption = ""
+    m = re.match(r'^[\d.,]+[KMB]?\s+likes?,\s+[\d.,]+[KMB]?\s+comments?\s+-\s+(.+?)\s+on\s+'
+                 r'[A-Z][a-z]+\s+\d{1,2},\s+\d{4}:\s*[“"](.*)[”"]\.?\s*$', desc, re.S)
+    if m:
+        author, caption = m.group(1).strip(), m.group(2).strip()
+    # "Name on Instagram: "caption"" — og:title carries the author when the
+    # description shape is not the counts form (older/other post types).
+    if not author:
+        t = re.match(r'^(.+?)\s+on\s+(?:Instagram|Facebook|Threads):', title)
+        if t:
+            author = t.group(1).strip()
+    return {"title": title, "description": desc, "image": image, "author": author,
+            "caption": caption, "has_caption": bool(caption)}
+
+
+@app.post("/stage-share")
+async def stage_share_endpoint(request: Request):
+    """The iOS Shortcut door (2026-10-26). The phone's share sheet hands a
+    Shortcut the post's URL; the Shortcut fetches that URL itself (the user's
+    device, the user's network — never our server reading Meta) and posts
+    {url, html, via:'shortcut'} here. We take the caption out of the page's
+    Open Graph tags, stage it through the SAME path as every other grab, and
+    answer with `open`: the importing page's URL carrying the staged token,
+    which the Shortcut's last action opens in Safari.
+
+    Ordinary recipe pages are not staged from the phone's HTML at all: `open`
+    is the form's own URL door, whose server-side fetch policy (unblocker,
+    Wayback, render) beats a bare phone fetch. A typed source whose caption
+    did not come through (login wall) is staged with a polite reject so the
+    importing page says what to do instead of spending anything."""
+    from urllib.parse import quote
+    from intake.capture_sources import classify_capture_url
+    from input.pipeline.system_config import public_base_url
+    payload = await request.json()
+    url = (payload.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+    html_text = str(payload.get("html") or "")[:3_000_000]
+    base = (public_base_url() or "").rstrip("/")
+    form = f"{base}/forms/recipe_form_styled.html"
+    importing = f"{base}/forms/importing.html"
+    source = classify_capture_url(url)
+    if source is None:
+        print(f"[SHARE] ordinary page → form URL door: {url[:80]}")
+        return {"staged": False, "kind": None, "open": f"{form}?url={quote(url, safe='')}"}
+
+    got = _share_text_from_html(html_text)
+    title = got["title"] or ""
+    if source.kind == "youtube":
+        # The ladder re-reads the watch page server-side; the phone's
+        # description is only the seed the loader would have read.
+        text = got["description"] or got["title"] or f"(shared from {source.label})"
+    else:
+        text = got["caption"]
+    reject = None
+    if got["caption"]:
+        # The form's title is the caption's first line ("LASAGNA WITH BÉCHAMEL"),
+        # not Instagram's og:title wrapper ('Jamie Milne on Instagram: "LASAGNA…').
+        first = next((ln.strip() for ln in got["caption"].splitlines() if ln.strip()), "")
+        title = first.strip('"“”').strip()[:140] or title
+    if not text:
+        text = f"(shared from {source.label}; the caption did not come through)"
+        reject = (f"{source.label} did not hand the caption to the shortcut — it may want you "
+                  f"signed in, or the post may be private. Open the post in Safari and tap the "
+                  f"Recipe Grabber bookmark, or share a screenshot of the recipe instead.")
+    elif got["author"]:
+        text = f"{got['author']}\n\n{text}"
+    staged = await _stage_capture({"url": url, "title": title, "text": text, "via": "shortcut"})
+    token = staged["token"]
+    if reject:
+        entry = _staged_markdown.get(token)
+        if entry and isinstance(entry.get("capture"), dict):
+            entry["capture"]["reject"] = reject
+    print(f"[SHARE] staged {token[:8]} kind={source.kind} caption={'yes' if got['has_caption'] else 'no'} "
+          f"html={len(html_text)} url={url[:80]}")
+    return {"staged": True, "kind": source.kind, "token": token, "title": staged.get("title"),
+            "caption": got["has_caption"],
+            "open": f"{importing}?url={quote(url, safe='')}#staged={token}"}
 
 
 @app.get("/staged-latest")

@@ -968,6 +968,7 @@
     { page: 'equipment', label: 'Equipment', comingSoon: true, group: 'user' },
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
     { page: 'install',   label: 'Bookmarklet', href: '/forms/install.html', group: 'user' },
+    { page: 'shortcut-install', label: 'iPhone Shortcut', href: '/forms/shortcut_install.html', group: 'user' },
     // --- admin group (corpus + system back-office — TBOTB side) ---
     // Ordered by `section`, alphabetical within one; the menu renders a small
     // header whenever `section` changes, so keep each section's rows together.

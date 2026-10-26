@@ -110,6 +110,17 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "scheme optional (https assumed).",
     },
     {
+        "key": "share_shortcut_url",
+        "value": "",
+        "type": "string",
+        "category": "Branding",
+        "label": "iOS share-sheet Shortcut (iCloud link)",
+        "description": "The 'Save Recipe' iOS Shortcut, once built on a phone per "
+                       "forms/shortcut_install.html and shared as an iCloud link "
+                       "(Shortcuts → share → Copy iCloud Link). Empty until then; when "
+                       "set, the install page offers a one-tap 'Get the shortcut'.",
+    },
+    {
         "key": "scheduler_enabled",
         "value": True,
         "type": "bool",
