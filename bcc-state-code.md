@@ -12052,3 +12052,34 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   commit · video lane steps 3-5 on go · Buttercream cohort pass · Butter Chicken English search line ·
   TTL + Sources-in · Substack authority switch · ethnicity stamp + backfill · Drive quota 403 (G4) ·
   PG 18 conversion starts after a week's soak as primary · carried.
+
+## Session 2026-10-23 → 2026-10-26 — the image's uncommitted work committed from the clone; dish-rematch flags pulled
+
+* **git pull → 11aaf13 (10-23):** two commits from the other session — dish rematch (f767f6d: guesses
+  are not members, chapter check, staff digest of questionable moves) and rematch flags (11aaf13: a
+  young dish is flagged only when also thin; past `rematch_digest_max` 40 the digest is counts per
+  target dish; dry run on BAILEY's DB 2,190 moves → 14 flags, was 88). Touches `dish_match.py`,
+  `dish_story.py`, `save_recipe_api.py`, `test_dish_story_fill.py`. Fast-forward, no conflicts. The
+  worker was NOT restarted this session, so it still carries 3d5128b — restart before trusting the
+  next rematch run.
+* **89e9792 — the 10-21/22 edits the image carried, committed and pushed.** `prune_backups.py` (new,
+  closes DR gap G1: recipes sets all of 14 days / one a week to 90 / one a month after; training 7
+  days then monthly; newest set of each kind always; dry run by default), `bcc_backup_scheduled.bat`
+  (prune after the verified backup, then empty our slice of ADAM's `#recycle`; BAILEY-sync gate
+  accepts MARLEY_SVR or MARLEY2), `bcc_sync_standby.ps1` + the playbook + the DR doc (HESTIA →
+  MARLEY2; G1 marked CLOSED with the first-run numbers, 304 sets / 131 GB freed). Pre-commit passed;
+  two non-blocking ruff style notes (E702, E731) in the prune script. **Note the drift:** those files
+  were written before the 10-23 "clone keeps MARLEY_SVR" decision, so the MARLEY2 names in them are
+  the soak-era names — harmless (the bat gate accepts both; the standby script's `-Standby` is a
+  parameter) but the playbook and DR doc still read as if MARLEY2 were the hostname. Clean up when
+  the host paper is next touched.
+* **34beceb — the fifteen SEMrush organic-pages exports (10-14..19) committed and pushed** (abbeyskitchen,
+  americanlamb, cookthestory, fallowchefs.substack, foodieandwine, glutenfreeonashoestring,
+  mamaknowsglutenfree, mangiabedda, meaningfuleats, niksharmacooks us+in, onelovelylife, raymondblanc,
+  thebakermama, theloopywhisk). 297 earlier exports already tracked there; 54 MB folder.
+* Working tree clean, branch `split/enrichment-api` level with origin at 34beceb.
+* **Open:** restart BCC on MARLEY so the worker carries 11aaf13 · re-enable the three tasks on this
+  box · MARLEY-OLD decommission list (10-23 entry) · host paper still says MARLEY2 in places · Crucial
+  stick arrival checklist (10-23 entry) · video lane steps 3-5 on go · Buttercream cohort pass · Butter
+  Chicken English search line · TTL + Sources-in · Substack authority switch · ethnicity stamp +
+  backfill · Drive quota 403 (G4) · PG 18 after a week's soak as primary · carried.
