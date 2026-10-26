@@ -8367,6 +8367,18 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // Extract recipe from a web page URL. Server fetches HTML, pulls JSON-LD
     // recipe data when present, and runs the canonical markdown extract.
     async function extractFromUrl(url) {
+      // A typed social source (Instagram, TikTok, Facebook, Reddit… — the SERVER
+      // decides, via /capture-source) is not fetched by this door: its recipe is
+      // in the caption, which the share door reads and stages. Hand over, so the
+      // URL box the cook already knows is the phone door too (2026-10-26).
+      // YouTube stays here: the pasted-URL door already handles watch pages.
+      try {
+        const cs = await fetch(`${API}/capture-source?url=${encodeURIComponent(url)}`).then(r => r.ok ? r.json() : null);
+        if (cs && cs.kind && cs.kind !== 'youtube') {
+          location.href = `${API}/forms/importing.html?share=1&url=${encodeURIComponent(url)}`;
+          return;
+        }
+      } catch (e) { /* fall through to the ordinary door */ }
       const btn = document.getElementById('extractUrlBtn');
       btn.disabled = true;
       const originalLabel = btn.textContent;

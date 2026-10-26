@@ -453,7 +453,7 @@
         location.replace(`${location.pathname}?share=1&url=${encodeURIComponent(u)}`);
       };
       showOutcome({ title: STR.paste.title, text: STR.paste.text,
-                    actions: [{ label: STR.paste.button, onClick: async () => {
+                    actions: [{ label: STR.paste.button, primary: true, onClick: async () => {
                       try { go(await navigator.clipboard.readText()); }
                       catch (e) { $('outcomeText').textContent = STR.paste.noClipboard; $('pasteBox').focus(); }
                     } }] });
