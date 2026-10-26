@@ -12083,3 +12083,62 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   stick arrival checklist (10-23 entry) · video lane steps 3-5 on go · Buttercream cohort pass · Butter
   Chicken English search line · TTL + Sources-in · Substack authority switch · ethnicity stamp +
   backfill · Drive quota 403 (G4) · PG 18 after a week's soak as primary · carried.
+
+## Session 2026-10-26 — cook voice: the wake gate was the "unusable" · iOS share-sheet door (Save Recipe Shortcut)
+
+* **Cook voice, 10-25 post-mortem (curator: "really lousy… unusable").** `logs/cook_stt.log` shows the
+  mic and Whisper were fine: "are the noodles supposed to be al dente?" transcribed clean THREE times
+  (nsp 0.00, alp −0.2). The ledger (`cook_chat`) holds none of them — only two fragments ("all dead
+  take", "question") and the question the curator finally TYPED at 16:18:59. Causes, all in
+  `forms/cook.html`: (1) strict wake mode (default) ignored any utterance without "hey chef", with
+  nothing but a status line; worse, Chef itself answered "what's your question?" and then could not
+  hear the reply — nothing re-armed awaitingQ and the no-wake follow-up window was disabled in
+  strict mode; (2) the spoken "Yes?" ack held the mic deaf (no AEC) and clipped the FRONT of the
+  question said right after it ("the all-dead take"); (3) the armed "say go" state swallowed "hey
+  chef, how many ounces?" (15:27) and ended the whole session on "never mind"; (4) a bare "stop"
+  = stand-down, so the 15:28 "stop" (the 224×-repeat hallucination shape, treated as real per the
+  10-13 note) killed the session; the curator typed into Chef's Notes for twenty minutes after.
+  No server errors, no slow LLM calls (the three asks that happened took ~2s).
+* **Fixed (ff46cff, client-only, no restart):** follow-up window applies in strict mode too; an
+  answer ending in "?" re-arms awaitingQ when it finishes (both ask paths); bare "hey chef" → the
+  200ms `cue()` beep (existed, never wired; prefers the boosted playback context on tablets) with a
+  350ms guard instead of the spoken ack; armed state routes anything addressed to Chef (wake word,
+  pending reply, follow-up) and "never mind"/"cancel"/"forget it" say "Okay." and stay — armed or
+  not; stop/quit/exit still stand down. "Okay." prefetched. Untested on the mic loop from here —
+  the next cook is the test; the voice panel's Save writes `logs/<day>_cook_voice.log`.
+* **reci.me is a parked domain.** The competitor is ReciMe Pty Ltd at recime.app; the dossier
+  (`docs/research/recime-dossier.md`) was right. Their Instagram door = a native iOS Share
+  Extension (any URL-sharing app lists it); no Instagram deal.
+* **iOS share-sheet door BUILT (0298371) — needs a BCC restart to serve.** `POST /stage-share`
+  {url, html, via:'shortcut'}: the Shortcut fetches the post ON THE PHONE and posts the HTML; the
+  server reads the Open Graph caption (`_share_text_from_html`) and stages it through the lifted
+  `_stage_capture` (unchanged body of /stage-capture); answers `open` = importing.html with
+  `#staged=token`, which the Shortcut opens in Safari. Ordinary pages → the form's own `?url=`
+  door (server fetch policy > phone HTML). Login wall / private → staged with a polite reject.
+  **Verified 2026-10-26: Instagram serves the FULL caption in og:description to an anonymous
+  fetch** ('4,268 likes, 66 comments - handle on February 28, 2021: "caption"', 1.8k chars, public
+  reel, from the server IP even) — but NO video URL (no og:video, no .mp4) and a profile page is
+  not a caption. TestClient run: caption post → kind=instagram structure=caption; login wall →
+  reject; blog → form door; no url → 400. `forms/shortcut_install.html` = the six-action build
+  (iOS imports only SIGNED .shortcut files and signing needs a Mac — so hand-built once, then
+  shared as an iCloud link into the new `system_config.share_shortcut_url`, which /branding
+  surfaces and the page turns into a one-tap "Get the shortcut"). Nav: "iPhone Shortcut".
+  Not done: hero image from og:image (the importing page's stageCapture does /images/fetch; the
+  share door passes none — the form finds its own), Amazon/product URLs (fall to the form door;
+  mbg gets its own Shortcut, built in ITS repo on BAILEY).
+* **Audio rung for reels (curator asked again).** Transcription speed is not the problem: a
+  60–90s reel is seconds through faster-whisper small/base on CPU, ~2–5s via OpenAI
+  gpt-4o-mini-transcribe or Deepgram, sub-second-per-minute on Groq's hosted large-v3-turbo. The
+  blocker is GETTING the audio: the anonymous page carries no media URL, a Shortcut cannot record
+  the screen, and the lane doc rules out server-side fetching from Meta. ReciMe's "takes over my
+  audio" complaints point at on-phone capture (ReplayKit-style) in a native app — real-time, not
+  batch. Still parked behind the screenshot door per docs/video-recipes-lane.md.
+* **Native app, what it would take (curator asked, not now):** a Swift shell (WKWebView over the
+  existing pages) + a Share Extension (URL in → /stage-share) → Apple Developer Program ($99/yr),
+  App Store review, a privacy label, and the extension gets the branded icon in the app row. The
+  audio rung then becomes possible (extension can be handed media; ReplayKit for the rest).
+  Android: a web manifest `share_target` gives the PWA a share-sheet spot with no store.
+* **Open:** restart BCC on MARLEY (serves /stage-share AND the 11aaf13 rematch code) · build the
+  Shortcut on the iPad per the page, test from Instagram, paste the iCloud link into
+  share_shortcut_url · next cook session = the voice fix's test · re-enable the three tasks ·
+  MARLEY-OLD decommission list · host paper still says MARLEY2 · Crucial stick arrival · carried.
