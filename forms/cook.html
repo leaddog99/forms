@@ -978,6 +978,21 @@
   // treated as a question WITHOUT re-saying "hey chef" (commands still win first).
   // _asking gates while a question is in flight (no double-asks, no self-echo route).
   var FOLLOWUP_MS = 25000, followUpUntil = 0, _pendingFollowUp = false, _asking = false;
+  // 2026-10-26: Chef answered WITH a question ("what's your question?") — the next
+  // utterance is the cook's reply, so re-arm awaitingQ when that answer finishes.
+  // Set by the ask paths from the answer text; consumed by finish() / _onSpeakEnd.
+  // (10-25 log: Chef asked back twice and could not hear the reply either time.)
+  var _chefAskedBack = false;
+  function _answerAsksBack(text){ return /\?\s*$/.test(String(text || '').trim()); }
+  function _afterAnswer(){
+    // Shared tail of both ask paths once the spoken answer has finished. Returns
+    // true when it re-armed awaitingQ (the caller skips its own status line).
+    followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef" — strict mode included (2026-10-26)
+    if(_chefAskedBack){ _chefAskedBack = false; setAwaiting(true);
+      vlog('wake', '(Chef asked back — listening for the reply)');
+      if(hf) setVoiceStatus('hearing', '🎧 I’m listening — go ahead'); return true; }
+    return false;
+  }
   // Watchdogs (#5): an orphaned "hey chef" used to wedge awaitingQ forever (next
   // noise → eaten as a question, commands dead), and a skipped _onSpeakEnd left
   // _asking stuck true (follow-ups dead). These force-clear both so the loop can
@@ -1136,9 +1151,9 @@
     return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
   function _onSpeakEnd(){ _setSpeaking(false); _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
     refreshMidIcon(); setAsking(false);
+    if (_pendingFollowUp){ _pendingFollowUp = false; if(_afterAnswer()) return; }   // answer finished: open the follow-up window / re-arm for Chef's own question
     if (hf && _armedWaiting){ setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return; }   // post "ready" cue: keep the go-hint
-    if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // re-extend the window once the answer finishes
-    if (hf) setVoiceStatus('listening', (followUpUntil > _now() && !REQUIRE_WAKE_FOR_COMMANDS)
+    if (hf) setVoiceStatus('listening', (followUpUntil > _now())
       ? '🎧 Ask a follow-up — no “hey chef” needed (or say a command)'
       : _listenHint()); }
 
@@ -1284,7 +1299,7 @@
       if(tip) prefetchSpeak((subs.length === 1 ? first : subs[subs.length - 1]) + tip);   // last chunk + tip flag
     } else prefetchSpeak((lead || '') + spokenText(s) + tip);
   });
-  _WAKE_ACKS.concat(_STOP_ACKS, [_READY_FALLBACK]).forEach(prefetchSpeak); }   // warm the acks + opener fallback (cook_intro/ack/wait warmed in loadCookMessages)
+  _WAKE_ACKS.concat(_STOP_ACKS, ['Okay.', _READY_FALLBACK]).forEach(prefetchSpeak); }   // warm the acks + opener fallback (cook_intro/ack/wait warmed in loadCookMessages)
   function _playUrl(url){
     return new Promise(function(res){
       var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
@@ -1445,9 +1460,13 @@
   // A short confirmation beep (via the live AudioContext) — used instead of
   // speaking "Yes?" over the cook's question, so the question isn't lost.
   function cue(){
-    try{ if(!AC) return; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.value=880;
-      o.connect(g); g.connect(AC.destination); var t=AC.currentTime; g.gain.setValueAtTime(0.0001,t);
-      g.gain.exponentialRampToValueAtTime(0.18,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+    // Prefer the playback context on phones/tablets (the one Chef's voice already goes
+    // through, gain-boosted); the mic context is the desktop fallback. (2026-10-26)
+    try{ var C = (_spkCtx && _spkCtx.state !== 'closed') ? _spkCtx : AC; if(!C) return;
+      if(C.state === 'suspended'){ try{ C.resume(); }catch(e){} }
+      var o=C.createOscillator(), g=C.createGain(); o.type='sine'; o.frequency.value=880;
+      o.connect(g); g.connect(C.destination); var t=C.currentTime; g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.25,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
       o.start(t); o.stop(t+0.2);
     }catch(e){}
   }
@@ -1768,7 +1787,7 @@
     { name:'tip',     re:/\b(read|play|hear|say|give me|tell me)\s+(the\s+|me\s+the\s+|out\s+the\s+|us\s+the\s+)?(tips?|hints?|chips?|hips?|ship|comments?)\b|\bwhat'?s the (tip|chip|comment)\b|\bis there a (tip|chip|comment)\b|\bany (tips?|hints?|chips?|comments?)\b|\bthe (tips?|comments?) please\b|^(tips?|hints?|chips?|hips?|ship|comments?)$/, act:function(){ readCurrentTip(); } },
     { name:'repeat',  re:/\b(repeat|say (that|it) again|again please|one more time|come again|read (that|it) again|what did you say)\b|^again$/, act:function(){ window.cookView.repeat(); } },
     { name:'restart', re:/\b(start over|restart|from the top|begin again|start again|start from the beginning)\b/, act:function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); } },
-    { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; if(hf) setVoiceStatus('listening', _listenHint()); } },
+    { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; _chefAskedBack = false; speak('Okay.'); } },   // 2026-10-26: acknowledge, keep the session (the status line resets on speak-end)
     { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
     { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
     { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along|go ahead|go on|keep going|let'?s go)\b|^(next|forward|skip|go|start|check|checked|check it|check it off|check this off|check that off)$/, act:function(){ window.cookView.next(); } },
@@ -1846,14 +1865,22 @@
     // Armed-but-not-started (START_ON_GO): the button cued "ready"; the cook's go-word
     // launches step 1. Forgiving synonyms (base.en mangles "go"). "stop/cancel" aborts.
     // Anything else → keep waiting quietly (don't read until they say go).
+    // 2026-10-26: while armed, anything ADDRESSED to Chef (wake word, a pending
+    // question, a follow-up) routes normally instead of being swallowed — "hey chef,
+    // how many ounces?" was ignored here on 10-25. And "never mind" / "cancel" no
+    // longer end the session: Chef says "Okay." and stays ready. stop/quit/exit still
+    // stand down.
     if(_armedWaiting){
       var gw = t.replace(_WAKE_G, ' ').replace(/\s+/g, ' ').trim();
       if(/\b(go|start|begin|ready|cook|let'?s (go|cook|start)|i'?m ready|go ahead|start cooking|first step|read it)\b/.test(gw)
          || /^(go|start|begin|ready|cook|ok|okay|yep|yes)$/.test(gw)){
-        _armedWaiting = false; noteIntent(); vlog('command', 'go (start) ← “' + gw + '”'); window.cookView.read(); return;
+        _armedWaiting = false; setAwaiting(false); noteIntent(); vlog('command', 'go (start) ← “' + gw + '”'); window.cookView.read(); return;
       }
-      if(/\b(stop|quit|exit|cancel|never ?mind)\b/.test(gw)){ stopHandsFree({spoken:true}); return; }
-      vlog('ignored', '(armed — waiting for “go”)'); setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return;
+      if(/\b(stop|quit|exit)\b/.test(gw)){ stopHandsFree({spoken:true}); return; }
+      if(/\b(cancel|never ?mind|forget it)\b/.test(gw)){ noteIntent(); vlog('command', 'never mind (armed — still ready)'); speak('Okay.'); return; }
+      var addressed = _WAKE.test(t) || awaitingQ || (!_asking && _now() < followUpUntil);
+      if(!addressed){ vlog('ignored', '(armed — waiting for “go”)'); setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return; }
+      vlog('wake', '(armed — addressed Chef, routing)');   // fall through: commands, wake-word question, pending reply, follow-up
     }
 
     // Answer to a pending "want me to read the tip?" offer. Explicit yes → read it;
@@ -1922,8 +1949,14 @@
                .replace(/^(ok|okay|um|uh|hey|hi|yo|hello|so|and|a|an|the|he's|hes|hay|may|my|well|please|now)\s+/, '')
                .replace(/\s+(please|now)$/, '').trim();
       if(!q || _BARE_WAKE_RESIDUE.test(q)){
-        setAwaiting(true); noteIntent(); vlog('wake', '(bare wake — confirming)');
-        speak(_wakeAck()); return;   // short ack — minimizes the mic-deaf window before your question
+        setAwaiting(true); noteIntent(); vlog('wake', '(bare wake — beep)');
+        // 2026-10-26: a BEEP, not a spoken "Yes?". The spoken ack held the mic deaf
+        // (no AEC) for ~1.4s and clipped the FRONT of the question said right after it
+        // ("are the noodles supposed to be al dente" arrived as "the all-dead take",
+        // 10-25). The beep is 200ms and the mic stays open; the short guard only skips
+        // the beep's own tail.
+        cue(); _speakGuard = _now() + 350;
+        setVoiceStatus('hearing', '🎧 I’m listening — what do you need?'); return;
       }
       vlog('ask', q); askChef(q); return;
     }
@@ -1932,7 +1965,10 @@
     //    word (one-word follow-ups like "why?" now welcome — chars, not word count).
     // No-wake follow-up window (say "why?" right after an answer). Disabled in
     // strict wake mode so ambient chatter in a noisy room can't become a question.
-    if(!REQUIRE_WAKE_FOR_COMMANDS && !_asking && _now() < followUpUntil && t.length >= 2){
+    // 2026-10-26: the window now applies in strict wake mode TOO. Strictness is about
+    // ambient chatter; 25s right after Chef answered is a conversation, and the 10-25
+    // log shows the cook's clean, complete question dropped three times in a row here.
+    if(!_asking && _now() < followUpUntil && t.length >= 2){
       vlog('followup', text); askChef(text); return;
     }
 
@@ -1973,10 +2009,8 @@
     function finish(){
       if(finished) return; finished = true;
       _setSpeaking(false); _speakGuard = _now() + 700; refreshMidIcon(); setAsking(false);
-      followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef" (unless strict wake mode)
-      if(alive()) setVoiceStatus('listening', REQUIRE_WAKE_FOR_COMMANDS
-        ? _listenHint()
-        : '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
+      if(_afterAnswer()) return;              // opens the follow-up window; re-arms awaitingQ if Chef asked back
+      if(alive()) setVoiceStatus('listening', '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
     }
     function playNext(){
       if(!alive()){ return; }
@@ -2039,7 +2073,7 @@
           vlog('command', 'chef→' + res.j.action + (res.j.step != null ? (' ' + res.j.step) : ''));
           setAsking(false); doChefAction(res.j.action, res.j.step); return;
         }
-        if (res.ok && res.j && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + FOLLOWUP_MS; vlog('answer', res.j.answer); }
+        if (res.ok && res.j && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + FOLLOWUP_MS; _chefAskedBack = _answerAsksBack(res.j.answer); vlog('answer', res.j.answer); }
         else { setAsking(false); vlog('error', (res.j && res.j.detail) || 'no answer'); }
         var _g = _ackGate || Promise.resolve();   // let the in-flight filler finish, then answer (no overlap)
         _g.then(function(){ speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.'))); });
@@ -2050,7 +2084,7 @@
   // to askChefOnce if the browser/stream can't deliver SSE.
   function askChef(question){
     noteIntent();
-    setAsking(true);
+    setAsking(true); _chefAskedBack = false;
     setVoiceStatus('thinking', 'Chef is thinking…');
     stopSpeaking();                       // cancel any current speech/stream (bumps _streamSeq)
     startThinking();                      // cover the LLM-invocation silence: ack now, then rotating waits
@@ -2067,7 +2101,8 @@
             setAsking(false); doChefAction(ev.action, ev.step); return; }
           if(ev.type === 'sentence'){ fullText += (fullText ? ' ' : '') + ev.text;
             if(!player) player = makeAnswerPlayer(); player.enqueue(ev.text); return; }
-          if(ev.type === 'done'){ if(player) player.markEnded(); else { stopThinking(); setAsking(false); }
+          if(ev.type === 'done'){ _chefAskedBack = !!player && player.seq === _streamSeq && _answerAsksBack(fullText);   // before markEnded → finish() reads it; a cancelled stream never re-arms
+            if(player) player.markEnded(); else { stopThinking(); setAsking(false); }
             if(fullText) vlog('answer', fullText); return; }
           if(ev.type === 'error'){ terminated = true; stopThinking(); vlog('error', ev.detail || 'stream error');
             setAsking(false); speak(ev.detail || 'Sorry, I could not answer that.'); return; }
