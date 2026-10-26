@@ -12142,3 +12142,12 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   Shortcut on the iPad per the page, test from Instagram, paste the iCloud link into
   share_shortcut_url · next cook session = the voice fix's test · re-enable the three tasks ·
   MARLEY-OLD decommission list · host paper still says MARLEY2 · Crucial stick arrival · carried.
+* **Addendum (same day): the six-action Shortcut sheet was rejected** (curator: "none of the actions
+  correspond to my shortcut screen… there must be another way"). Replaced: **the paste door** —
+  `importing.html?paste=1` (Copy Link in Instagram → tap Paste; keep it as a Home Screen icon),
+  `?share=1&url=` → `/stage-share`, which now FETCHES the post itself when no html is posted
+  (`_fetch_share_html`: one user-initiated GET, phone UA, OG head only — not harvest). In-process
+  test on the real reel: 0.3s, full caption, title "LASAGNA WITH BÉCHAMEL". The Shortcut is now
+  optional and ONE action (Open URLs: `…importing.html?share=1#u=` + Shortcut Input; raw URL in
+  the fragment so its & survive). shortcut_install.html rewritten around that. Still needs the BCC
+  restart; still untested from the phone.
