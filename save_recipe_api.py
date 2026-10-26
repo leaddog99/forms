@@ -15462,6 +15462,31 @@ def _share_text_from_html(html_text: str) -> dict:
             "caption": caption, "has_caption": bool(caption)}
 
 
+_SHARE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+             "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+
+def _fetch_share_html(url: str) -> str:
+    """ONE user-initiated GET of a post the person just shared or pasted — the
+    same request a link preview makes, for the Open Graph head only. This is
+    the paste door and the one-action Shortcut (neither can fetch on the phone);
+    it is not harvest, and the capture ladder never calls it. Empty on failure;
+    the caller stages a polite reject."""
+    try:
+        import requests
+        r = requests.get(url, headers={"User-Agent": _SHARE_UA, "Accept-Language": "en-US,en;q=0.9"},
+                         timeout=20, allow_redirects=True, stream=True)
+        chunks, size = [], 0
+        for c in r.iter_content(65536):
+            chunks.append(c); size += len(c)
+            if size > 3_000_000:
+                break
+        return b"".join(chunks).decode(r.encoding or "utf-8", errors="replace")
+    except Exception as e:  # noqa: BLE001
+        print(f"[SHARE] fetch failed {url[:80]}: {type(e).__name__}: {e}")
+        return ""
+
+
 @app.post("/stage-share")
 async def stage_share_endpoint(request: Request):
     """The iOS Shortcut door (2026-10-26). The phone's share sheet hands a
@@ -15493,6 +15518,11 @@ async def stage_share_endpoint(request: Request):
         print(f"[SHARE] ordinary page → form URL door: {url[:80]}")
         return {"staged": False, "kind": None, "open": f"{form}?url={quote(url, safe='')}"}
 
+    via = (payload.get("via") or "shortcut").strip()[:16]
+    if not html_text:
+        # Paste door / one-action Shortcut: nothing fetched on the phone, so
+        # make the one request ourselves (see _fetch_share_html).
+        html_text = await asyncio.to_thread(_fetch_share_html, url)
     got = _share_text_from_html(html_text)
     title = got["title"] or ""
     if source.kind == "youtube":
@@ -15514,7 +15544,7 @@ async def stage_share_endpoint(request: Request):
                   f"Recipe Grabber bookmark, or share a screenshot of the recipe instead.")
     elif got["author"]:
         text = f"{got['author']}\n\n{text}"
-    staged = await _stage_capture({"url": url, "title": title, "text": text, "via": "shortcut"})
+    staged = await _stage_capture({"url": url, "title": title, "text": text, "via": via})
     token = staged["token"]
     if reject:
         entry = _staged_markdown.get(token)

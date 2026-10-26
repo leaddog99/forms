@@ -3,12 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Save Recipe Shortcut</title>
-  <!-- The iOS share-sheet door (2026-10-26). A Shortcut cannot be shipped as a
-       file from here (iOS only imports signed shortcuts, and signing needs a Mac),
-       so this page is the recipe for building it by hand — six actions — and,
-       once one phone has built and shared it, a one-tap link for everyone else
-       (system_config.share_shortcut_url). The server side is POST /stage-share. -->
+  <title>Save from Instagram</title>
+  <!-- The phone door (2026-10-26). Two ways in, no app to install:
+       1. Copy Link in the other app → the paste page (importing.html?paste=1),
+          which the person keeps as a Home Screen icon. Nothing to build.
+       2. Optional: a ONE-action iOS Shortcut ("Open URLs") that puts "Save
+          Recipe" in the share sheet itself. iOS imports only signed .shortcut
+          files and signing needs a Mac, so the first copy is built by hand;
+          once shared as an iCloud link (system_config.share_shortcut_url) the
+          page offers it as one tap.
+       Both land on POST /stage-share, which reads the post's caption. -->
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
@@ -17,21 +21,21 @@
     .wrap { max-width: 560px; margin: 0 auto; padding: 24px 18px 64px;
       padding-bottom: max(64px, env(safe-area-inset-bottom)); }
     h1 { font-size: 1.6rem; margin: 0 0 8px; letter-spacing: -0.01em; }
+    h2 { font-size: 1.15rem; margin: 28px 0 10px; }
     h3 { margin: 0 0 8px; font-size: 1rem; }
-    .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.95rem; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
       padding: 18px; margin-bottom: 16px; }
-    button.copy, a.get {
+    button.copy, a.big {
       display: block; width: 100%; padding: 16px 18px; font-size: 1.05rem; font-weight: 600;
       background: var(--accent); color: #fff !important; border: none; border-radius: 12px;
       cursor: pointer; -webkit-tap-highlight-color: transparent; text-align: center;
       text-decoration: none; transition: background 0.15s, transform 0.05s; touch-action: manipulation; }
-    button.copy:hover, a.get:hover { background: var(--accent-dark); }
+    button.copy:hover, a.big:hover { background: var(--accent-dark); }
     button.copy:active { transform: scale(0.985); }
     button.copy.ok { background: #2f7a3a; }
     ol { margin: 0; padding-left: 22px; line-height: 1.55; }
     ol li { margin-bottom: 12px; }
-    ul.plain { margin: 0; padding-left: 20px; line-height: 1.55; }
     code { background: #f3ece2; padding: 2px 6px; border-radius: 5px; font-size: 0.9em;
       font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .field { display: inline-block; background: #e9f0ff; color: #1c3f8a; padding: 1px 7px;
@@ -52,53 +56,49 @@
   </header>
 
   <div class="wrap">
-    <h1>Save Recipe from any app</h1>
-    <p class="sub">A Shortcut that puts <strong>Save Recipe</strong> in your iPhone's share sheet — Instagram, TikTok, Facebook, YouTube, Safari, anywhere a post can be shared.</p>
+    <h1>Save a recipe from Instagram</h1>
+    <p class="sub">Or TikTok, Facebook, YouTube — any app with a Share button. Nothing to install.</p>
 
-    <!-- One-tap install, shown only once a built shortcut has been shared as an iCloud link -->
+    <div class="card">
+      <a class="big" href="/forms/importing.html?paste=1">Open the paste page</a>
+      <p class="note" style="text-align:center;margin-top:10px">Keep it on your Home Screen: with that page open in Safari, tap Share <span aria-hidden="true">⬆️</span> → <strong>Add to Home Screen</strong>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Using it</h3>
+      <ol>
+        <li>On the post, tap <strong>Share</strong> (the paper plane on Instagram) → <strong>Copy Link</strong>.</li>
+        <li>Open the paste page (the Home Screen icon) and tap <strong>Paste the link</strong>. Allow the paste when iOS asks.</li>
+        <li>The recipe is read from the post and opens in the editor. Sign in if asked.</li>
+      </ol>
+      <p class="note">A private post, or one Instagram will not show without signing in, comes back with a note saying so. Open it in Safari and use the Grab Recipe bookmark, or share a screenshot of the recipe.</p>
+    </div>
+
+    <h2>Optional: put “Save Recipe” in the share sheet itself</h2>
+    <p class="sub">Skips the copy-and-paste. It is one Shortcut with one action.</p>
+
     <section id="get-block" hidden>
       <div class="card">
-        <a id="getLink" class="get" href="#">Get the shortcut</a>
-        <p class="note" style="text-align:center">Opens in Shortcuts. Tap <strong>Add Shortcut</strong>, then skip to <em>Using it</em> below.</p>
+        <a id="getLink" class="big" href="#">Get the shortcut</a>
+        <p class="note" style="text-align:center">Opens in Shortcuts. Tap <strong>Add Shortcut</strong> and you are done.</p>
       </div>
     </section>
 
     <section id="build-block">
       <div class="card">
-        <h3>Build it once (about three minutes)</h3>
-        <p class="note" style="margin:0 0 14px">Six actions in the Shortcuts app. Copy the address first — you will paste it in step 4.</p>
         <button id="copyBtn" class="copy" type="button">Copy the address</button>
-        <p class="note" id="copyStatus" aria-live="polite" style="text-align:center;margin-top:8px"><code id="shareUrl">…/stage-share</code></p>
+        <p class="note" id="copyStatus" aria-live="polite" style="text-align:center;margin-top:8px"><code id="shareUrl">…/forms/importing.html?share=1#u=</code></p>
       </div>
-
       <div class="card">
         <ol>
-          <li><span class="step-num">Open Shortcuts</span> and tap <strong>+</strong>. Tap the name at the top and call it <code>Save Recipe</code>.</li>
-          <li><span class="step-num">Share sheet on.</span> Tap the <strong>ⓘ</strong> at the bottom, turn on <strong>Show in Share Sheet</strong>, and close it. A block appears at the top reading <em>Receive <span class="field">Any</span> input from Share Sheet</em>. Tap <span class="field">Any</span>, untick everything except <strong>URLs</strong> and <strong>Safari web pages</strong>, tap Done.</li>
-          <li><span class="step-num">Fetch the post.</span> Add the action <strong>Get Contents of URL</strong>. Tap its URL field and choose the <span class="field">Shortcut Input</span> variable. Leave it as GET.</li>
-          <li><span class="step-num">Hand it to the kitchen.</span> Add <strong>Get Contents of URL</strong> a second time. Paste the copied address into its URL field. Tap <strong>Show More</strong>: Method <strong>POST</strong>, Request Body <strong>JSON</strong>. Add three fields, all of type <em>Text</em>:
-            <ul class="plain" style="margin-top:8px">
-              <li>key <code>url</code> → value <span class="field">Shortcut Input</span></li>
-              <li>key <code>html</code> → value <span class="field">Contents of URL</span> (the result of step 3)</li>
-              <li>key <code>via</code> → value <code>shortcut</code></li>
-            </ul>
-          </li>
-          <li><span class="step-num">Read the answer.</span> Add <strong>Get Dictionary Value</strong>: get <strong>Value</strong> for key <code>open</code> in <span class="field">Contents of URL</span> (the result of step 4 — pick the second one).</li>
-          <li><span class="step-num">Open it.</span> Add <strong>Open URLs</strong> and set it to <span class="field">Dictionary Value</span>. Tap <strong>Done</strong>.</li>
+          <li><span class="step-num">Shortcuts app</span> → <strong>+</strong> to make a new shortcut.</li>
+          <li><span class="step-num">Add the action</span> <strong>Open URLs</strong> (search for it). Tap its URL field, paste the copied address, and with the cursor still at the end tap <span class="field">Shortcut Input</span> in the strip of variables above the keyboard. The field should read <code>…?share=1#u=</code><span class="field">Shortcut Input</span>.</li>
+          <li><span class="step-num">Show it in the share sheet.</span> Open the shortcut's details (the <strong>ⓘ</strong> button, or the menu under its name) and turn on <strong>Show in Share Sheet</strong>.</li>
+          <li><span class="step-num">Name it</span> <code>Save Recipe</code> and tap <strong>Done</strong>.</li>
         </ol>
-        <p class="note">The first time it runs, iOS asks whether <em>Save Recipe</em> may contact <span class="pop-host">this site</span> and the post's site. Choose <strong>Always Allow</strong>.</p>
+        <p class="note">Then, on a post: Share → <strong>Save Recipe</strong>. The first time, iOS asks whether the shortcut may open <span class="pop-host">this site</span>; choose <strong>Always Allow</strong>.</p>
       </div>
     </section>
-
-    <div class="card">
-      <h3>Using it</h3>
-      <ol>
-        <li>On a post, tap <strong>Share</strong> (the paper plane on Instagram, the arrow elsewhere) and choose <strong>Share to…</strong> if the app offers it.</li>
-        <li>Scroll the list to <strong>Save Recipe</strong> and tap it.</li>
-        <li>Safari opens on the import page, then the editable recipe form. Sign in if asked; the recipe saves to whoever signs in.</li>
-      </ol>
-      <p class="note">Ordinary recipe sites open straight into the editor, which fetches the page itself. Instagram, Facebook, TikTok and YouTube posts are read from the caption or description, and from the transcript where there is one. A private post, or one that wants you signed in, comes back with a note saying so — open it in Safari and use the Grab Recipe bookmark, or share a screenshot of the recipe.</p>
-    </div>
 
     <div class="card" id="share-block">
       <h3>Give it to the family</h3>
@@ -113,13 +113,13 @@
       LibraryShell.initNav({ currentPage: 'shortcut-install' });
     }
 
-    // The address the Shortcut posts to is the CONFIGURED public base URL
+    // The address the Shortcut opens is the CONFIGURED public base URL
     // (system_config.public_base_url), not this page's origin — the page may be
     // open on localhost while the phone must reach the tunnel host.
     var SHARE_URL = '';
     function applyBase(base) {
       base = String(base || '').replace(/\/+$/, '');
-      SHARE_URL = base + '/stage-share';
+      SHARE_URL = base + '/forms/importing.html?share=1#u=';
       document.getElementById('shareUrl').textContent = SHARE_URL;
       try {
         var host = new URL(/:\/\//.test(base) ? base : 'https://' + base).hostname;
