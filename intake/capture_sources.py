@@ -76,6 +76,9 @@ class CaptureSource:
     structure_by_path: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
     def structure_for(self, url: str) -> str:
+        # fb.watch links carry only an id in the path, and every one is a video.
+        if self.kind == "facebook" and _host_of(url).endswith("fb.watch"):
+            return "reel"
         path = (urlparse(url).path or "").lower()
         for pat, s in self.structure_by_path:
             if re.search(pat, path):
@@ -97,7 +100,9 @@ _SOURCES: tuple[CaptureSource, ...] = (
         kind="facebook", label="Facebook",
         hosts=("facebook.com", "fb.com", "fb.watch"),
         structure="post",
-        structure_by_path=((r"/reel/|/reels/|/videos?/|/watch", "reel"),),
+        # /share/r/ and /share/v/ are the app's share-sheet links for a reel and
+        # a video (the /share/p/ shape is a post); fb.watch is handled by host.
+        structure_by_path=((r"/reel/|/reels/|/videos?/|/watch|/share/[rv]/", "reel"),),
         verified=True,
         model_note=_SOCIAL_COMMON + (
             " On Facebook the method is often posted as a COMMENT by the page itself; "

@@ -14334,6 +14334,9 @@ async def extract_from_markdown_endpoint(
             if capture_meta.get("kind") == "youtube":
                 _attach_youtube_video(recipe, effective_url, title=effective_title or "",
                                       channel=capture_meta.get("channel") or "")
+            else:
+                _attach_social_video(recipe, effective_url, capture_meta,
+                                     title=effective_title or "")
             _n_ing = len(recipe.get("recipeIngredient") or [])
             _n_step = len(recipe.get("recipeInstructions") or [])
             # The runtime record of how typed captures fare — one line per
@@ -15273,6 +15276,36 @@ def _attach_youtube_video(recipe: dict, source_url: str, *, title: str = "", cha
                        "embedUrl": f"https://www.youtube-nocookie.com/embed/{yid}",
                        "thumbnailUrl": f"https://i.ytimg.com/vi/{yid}/hqdefault.jpg",
                        "uploadDate": "", "description": f"by {channel}" if channel else ""}
+
+
+# Social structures whose source IS a video. A Facebook /reel/, an Instagram
+# reel, a TikTok video: the caption we extracted sits under a video, so the
+# recipe's video field should say so (curator, 2026-10-28: "it IS a video").
+_SOCIAL_VIDEO_STRUCTURES = ("reel", "video", "short")
+
+
+def _attach_social_video(recipe: dict, source_url: str, capture_meta: Optional[dict],
+                         *, title: str = "") -> None:
+    """The social counterpart of _attach_youtube_video. No player URL exists —
+    Facebook/Instagram serve no anonymous media URL and the form opens
+    contentUrl in a new tab when it cannot embed — so the VideoObject carries
+    the post URL as contentUrl and the title. Never replaces a video the page
+    or the curator already supplied."""
+    if not capture_meta or not (source_url or "").strip():
+        return
+    if capture_meta.get("kind") not in ("facebook", "instagram", "tiktok"):
+        return
+    if (capture_meta.get("structure") or "") not in _SOCIAL_VIDEO_STRUCTURES:
+        return
+    cur = recipe.get("video")
+    if isinstance(cur, dict) and (cur.get("embedUrl") or cur.get("contentUrl")):
+        return
+    if isinstance(cur, str) and cur.strip():
+        return
+    recipe["video"] = {"@type": "VideoObject", "name": title or recipe.get("name") or "",
+                       "contentUrl": source_url.strip(), "embedUrl": "", "thumbnailUrl": "",
+                       "uploadDate": "", "description": f"{capture_meta.get('label') or ''} "
+                                                        f"{capture_meta.get('structure')}".strip()}
 
 
 def _capture_meta_for(source_url: str, *, via: str, **extra) -> Optional[dict]:
