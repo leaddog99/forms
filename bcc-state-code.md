@@ -12193,3 +12193,18 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   iCloud link into Branding · next cook session = the voice fix's test · re-enable the three
   scheduled tasks on the clone · MARLEY-OLD decommission list · host paper still says MARLEY2 ·
   Crucial stick arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
+
+## Session 2026-10-28 (afternoon, cont.) — the three scheduled tasks re-enabled on the clone
+
+* **Re-enabled on MARLEY_SVR (the clone, now primary):** BCC Recipes DB Backup (next 10-29 03:00),
+  BCC Backup Check (next 10-29 07:00), BCC Dish Schedule (next 10-28 17:00). `Enable-ScheduledTask`
+  worked from an unelevated shell (all four BCC tasks run as john / Interactive, per the 10-10
+  autologon decision; BCC Lock After Autologon was already Ready). Last runs were all 10-22, result 0
+  — the freeze-day runs. MARLEY-OLD does not answer on the LAN (ping + DNS), so no second 03:00 push
+  can race this box's backup onto ADAM/BAILEY. The 10-23 "re-enable the three tasks" item is CLOSED.
+  Watch: tomorrow's 03:00 backup + 07:00 check are the first on this box since the image — verify
+  the ADAM/BAILEY sets by date on 10-29.
+* **Open (carried):** build the Shortcut on the Mac + test the share door from the phone + paste the
+  iCloud link into Branding · next cook session = the voice fix's test · MARLEY-OLD decommission
+  list (still owed before it ever comes back on the LAN) · host paper still says MARLEY2 · Crucial
+  stick arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
