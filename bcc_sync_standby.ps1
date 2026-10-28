@@ -84,10 +84,12 @@ Write-Host "== ${Standby}: code + assets (incremental) =="
   #   (13 rclone errors) and its cookies are a signed-in session that must
   #   stay on this machine; captures are per-machine pipeline inputs.
 if ($LASTEXITCODE -ne 0) { $stageFailed += "forms code sync (rclone exit $LASTEXITCODE)" }
-# The three editable sibling packages the venv points at (-e lines in
-# requirements-frozen.txt). recipe-core is not a git repo anywhere, so this
-# copy is its only route to a standby; imagekit and llmkit also have GitHub.
-foreach ($pkg in "recipe-core", "imagekit", "llmkit") {
+# recipe-core, the one editable sibling with no git repo anywhere: this copy is
+# its only route to a standby. The kits (imagekit, llmkit, ...) are NOT synced:
+# BAILEY owns them and commits there (imagekit README); a one-way mirror from
+# MARLEY overwrote BAILEY's newer kit commits (found 2026-10-28: llmkit lost
+# openai_embed, imagekit its README section). Each machine pulls kits from GitHub.
+foreach ($pkg in "recipe-core") {
   & $rc sync "C:/Users/john/PycharmProjects/$pkg" "${remote}:/C:/Users/john/PycharmProjects/$pkg" --no-update-dir-modtime `
     --exclude "__pycache__/**" --exclude "*.egg-info/**" --exclude ".git/**" --stats-one-line
   if ($LASTEXITCODE -ne 0) { $stageFailed += "$pkg sync (rclone exit $LASTEXITCODE)" }
