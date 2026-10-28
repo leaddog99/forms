@@ -12151,3 +12151,33 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   optional and ONE action (Open URLs: `…importing.html?share=1#u=` + Shortcut Input; raw URL in
   the fragment so its & survive). shortcut_install.html rewritten around that. Still needs the BCC
   restart; still untested from the phone.
+
+## Session 2026-10-26 (late) → 2026-10-28 — the phone door reaches the phone; Mac build script for the Shortcut
+
+* **"Paste a link" in the user menu** (f051221) and a `library-shell.js` cache bump to `v=20261026a`
+  across all 31 pages (5769a50) — the curator signed in on the phone and saw no entry because the
+  phone held the 20260831b shell. Lesson re-learned: a NAV_ITEMS change ships nothing until the tag
+  moves.
+* **The form's own URL box is the phone door** (1d22938). The curator never found the paste page
+  from the phone, so `recipe_form_styled.html` `extractFromUrl()` now asks `/capture-source` first
+  and hands a social URL (instagram/facebook/reddit/medium/substack — not YouTube) over to
+  `importing.html?share=1&url=`; the paste button on the paste page is primary. One door, server
+  decides. The staged title is the caption's first line (was Instagram's og:title wrapper).
+* **Mac changes the Shortcut story.** iOS imports only signed `.shortcut` files, but the macOS
+  Shortcuts editor syncs to the phone through iCloud, and `shortcuts sign --mode anyone` on the Mac
+  can produce a hostable file. An iCloud link (Apple-signed) installs for anyone with one tap and
+  carries only the public address, so "build once on the Mac, the planet uses it" holds — each
+  person still signs in and lands in their own collection. **2026-10-28: the build script was
+  mailed to the curator** (Gmail, "Save Recipe shortcut: build it on the Mac (one action)"): iCloud
+  Sync check → name → Show in Share Sheet FIRST (ⓘ panel) → Open URLs → paste
+  `https://recipes.tbotb.com/forms/importing.html?share=1#u=` → right-click → Insert Variable →
+  Shortcut Input → test from Instagram (Share to… → Save Recipe → Always Allow) → right-click →
+  Share → Copy iCloud Link → Settings (`/forms/system.html`, Branding, "iOS share-sheet Shortcut")
+  → the install page grows "Get the shortcut". Optional tip in the script: "If there's no input →
+  Get Clipboard" makes the same shortcut double as the paste door when run by hand.
+* **Still untested from the phone:** the share door end to end (`/stage-share` verified live
+  in-process only). Next: curator builds on the Mac, tests, pastes the iCloud link.
+* One more SEMrush export added (`tornadoughalli.com`, 10-27).
+* **Open (carried):** next cook session = the voice fix's test · re-enable the three scheduled tasks
+  on the clone · MARLEY-OLD decommission list · host paper still says MARLEY2 · Crucial stick
+  arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
