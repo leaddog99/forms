@@ -12181,3 +12181,15 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open (carried):** next cook session = the voice fix's test · re-enable the three scheduled tasks
   on the clone · MARLEY-OLD decommission list · host paper still says MARLEY2 · Crucial stick
   arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
+
+## Session 2026-10-28 (afternoon) — the BCC restart confirmed done
+
+* **BCC on MARLEY_SVR restarted 2026-10-28 15:31:03** (nssm 51480 → python 36824), 49 seconds after
+  07d3f4e (15:30:14), so the worker carries the dish-rematch flags (11aaf13), the share door
+  (0298371) and the form URL box hand-off (1d22938). Verified by PID start time, not by the service
+  clock; `POST /stage-share {}` on localhost answers 400 (the "no url" reject), so the door is live.
+  Working tree clean. The 10-26 "restart BCC on MARLEY" open item is CLOSED.
+* **Open (carried):** build the Shortcut on the Mac + test the share door from the phone + paste the
+  iCloud link into Branding · next cook session = the voice fix's test · re-enable the three
+  scheduled tasks on the clone · MARLEY-OLD decommission list · host paper still says MARLEY2 ·
+  Crucial stick arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
