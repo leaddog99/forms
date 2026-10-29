@@ -195,6 +195,15 @@ password manager (keys — if maintained, see G3).
      "Testing" expires its refresh tokens after 7 days and the nightly would
      break weekly. `drive.file` is a non-sensitive scope: no verification needed,
      the one-time "unverified app" screen is passed with Advanced → continue.
+     **Publish stays greyed ("complete your configuration on the Branding
+     page") until Branding carries an Application home page, an Application
+     privacy policy link AND an Authorized domain, saved** (learned 2026-10-29;
+     the wizard does not ask for them). Ours: https://recipes.tbotb.com/,
+     https://recipes.tbotb.com/forms/privacy.html, tbotb.com.
+     DONE 2026-10-29: project "BCC Backups" (bcc-backups-513120), Drive API
+     on, consent screen External, Desktop client "rclone BCC nightly",
+     app In production. Step 6 (the script, with the client ID + secret)
+     is the remaining half.
   6. On MARLEY, in your own PowerShell window: `.\bcc_rclone_client_id.ps1`
      (prompts for ID + secret, opens the browser, seeds ~7 GB, renames the remote).
   7. Trash the OLDER `BCC-Backups` folder in drive.google.com (the new client

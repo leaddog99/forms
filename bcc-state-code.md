@@ -12208,3 +12208,40 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   iCloud link into Branding · next cook session = the voice fix's test · MARLEY-OLD decommission
   list (still owed before it ever comes back on the LAN) · host paper still says MARLEY2 · Crucial
   stick arrival · mbg Amazon Shortcut belongs in the mbg repo on BAILEY.
+
+## Session 2026-10-29 — first post-image backup clean (Drive 403 the only failure); the Drive client ID's console half DONE
+
+* **03:00 backup on the clone, first since the restore: exit 0 end to end** — dump 152.8 MB, ADAM
+  set `*_2026-10-29_030127`, integrity ok, RESTORE OK (13,815 embedding BLOBs), prune's first
+  scheduled run kept 32 sets / deleted 14 (13.9 GB), both mirrors clean, BAILEY sync 200, 07:00
+  check result 0. **Only failure: forms-mirror cloud step, 403 rateLimitExceeded on the shared
+  rclone client** (G4, as every night). Note for the log reader: the `prune: … 0 failed` and the
+  robocopy `FAILED` column match an error grep; they are zero counts. The curator pulled 5866cc7
+  (backup_check judges the BAILEY section only, not a "0 failed" count) — same lesson, other side.
+* **G4 console half DONE (Chrome, the curator's own Google account).** Project **BCC Backups**
+  (`bcc-backups-513120`), Google Drive API enabled, consent screen (app "BCC Backups rclone",
+  External, support + contact = the curator's gmail, User Data Policy accepted on the curator's
+  OK), Desktop OAuth client **"rclone BCC nightly"**, app pushed **In production**. The wizard's
+  Publish button stayed greyed until Branding carried a home page, a privacy-policy link and an
+  authorized domain — none of which the wizard asks for; DR doc G4 step 5 now says so.
+* **forms/privacy.html — the club's first public privacy page (816ea8e)**, written to be true to
+  the code: account = email/name/status via the membership system (no password here); recipes,
+  notes, cookbooks, menus, lists; Chef conversation ledger; buy-link taps (affiliate disclosure);
+  voice = STT on our own server, reply text to a speech provider, no recordings kept; AI help =
+  third-party providers get recipe text + question only, no training; no ads/trackers; Google =
+  our own backups only; nightly backups offsite, time-limited; contact = the address the site
+  already publishes. Vendors described by role, never named (house rule). Served live without a
+  restart (StaticFiles reads disk) — note Cloudflare's email obfuscation rewrites the mailto on
+  the public copy, so a `mailto:` grep through the tunnel reads 0 while localhost reads 1.
+* **Remaining half, the curator's own PowerShell window** (the secret and the Google sign-in are
+  theirs to handle, not the session's): `.\bcc_rclone_client_id.ps1` — paste the client ID and
+  secret from the still-open "OAuth client created" dialog (Chrome tab; the secret cannot be
+  viewed again once that dialog is closed — use Download JSON first), sign in when the browser
+  opens, let it seed ~7 GB, say y to the cut-over, then trash the OLDER BCC-Backups folder in
+  Drive and `rclone config delete gdrive-shared`. Proof = tonight's 03:00: no shared-client
+  NOTICE, `cloud mirror exit code: 0`.
+* Also today: Facebook/Instagram/TikTok reel captures now attach their video (f176c18; BCC
+  restarted 16:33 by the curator); recipe 910 backfilled.
+* **Open (carried):** the rclone half above · Shortcut on the Mac + share door from the phone ·
+  next cook = voice fix test · MARLEY-OLD decommission list · host paper says MARLEY2 · Crucial
+  stick · mbg Amazon Shortcut in its own repo.
