@@ -12300,3 +12300,13 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   Downloads · Shortcut on the Mac + share door from the phone · next cook = voice fix
   test · MARLEY-OLD decommission list · host paper says MARLEY2 · Crucial stick · mbg
   Amazon Shortcut in its own repo.
+* **ADDENDUM 17:5x — cut-over DONE.** Run 2 seeded the new folder completely (4.84 GiB /
+  10,138 objects — smaller than the old 7.73 GiB because og-thumbs are excluded by the
+  nightly's own filter) and then died on the INFORMATIONAL old-side size check: under
+  `$ErrorActionPreference = "Stop"` a redirected rclone stderr line (the shared-client
+  NOTICE) is a terminating NativeCommandError. Fixed (stderr dropped there; `Run()` sets
+  Continue around the exe call). Run 3: incremental pass, rename, verify — `gdrive` now
+  carries client_id 759283134932-…apps.googleusercontent.com, `rclone lsd gdrive:BCC-Backups`
+  lists the three folders with NO NOTICE, old section parked as `gdrive-shared` (kept until
+  tonight's proof). Still the curator's: trash the OLDER BCC-Backups folder in
+  drive.google.com; then `rclone config delete gdrive-shared`; client JSON → password manager.

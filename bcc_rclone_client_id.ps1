@@ -65,7 +65,9 @@ function Run([string[]]$cmdArgs) {
   # RETURN VALUE (PowerShell returns every unconsumed output), so the caller's
   # `$r -ne 0` saw an array and a SUCCESSFUL `config create` read as a failure
   # (2026-10-29, first run on the real client ID). Only the exit code returns.
+  $ErrorActionPreference = "Continue"   # rclone's stderr must not terminate the script
   & $rc @cmdArgs 2>&1 | ForEach-Object { "$_" -replace '"(access_token|refresh_token)":"[^"]+"', '"$1":"<hidden>"' -replace 'client_secret = .*', 'client_secret = <hidden>' } | Out-Host
+  $ErrorActionPreference = "Stop"
   return $LASTEXITCODE
 }
 
@@ -119,7 +121,12 @@ foreach ($s in $seeds) {
 Write-Host "`n== new side =="
 & $rc size "${new}:BCC-Backups"
 Write-Host "== old side (may hit the shared-ID quota; informational) =="
-& $rc size "${old}:BCC-Backups" --retries 1 2>&1 | Select-Object -First 3
+# Informational only. Under $ErrorActionPreference=Stop a redirected stderr line
+# (the shared-client NOTICE) is a terminating NativeCommandError — it killed run 2
+# right after a complete seed (2026-10-29). Stderr is dropped here on purpose.
+$ErrorActionPreference = "Continue"
+& $rc size "${old}:BCC-Backups" --retries 1 2>$null | Select-Object -First 3
+$ErrorActionPreference = "Stop"
 if ($SeedOnly) { Write-Host "`n-SeedOnly: stopping before the cut-over. Re-run without it to finish."; exit 0 }
 
 # ---- 3. cut over: rename the remotes --------------------------------------
