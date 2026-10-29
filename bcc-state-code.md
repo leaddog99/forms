@@ -12245,3 +12245,58 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **Open (carried):** the rclone half above · Shortcut on the Mac + share door from the phone ·
   next cook = voice fix test · MARLEY-OLD decommission list · host paper says MARLEY2 · Crucial
   stick · mbg Amazon Shortcut in its own repo.
+
+## Session 2026-10-29 (afternoon → evening) — the Drive client ID's rclone half; DR doc §7 (the scheme as it stands); Privacy in the user menu
+
+Continues the 10-29 entry above (console half + privacy page). Commits this stretch:
+fd2d251 (DR §7 + script header), b66034e (verify dead block), bb9dc32 (Privacy nav +
+cache bump). The seed to the new Drive folder was still running at the time of writing.
+
+* **The script's first run "failed" on a bug of its own.** `Run()` returned rclone's
+  stdout AND the exit code (PowerShell returns every unconsumed output), so the caller's
+  `$r -ne 0` saw an array and a SUCCESSFUL `config create` read as a failure: the
+  remote `gdrive-own` existed with a valid token (the curator's Allow had worked) and
+  `rclone lsd gdrive-own:` listed Drive. Fixed: rclone output goes `| Out-Host`, only
+  the exit code returns. **Worse: that failure message echoed the remote's OAuth
+  token into the transcript** I was reading. The transcript file was deleted and the
+  script now masks `client_secret=…`, `client_secret = …`, access/refresh tokens in
+  anything it prints. The token itself is valid and lives only in rclone.conf.
+* **Two new switches on `bcc_rclone_client_id.ps1`:** `-ClientJson <path>` reads the
+  client ID + secret from the console's "Download JSON" file (the curator never pastes
+  anything; the secret never passes through a chat), and `-Yes` answers the cut-over
+  prompt. Usage header rewritten. The JSON was downloaded on the curator's OK to
+  `Downloads\client_secret_759283134932-….json` — **move it to the password manager
+  and delete it from Downloads** (G3 policy; the JSON is the only way to recreate the
+  remote without minting a new client).
+* **Run 2 is in flight:** `.\bcc_rclone_client_id.ps1 -Yes` in the background — reuse
+  `gdrive-own`, seed `gdrive-own:BCC-Backups` from ADAM (~7 GB, the three nightly
+  filters), rename `gdrive-own` → `gdrive` with the old section parked as
+  `gdrive-shared`. Proof = the next 03:00: no shared-client NOTICE, `cloud mirror
+  exit code: 0`. Then: trash the OLDER `BCC-Backups` folder in drive.google.com
+  (invisible to the new client, still counts against storage) and
+  `rclone config delete gdrive-shared`.
+* **DR doc §7 — "the scheme as it stands" (read-first section; §1–6 are history).**
+  Five places hold state (MARLEY_SVR primary · BAILEY standby + f2n/mbg/kits home ·
+  ADAM · Drive · GitHub); a what-protects-what table with cadence and proof per
+  asset; the 07:00 check's five judgments; recovery by what died; standing rules;
+  the open list. Facts verified for it: BAILEY's f2n (last commit 10-26) and mbg
+  (10-23) are on GitHub and have NO database tier or nightly (mbg has no .db);
+  llmkit/imagekit are GitHub-carried and no longer mirrored by the standby sync
+  (07d3f4e); recipe-core still has no git anywhere (ADAM mirror + standby sync only);
+  the 10-22 Veeam image is a one-off. §5's rclone line now says the remote runs on our
+  own client and how to recreate it with or without the JSON.
+* **Code hygiene pass over today's changes:** one dead `try: pass` beside the ASIN
+  family set in `curate/verify.py` removed (b66034e); the remaining `gdrive-shared` /
+  `bcc_sync_bailey` mentions are history comments or the cleanup step still to run.
+* **Privacy in the user menu (bb9dc32):** NAV_ITEMS entry after "iPhone Shortcut";
+  `library-shell.js` cache tag → `v=20261029a` on all 32 pages (the 10-26 lesson: a
+  NAV change ships nothing until the tag moves). Live shell verified to carry it.
+* **Lessons:** (1) a PowerShell function that calls a native exe must `| Out-Host`
+  (or capture) the exe's output, or its return value is an array; (2) never let a
+  script's failure path print a config section — it carries tokens; (3) the
+  console's "Download JSON" is the paste-free way to hand a secret to a local tool.
+* **Open:** the seed/cut-over result · tonight's 03:00 as the G4 proof · trash the old
+  Drive folder + delete `gdrive-shared` · client JSON → password manager, out of
+  Downloads · Shortcut on the Mac + share door from the phone · next cook = voice fix
+  test · MARLEY-OLD decommission list · host paper says MARLEY2 · Crucial stick · mbg
+  Amazon Shortcut in its own repo.
