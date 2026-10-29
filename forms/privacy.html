@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Privacy</title>
+  <!-- Public privacy page (2026-10-29). Written for two readers: a member who
+       wants to know what the club keeps, and Google's OAuth consent screen,
+       which requires a privacy-policy link on an authorized domain before an
+       app may be published (the nightly backup's own Drive client, G4 in
+       docs/disaster-recovery.md). Plain statements of what the code does;
+       third parties are described by role, never named (house rule). -->
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 18px 64px;
+      padding-bottom: max(64px, env(safe-area-inset-bottom)); line-height: 1.55; }
+    h1 { font-size: 1.6rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+    h2 { font-size: 1.15rem; margin: 28px 0 8px; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
+    p { margin: 0 0 12px; }
+    ul { margin: 0 0 12px; padding-left: 22px; }
+    li { margin-bottom: 6px; }
+  </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260901a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <script src="/forms/library-shell.js?v=20261026a"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <h1>Privacy</h1>
+    <p class="sub">What Best Cooks Club keeps, what it does with it, and what it never does. Last updated 29 October 2026.</p>
+
+    <h2>What we store</h2>
+    <ul>
+      <li><strong>Your account.</strong> The email address and name you signed up with, and your membership status. Sign-in is handled by our membership system; we never see or store your password.</li>
+      <li><strong>Your recipes.</strong> The recipes you save, the notes you add to them, the cookbooks and menus you build, and the shopping lists made from them. They are yours; we keep them so you can come back to them.</li>
+      <li><strong>Your conversations with the Chef.</strong> Questions you ask about a recipe, typed or spoken, and the answers, so the Chef can keep the thread of a cook and so we can fix it when it answers badly.</li>
+      <li><strong>Buy links you tap.</strong> When you tap a product link we record that a link was tapped, which product, and when. Some product links are affiliate links, which means the retailer may pay us a small commission on a purchase at no cost to you.</li>
+    </ul>
+
+    <h2>Cooking by voice</h2>
+    <p>When you cook hands-free, your microphone is used only while the cook view is open and you have turned the voice on. Speech is converted to text on our own server. The text of the Chef's spoken replies is sent to a speech provider to be turned into audio. Recordings of your voice are not kept.</p>
+
+    <h2>Help from AI</h2>
+    <p>Reading a recipe off a web page, tidying it up, planning a cook, and answering your questions are done with the help of third-party AI providers. What they receive is the recipe text and your question, nothing about your account. We use them under terms that do not allow your content to be used to train their models.</p>
+
+    <h2>What we never do</h2>
+    <ul>
+      <li>We do not sell, rent, or share your personal information with anyone for their own marketing.</li>
+      <li>We do not run advertising or tracking scripts on these pages.</li>
+      <li>We do not read your email, contacts, calendar, or files on any other service.</li>
+    </ul>
+
+    <h2>Google services</h2>
+    <p>Best Cooks Club does not ask members for access to their Google accounts. Our only use of Google's APIs is our own backup process, which copies our own database backups into a Google Drive folder that belongs to us. No member data is sent to Google through that process except as part of those encrypted-in-transit backup files, and nothing is read from any member's Google account.</p>
+
+    <h2>Backups and security</h2>
+    <p>Our database is backed up nightly to storage we control, and a copy of the backup is kept offsite. Backups are kept for a limited time and then deleted. Connections to the site use HTTPS.</p>
+
+    <h2>Your choices</h2>
+    <p>You can edit or delete any recipe, note, cookbook, or menu yourself at any time. To close your account and have your data removed, or to ask what we hold about you, write to us at <a href="mailto:johnlandryiii@gmail.com">johnlandryiii@gmail.com</a> and we will do it.</p>
+
+    <h2>Changes</h2>
+    <p>If this page changes in a way that matters, the date at the top will change and the new text will be here.</p>
+  </div>
+</body>
+</html>
