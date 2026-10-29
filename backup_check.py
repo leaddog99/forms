@@ -185,8 +185,15 @@ def check_log(r: Report) -> None:
         else:
             r.fail("backup step exited 1 and it is NOT a small row-count race: "
                    + (", ".join(f"{t} restored {a} vs live {b}" for t, a, b in mism) or "see backup.log"))
-    sync = body.split("== code + assets", 1)[-1].split("bailey sync exit code", 1)[0]
-    bad = re.findall(r"(?im)^.*(?:permission denied|rename failed|FAILED|not recognized as).*$", sync)
+    # The sync's heading names the standby ("== BAILEY: code + assets (incremental) ==",
+    # since the 2026-10-17 rename); matching the old "== code + assets" missed it and
+    # the whole night's log was searched, so prune's "deleted 27 files, 0 failed"
+    # alarmed on 2026-10-29. No heading means no sync section to judge.
+    _, found, rest = body.partition("code + assets")
+    sync = rest.split("bailey sync exit code", 1)[0] if found else ""
+    bad = [ln for ln in re.findall(
+        r"(?im)^.*(?:permission denied|rename failed|FAILED|not recognized as).*$", sync)
+        if not re.search(r"(?i)\b0 failed\b", ln)]          # a zero count is not a failure
     if bad:
         r.fail(f"BAILEY sync log has {len(bad)} error line(s), e.g. {bad[0].strip()[:110]}")
     elif "== sync done ==" in sync:
