@@ -152,7 +152,7 @@ password manager (keys — if maintained, see G3).
 |---|---|
 | NSSM service **BCC** | nssm binary at `C:\tools\nssm\...\win64\nssm.exe`; `nssm install BCC` pointing at the venv python + uvicorn on :8009 (inspect current config anytime: `nssm dump BCC`); StartMode=Auto. `bcc_restart.bat` / `bcc_start.bat` in the repo encode the runtime invocation. |
 | Task **"BCC Recipes DB Backup"** | `schtasks /Create /TN "BCC Recipes DB Backup" /TR "C:\...\forms\bcc_backup_scheduled.bat" /SC DAILY /ST 03:00` |
-| rclone remote **gdrive** | `rclone config create gdrive drive scope drive.file` + browser OAuth (2 min). Binary: winget `Rclone.Rclone`, copy at `C:\Users\john\bin\rclone.exe`. |
+| rclone remote **gdrive** | Since 2026-10-29 the remote runs on OUR OWN OAuth client (Google Cloud project "BCC Backups", Desktop client "rclone BCC nightly"); its client JSON lives in the password manager. Recreate: `rclone config create gdrive drive scope drive.file client_id=<id> client_secret=<secret>` + browser OAuth (2 min). Without the JSON, make a new Desktop client in that project (console → Google Auth Platform → Clients). Binary: winget `Rclone.Rclone`, copy at `C:\Users\john\bin\rclone.exe`. **`drive.file` means a new client cannot see the old client's folder** — re-seed from ADAM (`bcc_rclone_client_id.ps1` does exactly that). |
 | Cloudflare tunnel | `cloudflared` service mapping recipes.tbotb.com → localhost:8009 ([[project_cloudflare_tunnel]]); config lives with cloudflared, NOT in this repo. |
 | ADAM share | `\\Adam\tbotb` reachable (Z: mapping is per-session; the bat uses UNC on purpose). |
 | Windows watchdog bits | `kernel_power_check.bat`, `bcc_schedule.bat` — see docs/host-stability-and-watchdog.md. |
@@ -242,3 +242,60 @@ password manager (keys — if maintained, see G3).
   (task `BCC-Drill`, SYSTEM, port 8009) — the staging half of the migration off the RMA-pending
   host. Cutover remains a separate deliberate step: write-freeze, final delta
   restore, NSSM + scheduled tasks + rclone + tunnel move, DNS/tunnel flip.
+
+---
+
+## 7. The scheme as it stands — 2026-10-29 (read this first; §1–§6 are the history)
+
+**Five places hold state.** MARLEY_SVR (the restored clone, primary: recipes app,
+the three BCC tasks, the tunnel), BAILEY (warm standby of recipes AND the home of
+f2n, mbg and the kits), ADAM (the NAS: every nightly set + both mirrors), Google
+Drive (offsite), GitHub (code). MARLEY-OLD is off the LAN and stays off until its
+decommission list is done (tunnel token, tasks, ssh key, rclone.conf).
+
+**What protects what:**
+
+| asset | where it lives | protection | cadence | proof |
+|---|---|---|---|---|
+| recipes.db, training.db | MARLEY_SVR | `backup_db.py --verify` → ADAM dated sets; dump replayed and row-counted | 03:00 nightly | `RESTORE OK` in backup.log; 07:00 check A/B/C |
+| media.db, .env | MARLEY_SVR | rolling single copies on ADAM (`media_latest.db`, `env.backup`); .env offsite = password manager (G3) | nightly / human | check A |
+| generated/ (hero uploads), input/, docs, bats, .git | MARLEY_SVR | robocopy `/MIR` → ADAM `forms-mirror`; rclone → Drive `forms-mirror/` | nightly | mirror exit codes; check E |
+| recipes dumps offsite | — | rclone → Drive `recipes-db/` (14 days) + `db-latest/` (media + newest training) | nightly | check E |
+| ADAM retention | ADAM | `prune_backups.py` (14 days all / weekly to 90 / monthly after; training 7 days then monthly) + `#recycle` emptied | nightly, after the backup | `prune exit code: 0` |
+| warm standby | BAILEY | `bcc_sync_standby.ps1 -Standby BAILEY` (code + assets each night; `-WithDbs` lays in the newest ADAM set, stops/starts its server) | nightly in the bat | check D: 200 + exact recipe count |
+| code | GitHub `leaddog99/forms` | push on every substantive commit | continuous | — |
+| the kits (llmkit, imagekit) | BAILEY owns, commits, pushes; MARLEY pulls | GitHub (`leaddog99/llmkit`, `leaddog99/imagekit`). NOT mirrored by the standby sync since 2026-10-28 (a one-way mirror had overwritten BAILEY's newer commits) | per commit | — |
+| recipe-core | MARLEY_SVR, **no git repo anywhere** | ADAM `recipe-core-mirror` (nightly) + synced to BAILEY by the standby script | nightly | mirror exit code |
+| f2n, mbg | BAILEY only | GitHub (`leaddog99/f2n`, `leaddog99/mbg`); **no database tier, no nightly, no offsite beyond GitHub** — they have no production data yet (mbg has no .db) | per commit | — |
+| whole machine | MARLEY_SVR | one-off Veeam Agent image (2026-10-22, 175 GB on the SanDisk SSD) — the image the clone was restored from; not refreshed | one-off | the restore itself (2026-10-23) |
+
+**The morning check** (`backup_check.py`, task "BCC Backup Check", 07:00) judges
+OUTCOMES, not exit codes: ADAM files fresh and openable (A), last night's log block
+complete with no failed stage (B), the task's result 0 (C), BAILEY serving the
+snapshot's exact recipe count (D), last night's dump on Drive (E). Any failure →
+one email to the curator. Since 2026-10-29 it judges the BAILEY section on its own
+markers only, never on a "0 failed" count elsewhere in the block.
+
+**Recovery, by what died:** bad code → git revert. Bad DB → playbook A (ADAM `.db`)
+or B (dump replay). MARLEY_SVR dies → BAILEY already serves the last snapshot; cut
+the tunnel route over (docs/new-host-cutover-playbook.md), then rebuild a primary
+from ADAM per playbook C. MARLEY_SVR AND ADAM die → playbook D from Drive + GitHub
++ the password manager; loses the page cache and up to one day. BAILEY dies → f2n
+and mbg come back from GitHub; recipes' standby is rebuilt by the drill (G5, ~20
+min). Everything dies → GitHub + Drive + the password manager still hold code,
+14 days of verified dumps, the mirror, media/training, the keys, and the Drive
+client JSON.
+
+**Standing rules.** The dump is verified by replay every night or it is a
+hypothesis. `.env` and the Drive client JSON go offsite only through the password
+manager, never the cloud tiers. The kits are pulled from GitHub, never mirrored
+between machines. The standby sync is one-way and overwrites the standby. Drive
+runs on our own OAuth client (G4): if `rclone lsd gdrive:` ever prints the
+"shared client_id" NOTICE again, the remote has regressed.
+
+**Open at this writing.** G4's proof is the first 03:00 after the cut-over (no
+NOTICE, `cloud mirror exit code: 0`); then trash the older `BCC-Backups` folder
+in Drive and `rclone config delete gdrive-shared`. The Drive client JSON is still
+in Downloads — move it to the password manager and delete it there. MARLEY-OLD
+decommission list. Host paper still says MARLEY2 in places.
+
