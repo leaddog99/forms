@@ -626,11 +626,7 @@ def _verify_score_row(conn, r: dict, label: str, asin: str, report: dict,
     # affiliate_url is left blank because our codes are applied at click time.
     try:
         from intake.products import buy_links as BL
-        fam = {asin}
-        try:
-            pass  # offers match the EXACT asin; the family is for identity, not links
-        except Exception:
-            pass
+        fam = {asin}   # offers match the EXACT asin; the family is for identity, not links
         offers = BL.offers_from_reviews(conn, asins=fam,
                                         name_like=r.get("product_title", ""))
         # The model's own buy_link counts too, once cleaned — merged BY RETAILER so it
