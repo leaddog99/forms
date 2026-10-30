@@ -238,7 +238,8 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
 # wrapper with a 302 whose Location IS the publisher URL, so one HEAD-sized request
 # (no page body) recovers it. The legacy google.com/url?q=<url> form carries the
 # URL in the clear.
-# /goto and /url are redirect wrappers (resolved by a HEAD-less GET below).
+# /goto and /url are redirect wrappers (resolved by a HEAD-less GET below; since
+# 2026-10-29 /goto first serves a verification page - see _resolve_goto).
 # translate.google.com/translate?u=<page> is Google's TRANSLATION PROXY: a Hindi
 # SERP for Butter Chicken (2026-10-17) returned two English blogs behind it, and
 # they reached Moz as translate.google.com URLs, which Moz has never crawled.
@@ -251,18 +252,96 @@ _RESOLVE_UAS = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
     "Version/17.4 Safari/605.1.15",
 )
+# Since 2026-10-29 Google answers a /goto wrapper with a 200 "Verifying your
+# request" page instead of the 302: a meta refresh of 25-37 s to a FRESH token
+# (following it early is a 400), after which the same cookie jar gets the 302.
+# Later links in that jar redirect at once or draw a 3-7 s interstitial that
+# clears the same way. Measured 2026-10-30 (Pollo alla Romana #2867 and the four
+# refreshes before it had resolved 0 of 83 wrappers; every probe resolved once
+# the wait was honored). So: ONE shared session (cookies are the verification),
+# links resolved one at a time (parallel bare requests each drew their own
+# interstitial), the refresh delay honored, capped, and cancel-aware.
+_GOTO_REFRESH = re.compile(r'<meta\s+content="(\d+)\s*;\s*url=([^"]+)"\s+http-equiv="refresh"', re.I)
+_GOTO_MAX_WAIT = 60          # seconds; a longer refresh is a block, not a wait
+_GOTO_MAX_HOPS = 3           # interstitial -> refresh -> interstitial -> refresh -> give up
+_goto_session = None
+_goto_lock = None
+
+
+def _goto_sess():
+    global _goto_session, _goto_lock
+    if _goto_session is None:
+        import threading
+        s = requests.Session()
+        s.headers.update({"User-Agent": _RESOLVE_UAS[0], "Accept-Language": "en"})
+        _goto_session, _goto_lock = s, threading.Lock()
+    return _goto_session, _goto_lock
+
+
+def _goto_wait(seconds: float, should_cancel, label: str, page) -> None:
+    """Sleep out an interstitial's refresh delay in 1 s slices so a cancel lands
+    within a second instead of after the whole wait."""
+    end = time.monotonic() + seconds
+    while True:
+        _cancel_check(should_cancel, label, page)
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        time.sleep(min(1.0, left))
 
 
 def is_google_wrapper(link: str) -> bool:
     return bool(link) and bool(_GOOGLE_WRAPPER.match(link))
 
 
-def unwrap_google_redirect(link: str, timeout: float = 10.0) -> str | None:
+def _resolve_goto(link: str, timeout: float, should_cancel, label: str, page
+                  ) -> tuple[str | None, float, int]:
+    """(publisher URL or None, seconds waited, interstitials seen) for one /goto
+    link through the shared session. A 3xx whose Location is an http(s) URL off
+    google.com resolves it; a 200 carrying the verification page's meta refresh
+    is waited out (capped) and its refresh URL requested next; anything else is
+    retried once with the second UA (Google's edge answers the odd request 403
+    for one UA and 302 for the next), then given up."""
+    from urllib.parse import urljoin, urlsplit
+    sess, lock = _goto_sess()
+    waited, seen_inter = 0.0, 0
+    url, hops, ua_i = link, 0, 0
+    with lock:
+        while hops < _GOTO_MAX_HOPS:
+            hops += 1
+            try:
+                r = sess.get(url, allow_redirects=False, timeout=timeout,
+                             headers={"User-Agent": _RESOLVE_UAS[ua_i]})
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                return None, waited, seen_inter
+            loc = (r.headers.get("Location") or "").strip()
+            if 300 <= r.status_code < 400:
+                if (loc.startswith(("http://", "https://")) and not is_google_wrapper(loc)
+                        and "google." not in urlsplit(loc).netloc.lower()):
+                    return loc, waited, seen_inter
+                return None, waited, seen_inter      # a redirect to somewhere useless
+            m = _GOTO_REFRESH.search(r.text) if r.status_code == 200 else None
+            if m:
+                delay = int(m.group(1))
+                if delay > _GOTO_MAX_WAIT:
+                    return None, waited, seen_inter
+                seen_inter += 1
+                _goto_wait(delay + 1, should_cancel, label, page)
+                waited += delay + 1
+                url = urljoin(url, m.group(2))
+                continue
+            if ua_i == 0:                             # one more try, other UA
+                ua_i = 1
+                continue
+            return None, waited, seen_inter
+    return None, waited, seen_inter
+
+
+def unwrap_google_redirect(link: str, timeout: float = 10.0, *, should_cancel=None,
+                           label: str = "goto", page=0) -> str | None:
     """The publisher URL behind a google.com/goto (or /url) wrapper, or None when
-    Google would not say (non-3xx, or a Location that is not an http(s) URL off
-    google.com). Reads the redirect's Location WITHOUT following it. Two user
-    agents, because Google's edge answers the odd request with a 403 for a given
-    UA and 302 for the next (seen in the fetch ladder's escalations on these links)."""
+    Google would not say. /url?q= and translate.google.com/translate?u= carry the
+    page in the clear; /goto goes through _resolve_goto (the verification wait)."""
     from urllib.parse import parse_qs, unquote, urlsplit
     if not is_google_wrapper(link):
         return link
@@ -275,52 +354,51 @@ def unwrap_google_redirect(link: str, timeout: float = 10.0) -> str | None:
                 return unquote(v)
         if sp.netloc.lower().startswith("translate.google."):
             return None              # a translate URL with no page behind it: nothing to fetch
-    for ua in _RESOLVE_UAS:
-        try:
-            r = requests.get(link, allow_redirects=False, timeout=timeout,
-                             headers={"User-Agent": ua, "Accept-Language": "en"})
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-            continue
-        loc = (r.headers.get("Location") or "").strip()
-        if (300 <= r.status_code < 400 and loc.startswith(("http://", "https://"))
-                and not is_google_wrapper(loc)
-                and "google." not in urlsplit(loc).netloc.lower()):
-            return loc
-        if r.status_code in (301, 302, 303, 307, 308):
-            break                    # a redirect to somewhere useless - another UA won't change it
-    return None
+    return _resolve_goto(link, timeout, should_cancel, label, page)[0]
 
 
-def _unwrap_page(org: list[dict]) -> tuple[list[str | None], int, int]:
-    """Resolve a page's wrapped links in parallel (one small request each). Returns
-    the per-item link list (None = wrapper Google would not resolve) plus the
-    (wrapped, unresolved) counts for the page line."""
-    from concurrent.futures import ThreadPoolExecutor
+def _unwrap_page(org: list[dict], should_cancel, label: str, page
+                 ) -> tuple[list[str | None], int, int, float, int]:
+    """Resolve a page's wrapped links ONE AT A TIME through the shared session
+    (see _resolve_goto). Returns the per-item link list (None = wrapper Google
+    would not resolve) plus (wrapped, unresolved, seconds waited, interstitials)
+    for the page line."""
+    from urllib.parse import urlsplit
     links = [(it.get("link") or it.get("url") or "") for it in org]
-    idx = [i for i, l in enumerate(links) if is_google_wrapper(l)]
-    if not idx:
-        return links, 0, 0
-    with ThreadPoolExecutor(max_workers=min(6, len(idx))) as ex:
-        resolved = list(ex.map(unwrap_google_redirect, [links[i] for i in idx]))
     out: list[str | None] = list(links)
-    for i, r in zip(idx, resolved):
-        out[i] = r
-    return out, len(idx), sum(1 for r in resolved if r is None)
+    n_wrapped = n_unresolved = n_inter = 0
+    waited = 0.0
+    for i, link in enumerate(links):
+        if not is_google_wrapper(link):
+            continue
+        n_wrapped += 1
+        sp = urlsplit(link)
+        if sp.path.rstrip("/").endswith("/url") or sp.netloc.lower().startswith("translate.google."):
+            out[i] = unwrap_google_redirect(link)
+        else:
+            out[i], w, k = _resolve_goto(link, 10.0, should_cancel, label, page)
+            waited += w
+            n_inter += k
+        if out[i] is None:
+            n_unresolved += 1
+    return out, n_wrapped, n_unresolved, waited, n_inter
 
 
 def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[str],
-                  *, label: str, page: int) -> int:
+                  *, label: str, page: int, should_cancel=None) -> int:
     """Append one page's organic results to `out` (deduped, ranked in arrival order),
     flagging `skip`-host results `blocked`. Returns the number of USABLE results in
     `out` so far. Prints the page's usable/blocked split when anything was blocked,
     and the wrapper split when Google wrapped any link (see _GOOGLE_WRAPPER)."""
     from input.pipeline.url_utils import root_domain
     n_blocked, hosts = 0, {}
-    links, n_wrapped, n_unresolved = _unwrap_page(org)
+    links, n_wrapped, n_unresolved, waited, n_inter = _unwrap_page(org, should_cancel, label, page)
     if n_wrapped:
         print(f"  [{label}] page {page}: {n_wrapped} of {len(org)} links came as google.com/goto "
               f"wrappers - {n_wrapped - n_unresolved} resolved to the publisher URL"
-              + (f", {n_unresolved} Google would not resolve (dropped)" if n_unresolved else ""))
+              + (f", {n_unresolved} Google would not resolve (dropped)" if n_unresolved else "")
+              + (f"; waited {waited:.0f}s on {n_inter} verification page{'s' if n_inter != 1 else ''}"
+                 if n_inter else ""))
     for it, link in zip(org, links):
         if not link or link in seen:
             continue
@@ -476,7 +554,7 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
                   f"over it ({len(out)} collected)")
             continue
         empty_streak = 0
-        usable = _collect_page(org, out, seen, skip, label="serpapi", page=p + 1)
+        usable = _collect_page(org, out, seen, skip, label="serpapi", page=p + 1, should_cancel=should_cancel)
         if want is not None and usable >= want:
             break
         if usable > last_usable:
@@ -643,7 +721,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset()
                           f"usable — stopping with {last_usable} usable")
                     break
                 continue
-        usable = _collect_page(org, out, seen, skip, label="scaleserp", page=p)
+        usable = _collect_page(org, out, seen, skip, label="scaleserp", page=p, should_cancel=should_cancel)
         if want is not None and usable >= want:
             break
         if usable > last_usable:
