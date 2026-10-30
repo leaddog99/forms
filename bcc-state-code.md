@@ -12310,3 +12310,61 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   lists the three folders with NO NOTICE, old section parked as `gdrive-shared` (kept until
   tonight's proof). Still the curator's: trash the OLDER BCC-Backups folder in
   drive.google.com; then `rclone config delete gdrive-shared`; client JSON → password manager.
+
+## Session 2026-10-29 (late) → 10-30 — old Drive folder trashed; Google's /goto wrapper now serves a verification page (dish refreshes resolving 0 wrappers) — fixed
+
+* **Drive, the old folder:** the August `BCC-Backups` (old shared-client folder, 22,857
+  objects / 35 GiB) is in the Drive trash, matched by folder ID before trashing (the
+  new `gdrive` remote lists only today's folder; `gdrive-shared` listed only the
+  August one). **Emptying the trash is NOT possible from rclone:** `rclone cleanup`
+  needs the full `drive` scope and ours is `drive.file` (no-op, trash still 35 GiB).
+  Curator empties it in drive.google.com (Trash → Empty trash, or Delete forever on
+  that folder). Not urgent: 4.7 TiB free, Google clears trash after 30 days.
+  Calendar reminder set for 10-30 09:00 (client JSON → password manager, delete from
+  Downloads, empty the trash). Drive quota is 5 TiB, 40 GiB used.
+* **Dish refreshes were running on nothing.** Pollo alla Romana #2867 was cancelled
+  by the curator on page 8 of line 1: every `/goto` wrapper "Google would not
+  resolve (dropped)". Tally: the six 10-19 refreshes resolved 930 of 930 wrappers;
+  the five from 10-29 03:41 on resolved 0 of 83. Live probes: Google now answers the
+  wrapper with a 200 "Verifying your request" page carrying a meta refresh of 25-37 s
+  to a FRESH token; following it early is a 400; waiting it out (same cookie jar)
+  gets the 302 with the publisher URL; later links in the warm jar redirect at once
+  or draw a 3-7 s interstitial that clears the same way; after a pause of a few
+  seconds (the next SERP page fetch) the long wait comes back. Our resolver (18d95ef)
+  never waited and carried no cookies, so every interstitial read as unresolvable.
+* **Fix (committed, serp_search.py):** one shared `requests.Session` under a lock
+  (the cookies ARE the verification), links resolved one at a time (the six parallel
+  bare requests each drew their own interstitial), `_resolve_goto` honors the
+  refresh delay in cancel-aware 1 s slices (cap 60 s, 3 hops, second UA on a
+  non-interstitial failure), page line now ends "; waited Ns on K verification
+  pages". `_collect_page`/`_unwrap_page` take `should_cancel`. Jobs run out of
+  process (`python -m jobs exec`), so no restart was needed.
+* **Proof, #2868 (Pollo alla Romana rerun):** 124 of 124 wrappers resolved, 12
+  recipes saved (ledger 113 rows), 24 min end to end of which **723 s was
+  verification waiting (~40 s per SERP page, every page — the inter-page gap is
+  enough for Google to demand the long wait again)**. Honest cost: a three-line
+  refresh is ~12 min slower than before 10-29.
+* **Why Google does it:** confirmed anti-scraping measure (26 Aug 2026 rollout,
+  trade press ties timing to Google v. SerpApi). The verification page is the next
+  turn. Field consensus: token is opaque protobuf, HEAD blocked, GET + Location
+  works; SerpApi and DataForSEO resolve server-side; Scale SERP passes wrappers
+  through. SerpApi probed unauthenticated (key gone, cancelled 08-10): wrappers
+  there too, as relative `/goto` paths. Google's own Custom Search JSON API: closed
+  to new customers, ends 2027-01-01 — not an option. Gemini grounding = citations
+  behind a model's judgment, not a ranked SERP — not an option.
+* **Client-based resolver, measured but NOT built:** the curator's real Chrome
+  clears the same verification page in 2-4 s (it runs the challenge JS; our HTTP
+  path sits through the no-JS meta-refresh fallback). Design if the waits prove
+  too costly: persistent headed Chromium profile on MARLEY (the capture-walker
+  profile) resolving wrappers one at a time, final URL = the data (screenshots/OCR
+  would be lossy and cost a model call), HTTP resolver as fallback. Caveats: needs
+  the interactive desktop (autologon+lock untested for headed), a clean profile
+  may be trusted less than a signed-in one, per-IP escalation to CAPTCHA at harvest
+  volume. Decision: run a few refreshes on the HTTP fix first.
+* **Stray keystroke:** docs/reviews-and-product-commerce.md had "ratewdo" in the
+  "We keep the user" bullet (uncommitted); restored by hand.
+* **Open:** tonight's 03:00 = the G4 proof (no NOTICE, `cloud mirror exit code: 0`)
+  → `rclone config delete gdrive-shared`, mark G4 CLOSED · curator: empty Drive
+  trash, client JSON → password manager · watch the per-page wait across the next
+  refreshes; build the browser resolver if it stays at ~40 s/page · SerpApi/
+  DataForSEO if Scale SERP never resolves server-side · the rest of the 10-29 list.
