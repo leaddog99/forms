@@ -12368,3 +12368,63 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   trash, client JSON → password manager · watch the per-page wait across the next
   refreshes; build the browser resolver if it stays at ~40 s/page · SerpApi/
   DataForSEO if Scale SERP never resolves server-side · the rest of the 10-29 list.
+
+## Session 2026-11-09 — memory refresh after a ten-day log gap; six reboots that were not the UPS; gpt-image-1 is gone; the Postgres ETL BUILT and verified
+
+* **Log gap:** no session entry between 10-30 and today although ~30 dish refreshes ran
+  (10-31..11-09, 200-760 s of /goto verification waiting each; six launched within half
+  an hour on 11-08 15:01-15:29 — the parallel-batch experiment the 11-06 memory asked
+  for), twelve SEMrush exports landed, and the serp_speedup TO-DO was written 11-06.
+  Committed today: **9d065fa** — the twelve exports (10-31..11-08) + the superseded
+  cookpad/gr (06-26) and mollybaz (09-09) moved under `input/semrush/_superseded/`.
+* **Drive trash, inspected not emptied.** Everything in it is ours: the nightly prune's
+  training .db and recipes dumps, the two superseded SEMrush files, the old
+  BCC-Backups folder (10-29). Drive now 308 GB used of 5 TB. The Empty-trash click was
+  refused by the session's permission classifier (irreversible delete) — curator
+  empties it. Still owed: client JSON → password manager; `rclone config delete
+  gdrive-shared`.
+* **Errors asked about.** (1) Image generation: 2026-11-08 23:53, two attempts on
+  Rooster Pastitsada, both `400 The model 'gpt-image-1' does not exist` → HTTP 500; the
+  editor showed nothing. Trackers say OpenAI retired gpt-image-1 on 2026-10-23 and
+  gpt-image-1.5 goes 2026-12-01 with gpt-image-2 current — confirm on OpenAI's
+  deprecations page before swapping the id in image_gen_openai.py (size/quality
+  vocab differs). Last good generation 08-30. (2) Extraction: no server-side error
+  since 11-08 — Migas, two TasteAtlas pages, Creamy Polenta all "Extraction
+  successful"; the one stage-capture traceback in stderr is 10-17 and already fixed.
+  **Curator: a model rejection like this must raise a LOUD admin email and a real
+  message in the form; error reporting needs a top-to-bottom review (OPEN, design).**
+* **Six reboots today, cause NOT found.** 11:29 (winlogon, WsiAccount, 0x500ff), then
+  14:28, 14:44, 15:13, 15:26 restarts and 15:49 power-off, all "Explorer.EXE on
+  behalf of MARLEY_SVR\john ... Other (Unplanned) 0x0" = the Start-menu Restart
+  signature in the autologon session, each followed by boot type 0x0 at +15 s and
+  input within a minute (lock_after_logon idle 0-6 s). Ruled OUT by the logs: power
+  loss (no Kernel-Power 41 / 6008 — the UPS theory does not fit; Windows sees no
+  battery at all, no UPS cable), Windows Update (only Defender definitions in 14
+  days, OS already 26300.9818, nothing pending), RDP (no 1149, every session addr
+  LOCAL), service crash (all six were SCM SHUTDOWN controls). Facts: there is NO
+  local account "john" — SID 1001 is `johnlandry`, profile C:/Users/john, autologon
+  DefaultUserName still "john"; the 15:49 power-off was charged to johnlandry (a
+  user switch at 15:45) and the box came back 83 s later (power button or BIOS
+  AC-recovery). A Logitech Unifying receiver is present (a second paired keyboard
+  could type here). **HP leftovers still run on the Dell image:** "ID19 HP Fan
+  Control Service" (FanControlApp.exe, crashed 0xc0000005 at 12:30), HP System Event
+  Utility, HP One Agent, HPCommRecovery, Touchpoint Analytics, power scheme "HP
+  Recommended"; Dell SupportAssist was installed 11-06. RAM: still one 16 GB DIMM
+  (the Crucial stick is not in yet).
+* **Postgres ETL BUILT: `pgmigrate/` + `test_pgmigrate.py` + docs/postgres-etl.md.**
+  `plan | run | verify`; types, identity, jsonb-by-detection (49 columns / 26
+  tables), vector(1536) with real[] fallback, 50 generated columns as STORED with
+  `bcc_to_num/bcc_to_int/bcc_source_host`, 102 indexes incl. expression + partial,
+  fts5 → weighted tsvector + GIN + trigger (config `bcc` = english+unaccent), vec0
+  dissolved, `bcc_sortkey` as an IMMUTABLE function. **First run on a scratch PG 17.6
+  cluster (initdb in the session scratchpad, port 54329, no admin): 749,486 rows /
+  61 tables in 52 s; 0 count mismatches; 0 generated-column mismatches over 14,715
+  rows; sortkey 13 inversions (all "Cacık", dotless ı); FTS hit sets exact after the
+  slash fix.** pgvector is NOT in this box's PG 17 — the real target is PG 18 +
+  pgvector, installed by the curator (GUI, superuser password). psycopg 3.3.8 added
+  to the venv. The app port (inventory REWRITE 1-7) is the next branch.
+* **Open:** error-reporting review (loud admin mail + form message) · gpt-image model
+  swap · empty Drive trash · client JSON → password manager · delete gdrive-shared ·
+  who/what restarted the box (ask household; check the Logitech pairing; consider
+  uninstalling the HP services) · PG 18 + pgvector install → `pgmigrate run` for
+  real → app port · Crucial stick · the 10-29 list.
