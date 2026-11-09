@@ -12428,3 +12428,13 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   who/what restarted the box (ask household; check the Logitech pairing; consider
   uninstalling the HP services) · PG 18 + pgvector install → `pgmigrate run` for
   real → app port · Crucial stick · the 10-29 list.
+* **ADDENDUM (evening) — image model is a SETTING now (curator: "defined in the system
+  settings form, changes are made there not the code").** `system_config.image_gen_model`
+  (Images category, seed `gpt-image-2.5-flare`), read by `image_gen_openai.image_model()`
+  on every call; the Generate endpoint answers a retired-model error with a 400 that
+  names the setting instead of a bare 500. OpenAI's own pages (developers.openai.com,
+  read 11-09): gpt-image-1 shut down 2026-10-23; gpt-image-1-mini / 1.5 /
+  chatgpt-image-latest removed 2026-12-01; current ids gpt-image-2.5-{flare,sunburst},
+  gpt-image-2.6-{flare,sunburst}; sizes unchanged, quality adds xhigh/max, b64_json
+  still returned. **Needs a BCC restart on MARLEY** (seeds the row; the form shows it
+  under Images). First Generate after the restart is the live test.

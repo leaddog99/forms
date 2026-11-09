@@ -2915,6 +2915,17 @@ async def generate_recipe_image_endpoint(
                 detail="That image request was blocked by the content filter. "
                        "Keep the tweak to dish-styling notes (ingredients, plating, lighting).",
             ) from e
+        # A retired model id (gpt-image-1 died 2026-10-23 and nobody heard for two
+        # weeks). Same 400-not-5xx reasoning as above so the words reach the form,
+        # and the words say WHERE the fix is: a setting, not code.
+        if ("does not exist" in msg or "model_not_found" in msg
+                or ("invalid_value" in msg and "'model'" in msg)):
+            from image_gen_openai import image_model as _img_model
+            raise HTTPException(
+                status_code=400,
+                detail=f"The image model '{_img_model()}' is no longer available. An admin can "
+                       f"change it under System settings → Images → Image generation model.",
+            ) from e
         raise HTTPException(status_code=500,
                             detail=f"Image generation failed: {type(e).__name__}: {e}") from e
 

@@ -199,6 +199,22 @@ SYSTEM_DEFAULTS: list[dict] = [
         "label": "Portrait target (WxH)",
         "description": "Exact pixel size portrait images are center-cropped + scaled to.",
     },
+    {
+        "key": "image_gen_model",
+        "value": "gpt-image-2.5-flare",
+        "type": "string",
+        "category": "Images",
+        "label": "Image generation model",
+        "description": "The OpenAI Images API model id the recipe editor's Generate button "
+                       "calls (image_gen_openai.py reads this on every call — no restart). "
+                       "Vendors retire these without warning: gpt-image-1 was shut down "
+                       "2026-10-23 and every Generate failed silently for two weeks; "
+                       "gpt-image-1-mini / 1.5 go 2026-12-01. Current ids (2026-11-09): "
+                       "gpt-image-2.5-flare (fast, everyday), gpt-image-2.5-sunburst (most "
+                       "capable), gpt-image-2.6-flare, gpt-image-2.6-sunburst. Check "
+                       "developers.openai.com/api/docs/models when a generation fails with "
+                       "'model does not exist'.",
+    },
     # --- Limits: hard caps that protect against fat-finger / runaway cost ---
     {
         "key": "dish_max_serpapi",

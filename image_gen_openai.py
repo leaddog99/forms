@@ -163,8 +163,9 @@ def _generate_image(
         # Use the corpus-consistent random default rather than the
         # config's IMAGE_GEN_SIZE — the goal is uniform-shaped output.
         api_s = _resolve_orientation("random")
+    model = image_model()
     response = client.images.generate(
-        model="gpt-image-1",
+        model=model,
         prompt=prompt,
         size=api_s,
         quality=api_q,
@@ -172,8 +173,17 @@ def _generate_image(
     )
     b64 = response.data[0].b64_json
     if not b64:
-        raise RuntimeError("gpt-image-1 returned no image data")
+        raise RuntimeError(f"{model} returned no image data")
     return base64.b64decode(b64)
+
+
+def image_model() -> str:
+    """The Images API model id, from system settings (Images → "Image generation
+    model"), read on every call so an admin can swap a retired id without a
+    restart. The id was hard-coded until 2026-11-09: OpenAI shut gpt-image-1 down
+    on 2026-10-23 and every Generate failed for two weeks with nothing but a 500."""
+    from input.pipeline.system_config import get_setting
+    return str(get_setting("image_gen_model", "gpt-image-2.5-flare") or "gpt-image-2.5-flare").strip()
 
 
 def _get(obj, key, default=""):
