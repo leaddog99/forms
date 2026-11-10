@@ -12464,3 +12464,60 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   IS seeded, so the restart happened) · error-reporting review · the six 11-09
   reboots (household / Logitech receiver / HP services) · PG 18 + pgvector install →
   `pgmigrate run` → app port · Crucial stick · the 10-29 list.
+
+## Session 2026-11-10 (afternoon) — the BCC→BAILEY move: inventory sent to DPI's Claude; SSH is dead BOTH ways and BAILEY's standby has been stale since 10-29
+
+* **Request from the DPI session on BAILEY (dpi-06):** the curator plans to move BCC,
+  code and data, from MARLEY_SVR to BAILEY — recipes.db into its own database + role on
+  BAILEY's PostgreSQL 18 (service postgresql-x64-18, :5432, already hosting f2n / mbg /
+  dpi; pgvector 0.8.7), the forms code served from BAILEY, and during the move the
+  embeddings go text-embedding-3-small (1,536 d) → **text-embedding-3-large (3,072 d,
+  halfvec(3072) expression index), everything re-embedded once.** No date set;
+  information gathering only, nothing changes without the curator's OK. Replied via
+  SendMessage with the read-only inventory below (delivery accepted, not confirmed).
+* **SSH findings (nothing changed):**
+  - **MARLEY_SVR has NO OpenSSH server.** No `sshd` service, no
+    `C:\ProgramData\ssh\sshd_config`, nothing listening on :22, no firewall rule named
+    `DPI-SSH-from-BAILEY` (no SSH rule of any kind). Windows firewall drops unsolicited
+    packets, so BAILEY's connect to :22 **times out** rather than being refused — that
+    is the whole explanation for "ping works, ssh doesn't". Profile Private on
+    "Ethernet 2", 192.168.1.196, public 108.20.73.154. (The capability state needs an
+    elevated shell to read; the restored clone simply never got OpenSSH Server.)
+  - **The other direction is also dead, and has been for ~12 nights.** The 02:00
+    task's `bcc_sync_standby.ps1` to rclone remote `bailey:` (sftp, host BAILEY, user
+    john, key C:/Users/john/.ssh/id_ed25519) fails every run since at least **10-30**:
+    `ssh: connect to host bailey port 22: Connection timed out` on the code sync, the
+    stop/start, and all four DB copies → `bailey sync exit code: 1`; the 07:00 check
+    adds `https://bailey.tbotb.com: HTTP Error 530` (BAILEY's `bestcooksclub` tunnel
+    not connected) and emails the alert daily. **BAILEY's BCC copy is frozen at
+    ~10-29.** ADAM copies and the `gdrive:` cloud mirror are fine (exit 0 nightly).
+    Fix is on BAILEY's side (its sshd / firewall / tunnel); the standby is not a
+    rollback today.
+* **Inventory as sent (for the record):** recipes.db 1.00 GiB / 90 tables (the only
+  ETL target); training.db 1.16 GiB (is_recipe_samples 101,510, BLOB embeddings);
+  media.db 0.64 GiB; page_cache.db 0.44 GiB — the three sidecars move as files.
+  Vectors: vec0 dishes_vec 525 / recipes_master_vec 14,239 / products_vec 396, all
+  float[1536] 3-small (every master_recipes row embedded, model = 3-small on all);
+  BLOB-only embedding cols on recipes 484/487, product_classes 347, ws_categories 217.
+  Serving: NSSM `BCC` (LocalSystem) → venv python `-m uvicorn save_recipe_api:app
+  --host 127.0.0.1 --port 8009`, no proxy, no local TLS; `Cloudflared` token service =
+  tunnel `recipes` → recipes.tbotb.com; **bestcooks.club is not served by MARLEY**
+  (Cloudflare-proxied apex, Squarespace www, decision parked since 09-12). Tasks: BCC
+  Recipes DB Backup 02:00, BCC Backup Check 07:00, BCC Dish Schedule, BCC Lock After
+  Autologon. Secrets: the 30 .env keys (names only), tunnel token, rclone.conf,
+  ~/.ssh, the \Adam cmdkey, task credentials. Python 3.13.1; not in
+  requirements-frozen: psycopg 3.3.8, pytest, markdown, git-filter-repo, and three
+  editable installs — recipe-core (sibling repo at
+  C:\Users\john\PycharmProjects\recipe-core), imagekit@6d80828, llmkit@fa1888f.
+  Bites listed: SSH both ways · the 3-large switch is NEW to this side (nothing in
+  docs/pgmigrate mentions 3,072; vector(1536) is what the ETL builds; every surface
+  must re-embed in one pass, INGREDIENT_ROLES order load-bearing, title out of the
+  embed text) · the ETL's `--drop` is DROP SCHEMA public CASCADE → BCC MUST get its
+  own database, never a shared one · Playwright needs an interactive desktop ·
+  eleven scripts hard-code the john paths · Z: = \Adam\tbotb needs a credential on
+  BAILEY · this box's six unexplained 11-09 reboots = don't run the long ETL here
+  unattended.
+* **Open (new):** install OpenSSH Server + inbound-22 rule on MARLEY_SVR if
+  BAILEY→MARLEY is wanted · get BAILEY's sshd/tunnel back so the nightly standby sync
+  resumes (12 nights of alert mail) · the 3-large decision needs pgmigrate's vector
+  spec + a one-pass re-embed plan. Plus the morning's list.
