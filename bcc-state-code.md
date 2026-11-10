@@ -12438,3 +12438,29 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   gpt-image-2.6-{flare,sunburst}; sizes unchanged, quality adds xhigh/max, b64_json
   still returned. **Needs a BCC restart on MARLEY** (seeds the row; the form shows it
   under Images). First Generate after the restart is the live test.
+
+## Session 2026-11-10 — Drive trash emptied; gdrive-shared remote deleted
+
+* **Drive trash: CLEAR.** Inspected again before touching anything: 20 files
+  (11.5 GiB) visible to `gdrive:` = nine pruned recipes dumps 10-16..10-22, the
+  nightly-pruned training .db files, the two superseded SEMrush exports; the other
+  25.5 GiB (22,347 objects) was the old `BCC-Backups` folder trashed 10-29, visible
+  only to `gdrive-shared:` (each rclone client sees only the files it uploaded —
+  drive.file scope). `rclone cleanup` fails `insufficientPermissions` on BOTH remotes
+  (empty-trash needs full `drive` scope); `rclone purge --drive-trashed-only` is
+  refused by rclone itself. What worked: `rclone delete --drive-trashed-only
+  --drive-use-trash=false` on `gdrive:` for the 20 files; the curator emptied the
+  rest from drive.google.com/drive/trash. Verified: `rclone about` Trashed 0 B, used
+  33.7 → 8.1 GiB, zero trashed files through either remote, live BCC-Backups tree
+  (db-latest / forms-mirror / recipes-db) intact. `DPI-Backups/` is a live top-level
+  folder on the account, not ours to touch.
+* **`rclone config delete gdrive-shared` DONE.** Remotes now `gdrive:` + `bailey:`.
+  Nothing executable referenced it (only the client-ID script's comments and the DR
+  doc). docs/disaster-recovery.md "Open at this writing" updated. Commit **fa3462f**,
+  pushed.
+* **Also today:** 478216f — woocancook.com SEMrush organic-pages export.
+* **Open (unchanged):** Drive client JSON in Downloads → password manager ·
+  first Generate after the restart = live test of `image_gen_model` (the setting row
+  IS seeded, so the restart happened) · error-reporting review · the six 11-09
+  reboots (household / Logitech receiver / HP services) · PG 18 + pgvector install →
+  `pgmigrate run` → app port · Crucial stick · the 10-29 list.
