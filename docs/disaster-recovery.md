@@ -294,8 +294,10 @@ runs on our own OAuth client (G4): if `rclone lsd gdrive:` ever prints the
 "shared client_id" NOTICE again, the remote has regressed.
 
 **Open at this writing.** G4's proof is the first 03:00 after the cut-over (no
-NOTICE, `cloud mirror exit code: 0`); then trash the older `BCC-Backups` folder
-in Drive and `rclone config delete gdrive-shared`. The Drive client JSON is still
+NOTICE, `cloud mirror exit code: 0`). DONE 2026-11-10: the older `BCC-Backups`
+folder was trashed (10-29), the Drive trash emptied from the Drive page (0 B
+trashed, used 33.7 → 8.1 GiB) and `gdrive-shared` deleted from the rclone config;
+remotes are now `gdrive:` and `bailey:` only. The Drive client JSON is still
 in Downloads — move it to the password manager and delete it there. MARLEY-OLD
 decommission list. Host paper still says MARLEY2 in places.
 
