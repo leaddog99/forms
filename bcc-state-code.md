@@ -12521,3 +12521,25 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   BAILEY→MARLEY is wanted · get BAILEY's sshd/tunnel back so the nightly standby sync
   resumes (12 nights of alert mail) · the 3-large decision needs pgmigrate's vector
   spec + a one-pass re-embed plan. Plus the morning's list.
+
+* **CORRECTION (18:40, after dpi-06's follow-up "BAILEY is now 192.168.1.180 on Wi-Fi,
+  not .183").** Read-only checks from here: hosts file empty; `Resolve-DnsName bailey`
+  → bailey.mynetworksettings.com A 192.168.1.180 (router DNS); ping and :22 answer at
+  .180, nothing at .183; `.183` is pinned NOWHERE (rclone.conf, the sync script and
+  docs all use the NAME; only a stale known_hosts line has it). `ssh john@bailey
+  hostname` → BAILEY and `rclone lsd bailey:/C:/Users/john/PycharmProjects` both work
+  right now. **The log, read run by run (I over-read it above): only ONE night timed
+  out on :22 — last night 11-10 02:05–02:20.** 10-30 → 11-09 the `bailey sync exit
+  code: 1` was a different, minor fault: rclone's code sync fails on exactly three
+  `.git/objects/{3a/1fbe7b…,58/66cc71…,fa/c5f72c…}` loose objects on BAILEY ("partial
+  file rename failed: Move Rename failed: permission denied" — something on BAILEY
+  holds/write-protects them; the script's `attrib -R` pre-step doesn't clear it),
+  everything else copies, and **the DB copies + BCC service restart on BAILEY succeeded
+  every one of those nights** (recipes_2026-11-09_020116.db landed 11-09). So BAILEY's
+  data is stale by ONE night (today's set), not twelve; the daily alert mail since
+  10-30 is the three git objects. Last night's timeout = BAILEY-side between 02:05 and
+  02:20 (Wi-Fi asleep / power-save at that hour, or the .183→.180 move with stale
+  router-DNS/ARP). Suggested to the curator via dpi-06: DHCP reservation for BAILEY +
+  Wi-Fi adapter never sleeps; clear the three locked objects on BAILEY; the
+  bailey.tbotb.com 530 is BAILEY's tunnel connector, separate. Nothing changed here.
+  The "stale since 10-29" line above is WRONG — this paragraph supersedes it.
