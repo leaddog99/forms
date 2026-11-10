@@ -12543,3 +12543,8 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   Wi-Fi adapter never sleeps; clear the three locked objects on BAILEY; the
   bailey.tbotb.com 530 is BAILEY's tunnel connector, separate. Nothing changed here.
   The "stale since 10-29" line above is WRONG — this paragraph supersedes it.
+* **FYI from BAILEY (dpi-06, curator's OK, ~18:50):** the read-only flag on the three
+  forms/.git objects is cleared (git's own info/commit-graphs files stay read-only, left
+  alone), and the curator is reserving 192.168.1.180 for BAILEY in the router. **Proof =
+  tonight's 02:00 run:** `bailey sync exit code: 0`, rclone reaches its delete pass, the
+  11-11 DB set lands, and the 07:00 check sends no alert.
