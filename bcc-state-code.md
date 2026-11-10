@@ -12548,3 +12548,9 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   alone), and the curator is reserving 192.168.1.180 for BAILEY in the router. **Proof =
   tonight's 02:00 run:** `bailey sync exit code: 0`, rclone reaches its delete pass, the
   11-11 DB set lands, and the 07:00 check sends no alert.
+* **Cause of last night's timeout found (dpi-06, ~19:00): BAILEY's Ethernet cable had
+  come out; Wi-Fi took over at .180.** Cable back in, BAILEY on 192.168.1.183 again,
+  Wi-Fi turned off. Verified from here: `Resolve-DnsName bailey` → .183 (cache cleared,
+  no stale .180), .183:22 answers, .180:22 dead, `ssh john@bailey` → BAILEY/.183. The
+  .180 reservation is moot; the name resolves correctly, so tonight's sync needs nothing
+  from this side.
