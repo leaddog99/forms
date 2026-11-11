@@ -12598,3 +12598,12 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   batching `embed_text`, the bat's standby line for BAILEY, psycopg in
   requirements-frozen.txt). **Proof still pending:** tonight's 02:00 sync — `bailey sync
   exit code: 0` in backup.log and no alert from the morning check.
+* **f2n on BAILEY restored (11-11, ~04:40, curator's ask).** BAILEY had rebooted AGAIN at
+  01:23; the `f2n` service came up on the uncommitted author-tiers work (alembic 0049 in
+  the tree, DB at 0048) and every `/api/collections` call 500'd on
+  `publications.tier_id does not exist`. Fix = the plan's own rule: `git stash push -u`
+  (stash@{0}, "WIP author tiers / invites / email sign-in (0049)…", nothing lost) so the
+  tree is on committed b2ec66d, then `nssm restart f2n` → PID 18784 listening on 8765,
+  `/`, `/play` 200, unauth collections 401, no traceback. The WIP resumes with `git
+  stash pop` — and must not be restarted into the service until 0049 is committed AND
+  applied (`alembic upgrade head`) in the same step.
