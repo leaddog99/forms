@@ -12554,3 +12554,47 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   no stale .180), .183:22 answers, .180:22 dead, `ssh john@bailey` → BAILEY/.183. The
   .180 reservation is moot; the name resolves correctly, so tonight's sync needs nothing
   from this side.
+
+## Session 2026-11-10 (evening) → 11-11 — the BCC→BAILEY migration plan drafted, reviewed from the BAILEY side, committed
+
+* **`docs/bcc-to-bailey-migration-plan.md` — DRAFT, commit 13f0430** (the only write of
+  the evening; nothing changed on either box). Drafted at dpi-06's request on the
+  curator's behalf, companion to `new-host-cutover-playbook.md`. The decision in §0:
+  **move first (SQLite as-is, same serving shape), convert to Postgres later on BAILEY,
+  re-embed last.** §1 is the side-by-side of MARLEY_SVR and BAILEY as they stand; §2 the
+  Postgres landing zone on BAILEY's PG 18 + pgvector (role `bcc`, DBs `bcc` + `bcc_test`,
+  extensions in schema `extensions` with `search_path = public, extensions`, DSNs
+  `BCC_PG_DSN` / `BCC_PG_TEST_DSN`, our own `scripts/bootstrap_pg.py`); §3 what moves
+  (code, data, secrets by hand, psycopg into the venv, tasks created fresh, the rclone
+  remote-name decision); §4 the cut-over in seven steps with ▶ ON BAILEY / ▶ ON
+  MARLEY_SVR command blocks (freeze → checkpoint + `backup_db.py --verify` →
+  `bcc_sync_standby.ps1 -Standby BAILEY -WithDbs -FreshBackup` → count compare
+  master_recipes 14,239 · recipes 487 · dishes 525 · domains 529 · jobs 2,976 → tunnel
+  flip via `cloudflared service uninstall/install` → schtasks → test); §5 soak and what
+  MARLEY_SVR becomes; §6 the convert sequence; §7 embeddings (text-embedding-3-large
+  3072d, `vector(3072)` + `USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops)`
+  because vector indexes stop at 2,000 d; ≈ $0.13 for the six surfaces, training.db NOT
+  re-embedded; thresholds recalibrated in bcc_test); §8 backup windows; §9 risk table
+  a–r; §10 order of work.
+* **dpi-06's BAILEY-side review folded in.** Corrections: BAILEY has NONE of the four BCC
+  scheduled tasks (my first SSH read mis-attributed a row) — only the old `BCC-Drill`,
+  disabled, which §4.6 now deletes; port 8009 on BAILEY is BCC's own standby service,
+  f2n/mbg/dpi sit on 8765/8766/8767; BAILEY's `[gdrive]` rclone remote is DPI's, on
+  rclone's shared client ID (retiring 2026) — NOT to be overwritten; ADAM access on
+  BAILEY rides on the session login, no cmdkey, so a logged-off task may fail silently;
+  DPI's backup is 02:30 for ~25 min, no shared DBs or folders with BCC. Lesson carried
+  from BAILEY: f2n broke on today's 18:13 reboot because uncommitted migration work
+  loaded against an older DB — a service restarts on whatever is in its working tree,
+  so the forms tree on BAILEY must be on a committed revision before every restart (§9 p).
+* **Curator decisions open (§9):** e — MARLEY_SVR reverse standby vs decommission;
+  f — non-interactive tasks on BAILEY rather than autologon (recommended; the other
+  three apps are services, BAILEY came up serving after the reboot with nobody logged
+  on; headed captures would then need someone at the keyboard); o — ONE `gdrive` remote
+  on BCC's own OAuth client with DPI adopting it (recommended) vs a `gdrive-bcc` second
+  remote + a variable in the backup script; q — cmdkey for Adam on BAILEY + a logged-off
+  test run of the backup task; r — BCC backup to 01:30 ahead of DPI's 02:30
+  (recommended).
+* **Not started, not authorized:** the §10 offline prep (`scripts/bootstrap_pg.py`,
+  batching `embed_text`, the bat's standby line for BAILEY, psycopg in
+  requirements-frozen.txt). **Proof still pending:** tonight's 02:00 sync — `bailey sync
+  exit code: 0` in backup.log and no alert from the morning check.
