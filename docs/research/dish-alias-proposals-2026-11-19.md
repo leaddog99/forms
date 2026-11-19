@@ -1,0 +1,1848 @@
+<!-- Produced by the one-off alias vetting pass (scratchpad vet_aliases.py), read-only on recipes.db. Approved rows (tiers A/B/C) are in dish-alias-vetted-2026-11-19.json. NOT applied. See bcc-state-code.md 2026-11-19 (late). -->
+
+# Dish alias proposals — 2026-11-19
+
+Mined from the corpus: the identity card's own dish name on settled recipes (curated, or confirmed by the verification pass), where it differs from the catalog name and names no other dish. Vetted: tier A mechanically (plural/spelling/diacritic/suffix variants of the catalog name), tiers B/C by Haiku with the strict rule (same dish under another name; NOT a sibling, child, component or added attribute). Nothing applied.
+
+| tier | meaning | aliases | recipes |
+|---|---|---|---|
+| A | mechanical variant of the name | 118 | 247 |
+| B | judge says same, ≥2 recipes of evidence | 293 | 1124 |
+| C | judge says same, 1 recipe | 692 | 692 |
+| R | judge says NOT the same dish (filed under it anyway — these rows are the sibling/child problem) | 637 | 872 |
+| X | rejected before judging (collision / ambiguous / already an alias) | 79 | |
+
+## Tier A — mechanical variants (118 aliases, 247 recipes)
+
+- **Cinnamon Rolls** → Cinnamon Roll  ×26
+- **Melomakarona** → Melomakarona (Greece)  ×19
+- **Soupe au Pistou** → Soupe au Pistou (French Minestrone)  ×11
+- **Elote** → Elote (Mexican Street Corn)  ×9
+- **Chile Relleno** → Chiles Rellenos  ×8
+- **Corn Muffins** → Corn Muffin  ×6
+- **Dan Dan Noodles** → Dan Dan Noodles(担担面)  ×6
+- **Elotes (Mexican Street Corn)** → Elote (Mexican Street Corn)  ×6
+- **Potato Pancakes** → Potato Pancake  ×6
+- **Bee Sting Cake (Bienenstich)** → Bee Sting Cake  ×4
+- **Fried Egg** → Fried Eggs  ×4
+- **Lobster Rolls** → Lobster Roll  ×4
+- **Maroulosalata (Greek Lettuce Salad)** → Maroulosalata  ×4
+- **Sloppy Joe** → Sloppy Joes  ×4
+- **Butter Chicken (Murgh Makhani)** → Butter Chicken  ×3
+- **Cornish Pasties** → Cornish Pasty  ×3
+- **Portokalopita (Greek Orange Phyllo Cake)** → Portokalopita  ×3
+- **Soutzoukakia (Greek Meatballs in Tomato Sauce)** → Soutzoukakia  ×3
+- **Souvlaki** → Souvlaki (Greece)  ×3
+- **Arroz de Marisco (Seafood Rice)** → Arroz de Marisco  ×2
+- **Calzones** → Calzone  ×2
+- **Chinese BBQ Pork (Char Siu)** → Chinese BBQ Pork  ×2
+- **Elotes** → Elote (Mexican Street Corn)  ×2
+- **Flammekueche (Tarte Flambée)** → Flammekueche  ×2
+- **Gemista (Greek Stuffed Tomatoes)** → Gemista  ×2
+- **Gemista (Stuffed Tomatoes and Peppers)** → Gemista  ×2
+- **Hamburgers** → Hamburger  ×2
+- **Maroulosalata (Greek Romaine Salad)** → Maroulosalata  ×2
+- **Niu Rou Mian (Taiwanese Beef Noodle Soup)** → Niu Rou Mian  ×2
+- **Pizza Bianca (White Pizza)** → Pizza Bianca  ×2
+- **Quesadilla** → Quesadillas  ×2
+- **Spring Rolls (Fresh)** → Spring Rolls  ×2
+- **Tomato Sauce (Sugo di Pomodoro)** → Tomato Sauce  ×2
+- **Tsoureki (Greek Easter Bread)** → Tsoureki  ×2
+- **Vasilopita (Greek New Year's Cake)** → Vasilopita  ×2
+- **Apple Strudel (Apfelstrudel)** → Apple Strudel  ×1
+- **Banana Muffin** → Banana Muffins  ×1
+- **Basque Cheesecake (Tarta de Queso)** → Basque Cheesecake  ×1
+- **Bolognese (vegetable variant)** → Bolognese  ×1
+- **Bolognese (White Bolognese)** → Bolognese  ×1
+- **Bouillabaisse (chicken variant)** → Bouillabaisse  ×1
+- **Cassoulet (Tarbais Bean)** → Cassoulet  ×1
+- **Cassoulet (vegetarian variant with polenta base)** → Cassoulet  ×1
+- **Chili (no-bean variant)** → Chili  ×1
+- **Chow Mein (Hakka-style)** → Chow Mein  ×1
+- **Crêpes (British-style thin pancakes)** → Crêpes  ×1
+- **Dutch Baby Pancakes** → Dutch Baby Pancake  ×1
+- **Escabeche (Pickled Vegetables)** → Escabeche  ×1
+- **Fasolada (Greek White Bean Soup)** → Fasolada  ×1
+- **Fava (Yellow Split Pea Puree)** → Fava  ×1
+- **Fava (Yellow Split Pea Dip)** → Fava  ×1
+- **Fava (Greek Split Pea Puree)** → Fava  ×1
+- **Flan (Cream Cheese Variant)** → Flan  ×1
+- **Gemista (Stuffed Vegetables with Rice)** → Gemista  ×1
+- **Gemista (Greek Stuffed Peppers and Tomatoes)** → Gemista  ×1
+- **Gigantes Plaki (Greek Baked Giant Beans)** → Gigantes Plaki  ×1
+- **Greek Chickpea Soup (Revithia)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1
+- **Greek Chickpea Soup** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1
+- **Greek Chickpea Soup (Revithia Soupa)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1
+- **Greek Chickpea Soup (Revithokoupepa)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1
+- **Greek Salad (Horiátiki Salata)** → Greek Salad  ×1
+- **Gyoza (Pan-Fried Dumplings)** → Gyoza  ×1
+- **Kabocha no Nimono (Japanese Braised Pumpkin)** → Kabocha no Nimono  ×1
+- **Keftedes (Greek Kebab)** → Keftedes (Greek Meatballs)  ×1
+- **Keftedes** → Keftedes (Greek Meatballs)  ×1
+- **Keftedes (Greek Lamb Meatballs)** → Keftedes (Greek Meatballs)  ×1
+- **Kibbeh (Fried Kibbeh Balls)** → Kibbeh  ×1
+- **Kimchi (Napa Cabbage Kimchi)** → Kimchi  ×1
+- **Kolokithopita (Zucchini Pie)** → Kolokithopita  ×1
+- **Kolokithopita (Greek Pumpkin Pie)** → Kolokithopita  ×1
+- **Kolokithopita (Greek Pumpkin and Feta Pie)** → Kolokithopita  ×1
+- **Kolokithopita (Greek Pumpkin Hand Pies)** → Kolokithopita  ×1
+- **Kolokithopita (Greek Zucchini Pie)** → Kolokithopita  ×1
+- **Lahanodolmades (Stuffed Cabbage Rolls)** → Lahanodolmades  ×1
+- **Lahanodolmades (Greek Cabbage Rolls)** → Lahanodolmades  ×1
+- **Lahanodolmades (Stuffed Cabbage Leaves)** → Lahanodolmades  ×1
+- **Lahanodolmades (Greek Stuffed Cabbage)** → Lahanodolmades  ×1
+- **Lamb Kabob** → Lamb Kabobs  ×1
+- **Lentil Soup (Dal)** → Lentil Soup  ×1
+- **Lok Lak (Cambodian Pepper Beef)** → Lok Lak  ×1
+- **Lok Lak (Shaking Beef)** → Lok Lak  ×1
+- **Mashed Potatoes (Purée de Pommes de Terre)** → Mashed Potatoes  ×1
+- **Molten Lava Cakes** → Molten Lava Cake  ×1
+- **Pad Thai (noodle-free vegetable variant)** → Pad Thai  ×1
+- **Paella de Marisco** → Paella de Mariscos (Seafood Paella)  ×1
+- **Pasta al Tonno (Tuna Pasta)** → Pasta al Tonno  ×1
+- **Pasta e Fagioli (White Bean Pasta)** → Pasta e Fagioli  ×1
+- **Pesto (Sun-Dried Tomato Walnut variant)** → Pesto  ×1
+- **Pesto (almond variant)** → Pesto  ×1
+- **Pie Crust (Gluten-Free Variant)** → Pie Crust  ×1
+- **Pie Crust (Gluten-Free)** → Pie Crust  ×1
+- **Pizza Bianca (Roman White Pizza)** → Pizza Bianca  ×1
+- **Pizza Sauce (Raw Tomato)** → Pizza Sauce  ×1
+- **Pizza Sauce (Salsa di Pomodoro)** → Pizza Sauce  ×1
+- **Ployes (Buckwheat Pancakes)** → Ployes  ×1
+- **Portokalopita (Greek Orange Syrup Cake)** → Portokalopita  ×1
+- **Prime Rib (Rib Roast)** → Prime Rib  ×1
+- **Prime Rib (Standing Rib Roast)** → Prime Rib  ×1
+- **Quiche Lorraine (spinach and ham variant)** → Quiche Lorraine  ×1
+- **Quiche Lorraine (vegetable variant)** → Quiche Lorraine  ×1
+- **Quiche Lorraine (Spinach and Leek variant)** → Quiche Lorraine  ×1
+- **Ragù (Pasta with Meat Sauce)** → Ragù  ×1
+- **Ragù (Pork Ragù)** → Ragù  ×1
+- **Revithia (Greek Chickpea Stew)** → Revithia  ×1
+- **Revithia (Garbanzo Bean Soup)** → Revithia  ×1
+- **Roast Chicken (Poulet Rôti)** → Roast Chicken  ×1
+- **Scallion Pancake** → Scallion Pancakes  ×1
+- **Shepherd's Pie (Vegetarian)** → Shepherds Pie  ×1
+- **Shepherd's Pie (lentil and plant-based variant)** → Shepherds Pie  ×1
+- **Singapore Noodles (Mei Fun)** → Singapore Noodles  ×1
+- **Spanakopita (mini phyllo cups)** → Spanakopita  ×1
+- **Sponge Cake (Genoise)** → Sponge Cake  ×1
+- **Tsoureki (Low-Carb Variant)** → Tsoureki  ×1
+- **Vasilopita (New Year's Cake)** → Vasilopita  ×1
+- **Homemade Yogurt** → Yogurt  ×1
+- **Yogurt Cake (Gâteau au Yaourt)** → Yogurt Cake  ×1
+- **Youvetsi (Ground Beef and Orzo)** → Youvetsi  ×1
+- **Youvetsi (Greek Beef Stew with Orzo)** → Youvetsi  ×1
+
+## Tier B — same dish, ≥2 recipes (293 aliases, 1124 recipes)
+
+- **Tabbouleh** → Tabouleh  ×23 — spelling: Alternative transliteration of Arabic tabouleh into English
+- **Chicken Parmesan** → Chicken Parmigiana  ×21 — regional: Parmesan is English shorthand for Parmigiana, same dish.
+- **Chicken Tortilla Soup** → Tortilla Soup  ×18 — accompaniment: Names the primary protein ingredient; same dish form
+- **Applesauce** → Apple Sauce  ×13 — spelling: Applesauce is alternate spelling of Apple Sauce
+- **Shrimp Etouffee** → Étouffée Recipes  ×13 — variant: Shrimp is the specific protein variation of étouffée dish
+- **Spaghetti Aglio e Olio** → Aglio e Olio  ×12 — accompaniment: Spaghetti Aglio e Olio names the dish with its standard pasta accompaniment.
+- **Pozole Rojo** → Pozole  ×12 — variant: Red pozole is the classic chile-based pozole variant
+- **Prime Rib Roast** → Prime Rib  ×12 — spelling: Prime Rib Roast is the full formal name for Prime Rib
+- **Penne alla Vodka** → alla Vodka  ×12 — accompaniment: Penne is the typical pasta shape served with alla Vodka sauce.
+- **Cornbread Muffins** → Corn Muffin  ×11 — variant: Cornbread in muffin form, same dish and preparation
+- **Asparagus Gratin** → Asparagus Au Gratin  ×10 — translation: Au Gratin and Gratin are equivalent terms for the same dish preparation method
+- **Chocolate Bundt Cake** → Bundt Cake  ×10 — variant: Chocolate flavor variation of the same Bundt Cake form
+- **Chicken Fricassée** → Fricassée  ×10 — accompaniment: Chicken Fricassée specifies the protein in the classic fricassée dish form.
+- **Mee Siam** → Malaysian Mee Siam  ×10 — spelling: Mee Siam is the core dish name without regional qualifier.
+- **Basil Pesto** → Pesto  ×10 — variant: Basil pesto specifies the herb, traditional form of pesto.
+- **Caldo Verde** → Portuguese Kale Soup  ×10 — translation: Caldo Verde is Portuguese name for this exact dish
+- **Irish Soda Bread** → Soda Bread  ×10 — regional: Irish Soda Bread is soda bread with its origin/regional name specified.
+- **Bucatini all'Amatriciana** → Amatriciana  ×9 — accompaniment: Specifies traditional pasta shape served with Amatriciana sauce
+- **Beef Braciole** → Braciole  ×9 — accompaniment: Beef Braciole specifies the meat type; same dish form.
+- **Espagnole Sauce** → Espagnole (Brown Sauce)  ×9 — spelling: Espagnole Sauce is the full formal name; Espagnole is the abbreviated form.
+- **Moules Marinière** → Mussels & Moules  ×9 — translation: French name for the same mussels dish in white wine
+- **Spaghetti alle Vongole** → Pasta Vongole  ×9 — regional: Italian regional name for pasta vongole with spaghetti specified
+- **Margherita Pizza** → Pizza Margherita  ×9 — spelling: Word order variation of identical dish; both names refer to the same Italian flatbread.
+- **Chocolate Self-Saucing Pudding** → Self-Saucing Pudding  ×9 — variant: Chocolate flavor variation of same self-saucing pudding form
+- **Trofie al Pesto** → Trofie  ×9 — accompaniment: Trofie served with its traditional pesto accompaniment
+- **Buffalo Chicken Wings** → Chicken Wings  ×8 — regional: Buffalo style is regional name for spicy sauce chicken wings
+- **Char Siu (Chinese BBQ Pork)** → Chinese BBQ Pork  ×8 — translation: Char Siu is the Cantonese name for Chinese BBQ Pork
+- **Potato Gnocchi** → Gnocchi  ×8 — variant: Specifies the main ingredient variation of gnocchi.
+- **Pesto alla Trapanese** → Pesto Trapanese  ×8 — translation: Italian formal name for the same Sicilian almond-tomato pesto sauce
+- **Potatoes au Gratin** → Potato Gratin  ×8 — translation: French name for the same layered potato and cream dish
+- **Pasta Puttanesca** → Puttanesca  ×8 — accompaniment: Pasta Puttanesca names the dish with its standard accompaniment pasta.
+- **Shopska Salad** → Shopska Salata  ×8 — translation: English translation of Bulgarian dish name Shopska Salata
+- **Fresh Spring Rolls** → Spring Rolls  ×8 — variant: Fresh describes the preparation method, same dish form.
+- **Belgian Waffles** → Waffles  ×8 — regional: Belgian Waffles specifies the regional style of the dish
+- **Beef Chili** → Chili  ×7 — variant: Beef Chili specifies ingredient variation of base Chili dish
+- **Chicken Katsu Curry** → Japanese Chicken Katsu Curry  ×7 — translation: Removes 'Japanese' descriptor; same dish, regional origin implicit
+- **Orange Marmalade** → Marmalade  ×7 — variant: Orange is the traditional primary citrus for marmalade; common flavor specification.
+- **Moules Marinières** → Mussels & Moules  ×7 — spelling: Moules Marinières is the standard French spelling; Marinière vs Marinière is diacritic variation.
+- **Loaded Baked Potato Soup** → Potato Soup  ×7 — variant: Loaded baked potato soup is potato soup with added toppings/ingredients
+- **Beef Ragu** → Ragù  ×7 — variant: Beef Ragù specifies meat type, same slow-cooked sauce form
+- **Fruit Smoothie** → Smoothie  ×7 — variant: Fruit Smoothie specifies ingredient but same form
+- **Steak and Ale Pie** → Beef & Ale Pie  ×6 — variant: Steak and ale pie uses steak instead of beef chunks; same dish form.
+- **Greek Meatballs (Keftedes)** → Keftedes (Greek Meatballs)  ×6 — translation: English translation of Greek dish name Keftedes
+- **Noodle Kugel** → Kugel  ×6 — variant: Specific ingredient variation of the same kugel dish form
+- **Italian Meatballs** → Meatballs  ×6 — regional: Italian meatballs specify regional origin, same dish form
+- **Stuffed Eggplant** → Melanzane Ripiene (Stuffed Eggplants)  ×6 — translation: English translation of Italian dish name, same preparation
+- **Pasta Fagioli** → Pasta e Fagioli  ×6 — spelling: Omits 'e' (and) but refers to identical Italian soup.
+- **Vegetable Broth** → Vegetable Stock  ×6 — regional: Stock and broth are interchangeable terms for simmered vegetable liquid base
+- **Agnolotti del Plin** → Agnolotti  ×5 — regional: Piedmont regional variant of agnolotti with distinctive pinched edges
+- **Baked Potatoes** → Baked Potato  ×5 — plural: Plural form of the same dish, singular vs. multiple servings.
+- **Braised Short Ribs** → Beef Short Ribs  ×5 — variant: Braising is the standard preparation method for this dish form.
+- **Beef Bulgogi** → Bulgogi  ×5 — accompaniment: Beef Bulgogi specifies the meat type; bulgogi inherently means beef.
+- **Vanilla Buttercream Frosting** → Buttercream Frosting  ×5 — variant: Vanilla is the standard flavoring; specifying it doesn't create a distinct dish
+- **Pork Carnitas** → Carnitas  ×5 — variant: Specifies pork as protein; carnitas traditionally use pork
+- **Garlic Cheese Bread** → Cheese Bread  ×5 — variant: Garlic cheese bread is cheese bread with garlic as primary ingredient.
+- **Charro Beans** → Cowboy Beans  ×5 — translation: Charro Beans is the direct English translation of Frijoles Charros
+- **Chicken Curry** → Curry  ×5 — accompaniment: Chicken Curry names the dish with its typical protein component
+- **Egg Foo Yung** → Egg Foo Young  ×5 — spelling: Alternative romanization/transliteration of Chinese dish name
+- **Southern Fried Chicken** → Fried Chicken  ×5 — regional: Southern Fried Chicken is the regional origin name for Fried Chicken.
+- **Goulash** → Hungarian Goulash  ×5 — spelling: Goulash is the common shortened form of Hungarian Goulash
+- **Beef Lok Lak** → Lok Lak  ×5 — accompaniment: Beef Lok Lak specifies the meat type; standard dish form.
+- **Greek Lettuce Salad (Maroulosalata)** → Maroulosalata  ×5 — translation: English translation of Greek dish name with same ingredients and preparation
+- **Petits Pois à la Française** → Petits Pois A La Francaise - French Peas  ×5 — spelling: Diacritic variation of same French dish name
+- **Boulangère Potatoes** → Pommes Boulangère  ×5 — translation: English translation of French dish name, same preparation
+- **Mashed Rutabaga** → Rutabaga  ×5 — variant: Mashed rutabaga is the same dish in a prepared form
+- **Salsa Fresca** → Salsa  ×5 — regional: Salsa Fresca is fresh salsa, the most common salsa preparation
+- **Stuffed Zucchini Boats** → Stuffed Zucchini  ×5 — accompaniment: Zucchini boats is the standard serving form of stuffed zucchini.
+- **Pasta Amatriciana** → Amatriciana  ×4 — accompaniment: Pasta Amatriciana names the dish with its standard pasta accompaniment.
+- **Fresh Apple Cake** → Apple Cake  ×4 — variant: Fresh emphasizes ingredient quality, same cake form and preparation
+- **Penne Arrabbiata** → Arrabbiata  ×4 — accompaniment: Same dish, pasta shape specified instead of spaghetti
+- **Penne all'Arrabbiata** → Arrabbiata  ×4 — accompaniment: Penne substituted for spaghetti in classic arrabbiata preparation
+- **Avgolemono** → Avgolemono Soup  ×4 — spelling: Avgolemono is the shortened, common name for Avgolemono Soup
+- **Crab Stuffed Shrimp** → Baked Stuffed Shrimp  ×4 — variant: Specifies crab filling, same dish form and cooking method
+- **Bienenstich (Bee Sting Cake)** → Bee Sting Cake  ×4 — translation: Bienenstich is German name for Bee Sting Cake
+- **Beef and Ale Pie** → Beef & Ale Pie  ×4 — spelling: Ampersand (&) versus 'and' spelling variation
+- **Braised Beef Brisket** → Braised Brisket  ×4 — spelling: Beef Brisket is the full name; Brisket alone is abbreviated form.
+- **Broccoli Cheese Soup** → Broccoli Cheddar Soup  ×4 — variant: Cheddar is a type of cheese; substitutable descriptor
+- **Vanilla Bundt Cake** → Bundt Cake  ×4 — variant: Vanilla is a flavor variation of the same Bundt Cake form
+- **Caesar Salad Dressing** → Caesar Dressing  ×4 — accompaniment: Caesar Salad Dressing is the standard dressing for Caesar Salad
+- **Creamy Cauliflower Soup** → Cauliflower Soup  ×4 — variant: Creamy descriptor specifies the cream finish already inherent in Cauliflower Soup definition.
+- **Cheesy Garlic Bread** → Cheese Bread  ×4 — variant: Same cheese bread with garlic butter, emphasizes cheesy and garlic components.
+- **Buffalo Wings** → Chicken Wings  ×4 — regional: Buffalo Wings is the regional name for Chicken Wings from Buffalo, NY
+- **Chili con Carne** → Chili  ×4 — translation: Spanish name for beef chili; standard regional variant
+- **Char Siu Pork** → Chinese BBQ Pork  ×4 — translation: Char Siu is the Cantonese name for the same dish
+- **Frijoles Charros** → Cowboy Beans  ×4 — translation: Frijoles Charros is the Spanish name for Cowboy Beans
+- **Maryland Crab Cakes** → Crab Cakes  ×4 — regional: Maryland is the iconic regional origin of crab cakes, same dish form.
+- **Chicago-Style Deep Dish Pizza** → Deep Dish Pizza  ×4 — regional: Chicago-Style specifies the regional origin already described in Deep Dish Pizza.
+- **Aubergine Parmigiana** → Eggplant Parmigiana  ×4 — translation: Aubergine is British/European term for eggplant
+- **Beef Enchiladas** → Enchiladas  ×4 — variant: Enchiladas with beef filling, same dish form.
+- **Chinese Five Spice Powder** → Five Spice Powder  ×4 — spelling: Regional descriptor clarifying the origin of the same spice blend
+- **Egg Fried Rice** → Fried Rice  ×4 — variant: Egg fried rice is fried rice with egg as the protein component.
+- **Lasagne alla Bolognese** → Lasagna  ×4 — translation: Italian regional name for lasagna with Bolognese ragù sauce
+- **Chocolate Lava Cake** → Molten Lava Cake  ×4 — variant: Same chocolate cake form, molten center; 'Chocolate' specifies ingredient variation.
+- **Beef Pho** → Pho  ×4 — variant: Beef pho specifies the protein variation of the base pho dish.
+- **Spaghetti alla Puttanesca** → Puttanesca  ×4 — accompaniment: Spaghetti alla Puttanesca names dish with its traditional pasta accompaniment.
+- **Salsa Roja** → Salsa  ×4 — variant: Red salsa; same dish form, tomato-based variant
+- **Spaghetti allo Scoglio** → Scoglio  ×4 — accompaniment: Spaghetti allo Scoglio names the dish with its standard pasta accompaniment.
+- **Vietnamese Spring Rolls** → Spring Rolls  ×4 — regional: Vietnamese Spring Rolls specifies the origin/regional name of the dish
+- **Fresh Tomato Sauce** → Tomato Sauce  ×4 — variant: Fresh emphasizes ingredient state, same foundational tomato sauce dish
+- **Vasilopita Cake** → Vasilopita  ×4 — accompaniment: Vasilopita is traditionally a sweet bread; 'Cake' clarifies the form commonly made.
+- **Pasta all'Amatriciana** → Amatriciana  ×3 — regional: Italian formal name for the same Roman pasta dish
+- **Brown Betty** → Apple Brown Betty  ×3 — accompaniment: Brown Betty is Apple Brown Betty without apple specification.
+- **Seafood Rice (Arroz de Marisco)** → Arroz de Marisco  ×3 — translation: English translation of Spanish dish name, same preparation and ingredients
+- **Pasta Bolognese** → Bolognese  ×3 — accompaniment: Bolognese sauce with its traditional pasta accompaniment named
+- **Bread and Butter Pudding** → Bread Pudding  ×3 — regional: British name for same custard bread dessert, traditional variant
+- **Fried Cabbage** → Cabbage  ×3 — variant: Fried cabbage is cabbage prepared by frying; same dish form.
+- **Spaghetti alla Carbonara** → Carbonara  ×3 — translation: Italian formal name for the same Roman pasta dish
+- **Challah Bread** → Challah  ×3 — spelling: Challah Bread is simply Challah with 'Bread' appended for clarity
+- **Chicken Kyiv** → Chicken Kiev  ×3 — translation: Kyiv is modern transliteration of Kiev from Ukrainian
+- **Chicken Normandy** → Chicken Normande  ×3 — regional: Normandy is English spelling/translation of Normande
+- **Chicken Potpie** → Chicken Pot Pie  ×3 — spelling: Potpie vs Pot Pie - same dish, alternate spelling
+- **Chicken Chow Mein** → Chow Mein  ×3 — accompaniment: Chicken Chow Mein specifies the protein component of the standard dish
+- **Coconut Layer Cake** → Coconut Cake  ×3 — variant: Layer cake structure is standard for coconut cake
+- **Creamy Coleslaw** → Coleslaw  ×3 — variant: Specifies creamy dressing, a standard coleslaw variation.
+- **Coquilles St. Jacques** → Coquilles Saint Jacques  ×3 — spelling: Abbreviated 'St.' for 'Saint' is standard transliteration variant.
+- **Sweet Cornbread** → Cornbread  ×3 — variant: Sweet cornbread is a flavor variation of standard cornbread
+- **Charro Beans (Frijoles Charros)** → Cowboy Beans  ×3 — translation: Charro Beans is English translation of Frijoles Charros
+- **Dandan Noodles** → Dan Dan Noodles(担担面)  ×3 — spelling: Romanization variant of same Sichuan noodle dish
+- **Pasta with Duck Ragù** → Duck Ragu  ×3 — accompaniment: Names the ragu with its traditional pasta accompaniment
+- **Chinese Five Spice** → Five Spice Powder  ×3 — regional: Chinese Five Spice is the regional/origin name for Five Spice Powder
+- **Flammkuchen** → Flammekueche  ×3 — spelling: Flammkuchen is alternate German spelling of Flammekueche
+- **Baguettes** → French Bread  ×3 — plural: Baguettes is the plural form of baguette, the core dish.
+- **Chicken Fried Rice** → Fried Rice  ×3 — variant: Fried rice with chicken as the protein component
+- **Vegetable Frittata** → Frittata  ×3 — variant: Vegetable frittata is frittata with vegetable emphasis, same dish form.
+- **Chocolate Fudge** → Fudge  ×3 — variant: Chocolate is the typical fudge flavor, same form and technique.
+- **Peach Galette** → Galette  ×3 — variant: Peach galette is galette with specific fruit filling ingredient.
+- **Apple Galette** → Galette  ×3 — variant: Apple is the filling ingredient of this galette form
+- **Grape-Nuts Pudding** → GrapeNut Pudding  ×3 — spelling: Hyphenation and brand name capitalization variation of same dish
+- **Green Salad with Vinaigrette** → Green Salad  ×3 — accompaniment: Vinaigrette is the standard dressing for green salad
+- **Beef Goulash** → Hungarian Goulash  ×3 — variant: Beef Goulash specifies the meat type, same dish form.
+- **Beef Involtini** → Involtini  ×3 — variant: Beef Involtini specifies meat type, same dish form
+- **Japanese Ginger Dressing** → Japanese Ginger Salad Dressing  ×3 — spelling: Shortened form of the same dressing, omits 'Salad' but identical product
+- **Creamy Mashed Potatoes** → Mashed Potatoes  ×3 — variant: Creamy emphasizes the inherent texture of mashed potatoes
+- **Chocolate Lava Cakes** → Molten Lava Cake  ×3 — plural: Chocolate Lava Cakes is plural form of Molten Lava Cake
+- **Taiwanese Beef Noodle Soup** → Niu Rou Mian  ×3 — regional: Taiwanese variant of Niu Rou Mian, same braised beef noodle soup dish
+- **Paella** → Paella de Mariscos (Seafood Paella)  ×3 — plural: Paella is the base dish; Paella de Mariscos is the seafood variant.
+- **Buttermilk Pancakes** → Pancakes  ×3 — variant: Buttermilk is the standard ingredient variation of pancakes.
+- **Peas à la Française** → Petits Pois A La Francaise - French Peas  ×3 — spelling: Diacritic variation and word order of same classic French dish
+- **Potatoes Boulangère** → Pommes Boulangère  ×3 — translation: English translation of French dish name, same preparation and ingredients
+- **Roast Pork Loin** → Pork Loin Roast  ×3 — spelling: Word order variation of same dish, identical preparation method
+- **Roasted Pork Loin** → Pork Loin Roast  ×3 — spelling: Word order variation of same dish, roasted pork loin
+- **Cream Cheese Pound Cake** → Pound Cake  ×3 — variant: Pound cake with cream cheese flavor variation, same form.
+- **Posole** → Pozole  ×3 — spelling: Posole is alternative spelling of Pozole, same dish
+- **Pulled Pork Sandwiches** → Pulled Pork  ×3 — accompaniment: Pulled pork with its usual sandwich accompaniment named.
+- **Spaghetti Puttanesca** → Puttanesca  ×3 — accompaniment: Names the pasta form typically served with puttanesca sauce.
+- **Pasta alla Puttanesca** → Puttanesca  ×3 — translation: Italian formal name for the same dish
+- **Roast Turkey with Gravy** → Roast Turkey  ×3 — accompaniment: Gravy is traditional accompaniment to roast turkey
+- **Wiener Schnitzel** → Schnitzel  ×3 — regional: Wiener Schnitzel is the Viennese/Austrian regional name for schnitzel.
+- **Pork Schnitzel** → Schnitzel  ×3 — variant: Pork Schnitzel specifies the meat type, same dish form.
+- **Chicken Schnitzel** → Schnitzel  ×3 — variant: Same breaded-fried cutlet technique, different protein choice
+- **Soup au Pistou** → Soupe au Pistou (French Minestrone)  ×3 — spelling: Omission of 'e' in French 'Soupe' is minor spelling variation
+- **Yellow Squash Casserole** → Squash Casserole  ×3 — variant: Yellow squash is the typical variety used in squash casserole.
+- **Cabbage Rolls** → Stuffed Cabbage Rolls  ×3 — plural: Cabbage Rolls is the same dish, just without 'Stuffed' descriptor
+- **Olive Tapenade** → Tapenade  ×3 — variant: Specifies olive as main ingredient; core dish unchanged.
+- **Creamy Tomato Soup** → Tomato Soup  ×3 — variant: Tomato soup with cream is the standard preparation; cream is usual accompaniment.
+- **Vanilla Layer Cake** → Vanilla Cake  ×3 — accompaniment: Layer cake specifies the form; vanilla cake's usual presentation.
+- **Buttermilk Waffles** → Waffles  ×3 — variant: Buttermilk batter is the stated waffle base; same dish form.
+- **Stir-Fried Rice Noodles** → Xiamen Chow Mei Fun  ×3 — translation: Generic English description of the same dish form and technique
+- **Steamed Dumplings** → Zhēngjiǎo  ×3 — translation: English translation of Chinese Zhēngjiǎo; identical dish
+- **Spaghetti all'Amatriciana** → Amatriciana  ×2 — accompaniment: Spaghetti all'Amatriciana names the dish with its traditional pasta accompaniment.
+- **Apple Betty** → Apple Brown Betty  ×2 — spelling: Shortened form of same dish, commonly used variant name
+- **Apricot Preserves** → Apricot Jam  ×2 — regional: Preserves and jam are regional/terminological variants
+- **Rigatoni Arrabbiata** → Arrabbiata  ×2 — variant: Same arrabbiata sauce, different pasta shape used
+- **Avgolemono (Greek Lemon Chicken Soup)** → Avgolemono Soup  ×2 — translation: English translation of Greek dish name with descriptive clarification
+- **Stuffed Baked Shrimp** → Baked Stuffed Shrimp  ×2 — spelling: Word order variation of identical dish; baked and stuffed shrimp
+- **Basque Burnt Cheesecake** → Basque Cheesecake  ×2 — variant: Burnt top is the defining characteristic of this cheesecake style.
+- **Beef and Broccoli Stir Fry** → Beef and Broccoli  ×2 — accompaniment: Stir fry describes the cooking method, integral to the dish
+- **Beef with Broccoli** → Beef and Broccoli  ×2 — spelling: Minor word order variation; identical dish composition and preparation
+- **Mexican Rice and Black Beans** → Black Beans and Rice  ×2 — regional: Mexican variation of the same Caribbean/Latin American black beans and rice dish
+- **Rigatoni Bolognese** → Bolognese  ×2 — accompaniment: Bolognese sauce with its usual pasta accompaniment named.
+- **Oatmeal Breakfast Bars** → Breakfast Bars  ×2 — variant: Oatmeal is the primary ingredient; same dish form and purpose
+- **Oatmeal Bars** → Breakfast Bars  ×2 — variant: Oatmeal Bars emphasizes primary ingredient; same breakfast bar form
+- **Fudge Brownies** → Brownies  ×2 — variant: Fudge brownies are brownies with emphasizing fudgy texture variation.
+- **Tomato Bruschetta** → Bruschetta  ×2 — variant: Tomato bruschetta specifies the standard topping of classic bruschetta.
+- **Bruschetta al Pomodoro** → Bruschetta  ×2 — translation: Italian name specifying tomato topping variant of bruschetta
+- **Lemon Bundt Cake** → Bundt Cake  ×2 — variant: Lemon is a flavor variation of the same Bundt cake form.
+- **Chocolate Buttercream Frosting** → Buttercream Frosting  ×2 — variant: Chocolate flavoring variation of buttercream frosting base
+- **Southern Buttermilk Biscuits** → Buttermilk Biscuits  ×2 — regional: Southern specifies regional style of same buttermilk biscuit
+- **Cacık** → Cacik  ×2 — spelling: Turkish diacritic variation of Cacik
+- **Cajun Seasoning Mix** → Cajun Seasoning  ×2 — spelling: Mix is standard descriptor for seasoning blend product form
+- **Pasta Carbonara** → Carbonara  ×2 — accompaniment: Pasta Carbonara names the dish with its usual pasta base
+- **Chicken à la Normande** → Chicken Normande  ×2 — translation: French formal name for the same dish, à la Normande means in Normandy style
+- **Chicken Salad Sandwich** → Chicken Salad  ×2 — accompaniment: Sandwich specifies serving method, not a different dish
+- **Tinolang Manok** → Chicken Tinola  ×2 — translation: Tinolang Manok is Filipino language name for Chicken Tinola
+- **One Pot Chicken and Rice** → Chicken and Rice  ×2 — variant: One Pot emphasizes cooking method, same dish form
+- **Arroz con Pollo** → Chicken and Rice  ×2 — translation: Arroz con Pollo is Spanish name for Chicken and Rice
+- **Chilaquiles Verdes** → Chilaquiles  ×2 — variant: Green salsa variation of the same dish form
+- **Chilaquiles Rojos** → Chilaquiles  ×2 — variant: Red salsa chilaquiles, standard regional variation of base dish
+- **Char Siu** → Chinese BBQ Pork  ×2 — translation: Char Siu is the Cantonese name for Chinese BBQ Pork
+- **Chinese Eggplant with Garlic Sauce** → Chinese Eggplant  ×2 — accompaniment: Garlic sauce is the standard preparation method for Chinese eggplant
+- **Chocolate Layer Cake** → Chocolate Cake  ×2 — accompaniment: Layer cake specifies the usual form/presentation of chocolate cake
+- **Berry Cobbler** → Cobbler  ×2 — variant: Berry cobbler is cobbler with berry filling, same dish form.
+- **Blackberry Cobbler** → Cobbler  ×2 — variant: Specific fruit flavor of the same cobbler form
+- **Buttermilk Cornbread** → Cornbread  ×2 — variant: Buttermilk is a standard ingredient in cornbread; naming its key ingredient is a common variation.
+- **Crostata di Marmellata** → Crostata  ×2 — variant: Crostata di Marmellata specifies jam filling, standard crostata variation.
+- **Indian Chicken Curry** → Curry  ×2 — accompaniment: Curry with its typical protein component specified.
+- **Jamaican Curry Chicken** → Curry  ×2 — regional: Jamaican curry chicken is a regional variation of curry
+- **Pan Pizza** → Deep Dish Pizza  ×2 — variant: Pan pizza is deep dish pizza by another name, same form
+- **Chicago Deep Dish Pizza** → Deep Dish Pizza  ×2 — regional: Chicago Deep Dish Pizza explicitly names the regional origin of Deep Dish Pizza.
+- **Pappardelle with Duck Ragu** → Duck Ragu  ×2 — accompaniment: Pappardelle is the traditional pasta served with duck ragu
+- **Dutch Baby** → Dutch Baby Pancake  ×2 — spelling: Common shortened form of Dutch Baby Pancake
+- **Mexican Street Corn (Elote)** → Elote (Mexican Street Corn)  ×2 — accompaniment: Mexican Street Corn is the common English name for Elote with its typical accompaniments named.
+- **Enchiladas Verdes** → Enchiladas de Pollo  ×2 — variant: Same dish form, variation using green sauce instead of chili sauce
+- **Fish Escabeche** → Escabeche  ×2 — accompaniment: Fish Escabeche specifies the protein; same dish form
+- **Greek Fava** → Fava  ×2 — regional: Greek Fava specifies the regional origin already in dish description.
+- **Baja Fish Tacos** → Fish Tacos  ×2 — regional: Baja Fish Tacos is the regional name for Fish Tacos from Baja California, Mexico.
+- **Tarte Flambée (Flammkuchen)** → Flammekueche  ×2 — translation: French name for same Alsatian dish; regional language variant.
+- **Flammkuchen (Tarte Flambée)** → Flammekueche  ×2 — spelling: Flammkuchen is alternate spelling of Flammekueche; Tarte Flambée is French translation
+- **French Baguette** → French Bread  ×2 — translation: Baguette is the French term for this specific bread form
+- **French Baguettes** → French Bread  ×2 — plural: Baguettes is the French term for the same bread form described.
+- **Vegetable Fried Rice** → Fried Rice  ×2 — variant: Vegetable fried rice emphasizes vegetable protein variant of fried rice
+- **Grape-Nut Pudding** → GrapeNut Pudding  ×2 — spelling: Hyphenation variant of same cereal pudding dish
+- **Custard Pudding** → GrapeNut Pudding  ×2 — variant: Custard Pudding describes the same Grape-Nut dish form
+- **Revithosoupa (Greek Chickpea Soup)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×2 — transliteration: Revithosoupa is Latin transliteration of Ρεβιθόσουπα, same dish
+- **Greek Roasted Potatoes** → Greek Lemon Roasted Potatoes  ×2 — variant: Omits lemon but describes same Greek roasted potato dish
+- **Lemon Roasted Potatoes** → Greek Lemon Roasted Potatoes  ×2 — regional: Removes 'Greek' descriptor; same dish, Mediterranean preparation
+- **Garden Salad** → Green Salad  ×2 — regional: Garden Salad is a common regional/colloquial name for basic green salad
+- **Smash Burger** → Hamburger  ×2 — variant: Smash burger is hamburger with a specific cooking technique
+- **Hollandaise** → Hollandaise Sauce  ×2 — spelling: Shortened form of the same sauce, commonly used name
+- **Zucchini Involtini** → Involtini  ×2 — variant: Same involtini form, zucchini as ingredient variation
+- **Ginger Dressing** → Japanese Ginger Salad Dressing  ×2 — variant: Removes 'Japanese' descriptor; same dressing formulation and use
+- **Lamb Shish Kebab** → Lamb Kabobs  ×2 — regional: Shish kebab is the Turkish/regional name for lamb kabobs
+- **Moroccan Lamb Meatballs** → Lamb Meatballs  ×2 — variant: Regional/flavor variation of lamb meatballs with Moroccan spicing
+- **Lingonberry Sauce** → Lingonberry  ×2 — accompaniment: Sauce is the standard serving form of lingonberry preserve.
+- **Lingonberry Jam** → Lingonberry  ×2 — accompaniment: Jam is the standard form of lingonberry as a condiment.
+- **Mee Siam Goreng** → Malaysian Mee Siam  ×2 — translation: Goreng means fried in Malay; same dish described.
+- **Frozen Margarita** → Margarita  ×2 — variant: Same cocktail, frozen preparation method variation.
+- **Stuffed Eggplants** → Melanzane Ripiene (Stuffed Eggplants)  ×2 — translation: English translation of Italian dish name, same form and preparation
+- **Molten Chocolate Cake** → Molten Lava Cake  ×2 — variant: Same molten center chocolate cake, different ingredient emphasis.
+- **Molten Chocolate Lava Cake** → Molten Lava Cake  ×2 — variant: Specifies chocolate as the primary flavor; same cake form.
+- **Chocolate Chip Muffins** → Muffins  ×2 — variant: Chocolate chips are a common muffin studding ingredient.
+- **Mussels Marinière** → Mussels & Moules  ×2 — translation: English translation of French 'Moules Marinière'
+- **Loaded Nachos** → Nachos  ×2 — variant: Loaded Nachos is nachos with added/emphasized toppings.
+- **New York Pizza** → New York-Style Pizza  ×2 — spelling: Shortened form of New York-Style Pizza, same dish
+- **Beef Noodle Soup (Niu Rou Mian)** → Niu Rou Mian  ×2 — translation: English translation of Niu Rou Mian; same dish
+- **American Pancakes** → Pancakes  ×2 — regional: American Pancakes specifies the regional style of the dish
+- **Spaghetti Vongole** → Pasta Vongole  ×2 — variant: Spaghetti Vongole specifies spaghetti, one of the stated pasta options
+- **Linguine Vongole** → Pasta Vongole  ×2 — accompaniment: Specifies pasta type (linguine) in standard Pasta Vongole dish
+- **Baked Pasta (Pasta al Forno)** → Pasta al Forno  ×2 — translation: English translation of Italian dish name, same form and preparation
+- **Pepper Steak Stir Fry** → Pepper Steak  ×2 — accompaniment: Stir fry describes the cooking method, not a different dish form
+- **Pesto Genovese** → Pesto  ×2 — regional: Genovese specifies the traditional Genoese origin of pesto
+- **Mexican Picadillo** → Picadillo  ×2 — regional: Mexican version of Spanish picadillo dish
+- **Pizza Tomato Sauce** → Pizza Sauce  ×2 — variant: Specifies tomato as primary ingredient; same pizza sauce base
+- **Rustic Plum Tart** → Plum Tart  ×2 — variant: Rustic style is a presentation variation of same plum tart dish
+- **Tuna Poke Bowl** → Poke Bowl  ×2 — variant: Specifies tuna as the protein; same dish form and preparation
+- **Chicken alla Romana** → Pollo alla Romana  ×2 — translation: Pollo is Italian for chicken; same dish in English
+- **Mississippi Pot Roast** → Pot Roast  ×2 — variant: Regional flavor variation of pot roast with Mississippi seasoning.
+- **Au Gratin Potatoes** → Potato Gratin  ×2 — regional: Au Gratin Potatoes is English terminology for the same French dish
+- **German Potato Pancakes** → Potato Pancake  ×2 — regional: German regional variation of Eastern European potato pancake dish
+- **Creamy Potato Soup** → Potato Soup  ×2 — variant: Creamy preparation is standard form of this soup.
+- **Vanilla Pound Cake** → Pound Cake  ×2 — variant: Vanilla is a standard flavoring in pound cake, not a distinct form.
+- **Chicken Ramen** → Ramen  ×2 — variant: Ramen with chicken instead of traditional pork topping
+- **Shoyu Ramen** → Ramen  ×2 — variant: Shoyu ramen is a flavor variation of ramen, same dish form.
+- **Revithada** → Revithia  ×2 — spelling: Revithada is a Greek spelling variant of Revithia, same dish
+- **Chickpea Stew** → Revithia  ×2 — translation: Chickpea Stew is English translation of Greek Revithia
+- **Risotto Milanese** → Risotto alla Milanese  ×2 — spelling: Omits 'alla' preposition; same Northern Italian saffron risotto
+- **Roasted Red Potatoes** → Roast Potatoes  ×2 — variant: Red potatoes are a potato variety; same roasting preparation method.
+- **Roasted Turkey** → Roast Turkey  ×2 — spelling: Roasted vs Roast are equivalent forms of same cooking method
+- **Mashed Rutabagas** → Rutabaga  ×2 — variant: Mashed rutabagas is rutabaga prepared by a common cooking method.
+- **Linguine allo Scoglio** → Scoglio  ×2 — accompaniment: Linguine allo Scoglio names the dish with its typical pasta accompaniment.
+- **English Scones** → Scones  ×2 — regional: English Scones specifies the regional origin of the dish.
+- **Shellfish Stock** → Seafood Stock  ×2 — variant: Shellfish Stock is a seafood stock focusing on shellfish component specifically.
+- **Self-Saucing Butterscotch Pudding** → Self-Saucing Pudding  ×2 — variant: Butterscotch is a flavor variation of the same self-saucing pudding form.
+- **Self-Saucing Chocolate Pudding** → Self-Saucing Pudding  ×2 — variant: Chocolate is a flavor variation of the same self-saucing pudding form.
+- **Shrimp Corn Chowder** → Shrimp and Corn Chowder  ×2 — spelling: Omits 'and' conjunction; identical dish composition and form
+- **Shrimp Chowder** → Shrimp and Corn Chowder  ×2 — variant: Corn is typical accompaniment, omitting it doesn't make different dish
+- **Singapore Rice Noodles** → Singapore Noodles  ×2 — variant: Rice noodles specifies ingredient; same dish as noodles.
+- **Singapore Mei Fun** → Singapore Noodles  ×2 — translation: Mei Fun is the Chinese name for the same rice noodle dish
+- **Pork Souvlaki** → Souvlaki (Greece)  ×2 — variant: Pork souvlaki is souvlaki with pork meat specified.
+- **Summer Squash Casserole** → Squash Casserole  ×2 — variant: Summer squash is the primary ingredient type in squash casserole
+- **Garlic Butter Steak Tips** → Steak Tips  ×2 — variant: Same beef cube dish, different flavor profile (garlic butter vs soy garlic)
+- **Ground Beef Stroganoff** → Stroganoff  ×2 — variant: Same dish form with ingredient substitution (ground vs cubed beef)
+- **Supplì al Telefono** → Suppli  ×2 — regional: Italian regional name; 'al telefono' refers to cheese strings when pulled
+- **Grilled Swordfish Steaks** → Swordfish  ×2 — accompaniment: Grilled method and steak cut are inherent to the dish form
+- **Ground Beef Tacos** → Tacos  ×2 — variant: Tacos with specific filling; same dish form
+- **Beef Tacos** → Tacos  ×2 — variant: Beef tacos are tacos with a specific meat filling.
+- **Peanut Sauce** → Thai Peanut Sauce  ×2 — variant: Generic peanut sauce; Thai version is regional specification of base sauce.
+- **Thai Red Curry with Chicken** → Thai Red Curry  ×2 — accompaniment: Chicken is the typical protein in Thai Red Curry; standard accompaniment.
+- **Tomato Basil Soup** → Tomato Soup  ×2 — variant: Basil is traditional tomato soup flavoring, not a distinct dish form
+- **Sausage Tortellini Soup** → Tortellini Soup  ×2 — variant: Sausage addition is ingredient variation of base tortellini soup
+- **Creamy Tortellini Soup** → Tortellini Soup  ×2 — variant: Same dish form, different preparation method (creamy vs broth-based).
+- **Tuna Casserole** → Tuna Noodle Casserole  ×2 — variant: Omits noodle; same dish, common shortened name
+- **Tuscan White Bean and Kale Soup** → Tuscan White Bean Soup  ×2 — accompaniment: Kale is a typical ingredient already in the dish description.
+- **Zucchini Lasagna** → Vegetable Lasagna  ×2 — variant: Zucchini lasagna is vegetable lasagna with zucchini as primary vegetable.
+- **Vegetarian Lasagna** → Vegetable Lasagna  ×2 — variant: Vegetarian emphasizes no meat; same dish form as Vegetable Lasagna
+- **Velouté** → Velouté Sauce  ×2 — spelling: Velouté is the standard spelling; Veloute omits the accent.
+- **Liege Waffles** → Waffles  ×2 — regional: Liege waffles are Belgian waffles, different regional style
+- **Sandwich Bread** → White Bread  ×2 — accompaniment: Sandwich Bread is White Bread with its typical use named.
+- **Giouvetsi** → Youvetsi  ×2 — spelling: Giouvetsi is alternate transliteration of Youvetsi
+- **Pasta alla Vodka** → alla Vodka  ×2 — accompaniment: Pasta alla Vodka names the dish with its primary component
+- **Rigatoni alla Vodka** → alla Vodka  ×2 — variant: Same sauce preparation, different pasta shape only
+- **Spaghetti alla Colatura** → alla colatura  ×2 — accompaniment: Spaghetti is the specific pasta form for this dish
+- **Spaghetti con la Colatura di Alici** → alla colatura  ×2 — accompaniment: Same dish, specifying pasta type and sauce ingredient
+
+## Tier C — same dish, 1 recipe (692 aliases, 692 recipes)
+
+- **Spaghetti Aglio Olio** → Aglio e Olio  ×1 — accompaniment: Names the pasta form with the classic dish; same preparation
+- **Pasta Aglio e Olio** → Aglio e Olio  ×1 — spelling: Same dish, just with 'Pasta' prefix added for clarity
+- **Spaghetti Aglio, Olio e Peperoncino** → Aglio e Olio  ×1 — translation: Peperoncino is Italian for red chili flakes; full name variation
+- **Spinach and Ricotta Agnolotti** → Agnolotti  ×1 — variant: Specific filling variation of the same agnolotti pasta form
+- **Pork Agnolotti** → Agnolotti  ×1 — variant: Pork agnolotti specifies filling; same dish form
+- **Agnolotti in Brodo** → Agnolotti  ×1 — accompaniment: Same pasta parcel, broth is typical serving method
+- **Agnolini in Brodo** → Agnolotti  ×1 — regional: Agnolini is agnolotti's regional Emilia variant name
+- **Bucatini Amatriciana** → Amatriciana  ×1 — accompaniment: Names the traditional pasta shape served with Amatriciana sauce.
+- **Spaghetti Amatriciana** → Amatriciana  ×1 — accompaniment: Specifies traditional pasta form served with Amatriciana sauce
+- **Cinnamon Sugar Apple Cake** → Apple Cake  ×1 — variant: Cinnamon sugar is a typical topping/flavoring variation of apple cake.
+- **Cinnamon Apple Cake** → Apple Cake  ×1 — variant: Cinnamon is stated flavor variation of Apple Cake
+- **Apple Pie with Crumb Topping** → Apple Pie  ×1 — variant: Crumb topping is a common Apple Pie variation
+- **Homemade Applesauce** → Apple Sauce  ×1 — variant: Homemade specifies preparation method, same dish form.
+- **Arancini di Riso** → Arancini  ×1 — translation: Arancini di Riso is Italian for rice arancini, clarifying the base ingredient.
+- **Penne Arrabiata** → Arrabbiata  ×1 — variant: Same arrabbiata sauce; different pasta shape substitution
+- **Arrabiata** → Arrabbiata  ×1 — spelling: Missing double 'r' - common spelling variant of Arrabbiata
+- **Spaghetti Arrabbiata** → Arrabbiata  ×1 — accompaniment: Spaghetti Arrabbiata names the pasta with the sauce dish.
+- **Pasta all'Arrabbiata** → Arrabbiata  ×1 — translation: Italian formal name for the same Roman pasta dish
+- **Seafood Rice** → Arroz de Marisco  ×1 — translation: English translation of Spanish dish name, same preparation and ingredients
+- **Avgolemono (Lemon Chicken Soup)** → Avgolemono Soup  ×1 — regional: Alternative name for the same Greek egg-lemon soup dish
+- **Baeckaoffe** → Baeckeoffe  ×1 — spelling: Alternate spelling of Alsatian dish name, same preparation
+- **Roasted Salmon** → Baked Salmon  ×1 — variant: Roasted and baked are interchangeable cooking methods for salmon fillets
+- **Baked Salmon with Garlic Butter** → Baked Salmon  ×1 — variant: Garlic butter is a flavor variation of baked salmon
+- **Baked Lemon Garlic Salmon** → Baked Salmon  ×1 — variant: Same baked salmon dish with specific flavor variation added
+- **Baked Lemon Garlic Butter Salmon** → Baked Salmon  ×1 — variant: Same baked salmon dish with specific flavor variation listed
+- **Baked Salmon with Dill Sauce** → Baked Salmon  ×1 — variant: Same baked salmon dish with specific sauce variation
+- **Stuffed Jumbo Shells** → Baked Stuffed Shells  ×1 — variant: Same dish, emphasizes jumbo shell size characteristic.
+- **Stuffed Shells with Ricotta and Spinach** → Baked Stuffed Shells  ×1 — variant: Same dish, specifies the filling ingredients explicitly
+- **Baked Stuffed Pasta Shells** → Baked Stuffed Shells  ×1 — spelling: Same dish, just specifies pasta shells versus shells
+- **Stuffed Shrimp** → Baked Stuffed Shrimp  ×1 — variant: Omits 'Baked' preparation method; same dish form
+- **Baked Crab Stuffed Shrimp** → Baked Stuffed Shrimp  ×1 — variant: Specifies crab filling, same dish form and cooking method
+- **Baked Ziti with Sausage** → Baked Ziti  ×1 — variant: Same dish form with ingredient variation (sausage added)
+- **Banana Bread with Chocolate Chips** → Banana Bread  ×1 — variant: Chocolate chips are ingredient variation of same banana bread form
+- **Banana Nut Bread** → Banana Bread  ×1 — variant: Same bread form, nuts are common variation
+- **Banana Nut Muffins** → Banana Muffins  ×1 — variant: Nuts are common optional ingredient in banana muffins.
+- **Banana Chocolate Chip Muffins** → Banana Muffins  ×1 — variant: Chocolate chips are stated as optional ingredient in dish description
+- **Barley Pilaf** → Barley  ×1 — accompaniment: Pilaf is barley's standard preparation method
+- **Herb Mushroom Barley** → Barley  ×1 — variant: Barley dish with herbs and mushrooms added
+- **Burnt Basque Cheesecake** → Basque Cheesecake  ×1 — variant: Burnt describes the characteristic caramelized top; same dish form
+- **San Sebastian Cheesecake** → Basque Cheesecake  ×1 — regional: San Sebastian is the Basque city where this cheesecake originated.
+- **Burnt Basque Cheesecake (Tarta de Queso)** → Basque Cheesecake  ×1 — variant: Burnt describes the characteristic caramelized top; same dish form
+- **Béchamel Sauce (Greek Besamel)** → Bechamel  ×1 — regional: Greek transliteration/regional name for French béchamel sauce
+- **Béchamel Sauce (Mornay variant with cheese)** → Bechamel  ×1 — variant: Béchamel with cheese is Mornay, a recognized variation of Béchamel base sauce
+- **Bienenstich Kuchen (Bee Sting Cake)** → Bee Sting Cake  ×1 — translation: German name with English translation of identical cake
+- **Steak and Ale Pot Pies** → Beef & Ale Pie  ×1 — variant: Steak substitutes beef; pot pie is same dish form as pie
+- **BBQ Short Ribs** → Beef Short Ribs  ×1 — variant: BBQ preparation method is common flavor variation of beef short ribs.
+- **Beef Short Ribs and Gravy** → Beef Short Ribs  ×1 — accompaniment: Gravy is typical accompaniment to beef short ribs
+- **Cajun Beef Stew** → Beef Stew  ×1 — variant: Regional/flavor variation of beef stew with Cajun seasoning.
+- **Teriyaki Steak** → Beef Teriyaki  ×1 — variant: Steak is a cut of beef; same teriyaki preparation and technique.
+- **Steak Teriyaki** → Beef Teriyaki  ×1 — variant: Steak is a cut of beef; same teriyaki preparation and technique.
+- **Mixed Berry Crisp** → Berry Crisp  ×1 — variant: Specifies berry type; same crisp form and preparation
+- **Apple Berry Crisp** → Berry Crisp  ×1 — variant: Apple addition to berry crisp, same dish form and structure.
+- **Fruit Crisp** → Berry Crisp  ×1 — variant: Fruit Crisp is the generic form; Berry Crisp specifies the fruit type.
+- **Beef Birria** → Birria Tacos  ×1 — variant: Beef Birria specifies the meat type; same stew dish
+- **Birria de Res** → Birria Tacos  ×1 — regional: Birria de Res is the traditional Mexican name for beef birria stew, the base dish
+- **American Biscuits** → Biscuits  ×1 — regional: American Biscuits specifies the regional variant already described in the dish definition.
+- **Chocolate Chip Blondies** → Blondies  ×1 — variant: Chocolate chips are the defining ingredient; same base form.
+- **Candied Citrus Slices** → Blood Orange  ×1 — variant: Candied preparation of blood orange, same ingredient, different form
+- **Old Fashioned** → Blood Orange  ×1 — accompaniment: Blood Orange Old Fashioned is the classic cocktail with blood orange as the featured ingredient.
+- **Blood Orange Ice Cream** → Blood Orange  ×1 — variant: Ice cream is a standard preparation form of blood orange dessert.
+- **Blueberry Streusel Muffins** → Blueberry Muffins  ×1 — variant: Streusel topping is usual accompaniment to blueberry muffins
+- **Grilled Fish with Lemon-Dijon Marinade** → Bluefish  ×1 — variant: Specific preparation of bluefish with marinade seasoning variation
+- **Grilled Fish with Herb Marinade** → Bluefish  ×1 — variant: Specific preparation method of bluefish with herb marinade.
+- **Pappardelle Bolognese** → Bolognese  ×1 — accompaniment: Bolognese sauce with its traditional pasta accompaniment named.
+- **Bolognese Sauce (Pasta Bolognese)** → Bolognese  ×1 — accompaniment: Sauce with its typical pasta pairing named; core dish is the sauce.
+- **Pork Braciole** → Braciole  ×1 — variant: Same dish form with protein substitution; pork for beef.
+- **Beef Brisket** → Braised Brisket  ×1 — variant: Beef Brisket is the same dish, just without the cooking method specified.
+- **Beef Brisket with Potatoes and Carrots** → Braised Brisket  ×1 — accompaniment: Same braised brisket dish with typical vegetable accompaniments named
+- **Brisket with Onions** → Braised Brisket  ×1 — accompaniment: Onions are the typical accompaniment to braised brisket.
+- **Oat Breakfast Bars** → Breakfast Bars  ×1 — variant: Oats are the primary ingredient; specifying doesn't change dish form
+- **Raspberry Crumb Bars** → Breakfast Bars  ×1 — variant: Raspberry-flavored breakfast bar with crumb topping, same form.
+- **Blueberry Oatmeal Breakfast Bars** → Breakfast Bars  ×1 — variant: Specific flavor variation of base breakfast bar form
+- **Baked Oatmeal Bars** → Breakfast Bars  ×1 — variant: Same oat-based bar form, emphasizing baked preparation method.
+- **Hashbrown Breakfast Casserole** → Breakfast Casserole  ×1 — variant: Same baked egg casserole form with hashbrowns as ingredient variation
+- **Bacon, Potato, and Egg Casserole** → Breakfast Casserole  ×1 — variant: Same baked egg casserole form with bacon as breakfast meat.
+- **Egg Casserole** → Breakfast Casserole  ×1 — variant: Omits 'Breakfast' but describes identical baked egg casserole dish
+- **Breakfast Egg Casserole** → Breakfast Casserole  ×1 — variant: Adds 'Egg' descriptor but describes identical layered egg casserole dish
+- **Egg Breakfast Casserole** → Breakfast Casserole  ×1 — variant: Emphasizes egg component; identical dish form and preparation
+- **Caramelized Broccoli** → Broccoli  ×1 — variant: Broccoli prepared with caramelization; same vegetable, cooking method variation.
+- **Cheddar Broccoli Soup** → Broccoli Cheddar Soup  ×1 — spelling: Same ingredients and preparation, word order reversed
+- **Brown Butter Sage Sauce (Burro Bruno e Salvia)** → Brown Butter and Sage Sauce  ×1 — spelling: Same sauce, alternate word order and style variation
+- **Pasta al Burro e Salvia (Butter and Sage Pasta)** → Brown Butter and Sage Sauce  ×1 — translation: Italian name for the same brown butter and sage sauce dish
+- **Chocolate Brownies** → Brownies  ×1 — variant: Specifies chocolate as primary ingredient; brownies are inherently chocolate.
+- **Fudgy Chocolate Brownies** → Brownies  ×1 — variant: Fudgy chocolate emphasizes texture/ingredient, same brownie form
+- **Fudgy Cocoa Brownies** → Brownies  ×1 — variant: Fudgy cocoa brownies are brownies with emphasized texture and cocoa ingredient variation.
+- **Tomato and Basil Bruschetta** → Bruschetta  ×1 — variant: Bruschetta with its standard toppings explicitly named.
+- **Roasted Brussels Sprouts with Garlic and Parmesan** → Brussels Sprouts  ×1 — variant: Same roasted Brussels sprouts dish with added flavor ingredients.
+- **Roasted Brussel Sprouts** → Brussels Sprouts  ×1 — spelling: Brussel vs Brussels is spelling variation of same dish
+- **Crispy Asian Brussels Sprouts** → Brussels Sprouts  ×1 — variant: Same dish form with Asian-inspired flavor variation
+- **Roasted Brussels Sprouts with Parmesan** → Brussels Sprouts  ×1 — variant: Same roasted preparation with ingredient variation (Parmesan added)
+- **Roasted Brussels Sprouts with Spanish Flavors** → Brussels Sprouts  ×1 — variant: Same roasted Brussels sprouts dish with regional flavor variation
+- **Korean Beef Bulgogi** → Bulgogi  ×1 — accompaniment: Specifies beef type; bulgogi is inherently beef dish
+- **White Chocolate Bundt Cake** → Bundt Cake  ×1 — variant: Flavour variation of Bundt Cake form
+- **Chocolate Chip Bundt Cake** → Bundt Cake  ×1 — variant: Chocolate chip is a flavor variation of the Bundt Cake form.
+- **Vanilla Butter Cookies** → Butter Cookies  ×1 — variant: Vanilla is a flavor variation of the same butter cookie form
+- **Buttercream Icing** → Buttercream Frosting  ×1 — spelling: Buttercream icing and buttercream frosting are identical products
+- **Cream Cheese Buttercream Frosting** → Buttercream Frosting  ×1 — variant: Ingredient variation of buttercream with cream cheese added
+- **American Buttercream** → Buttercream Frosting  ×1 — regional: American buttercream is the same frosting, specifying its regional origin.
+- **Vanilla Buttercream** → Buttercream Frosting  ×1 — variant: Vanilla buttercream specifies the flavor of the same frosting base.
+- **American Buttercream Frosting** → Buttercream Frosting  ×1 — variant: Specifies American style of buttercream frosting, same dish
+- **Chocolate Frosting** → Buttercream Frosting  ×1 — variant: Chocolate Frosting is buttercream with chocolate flavoring added
+- **Curried Butternut Squash Soup** → Butternut Squash Soup  ×1 — variant: Butternut squash soup with curry spice variation
+- **Butternut Squash and Apple Soup** → Butternut Squash Soup  ×1 — variant: Apple is a common flavor variation of butternut squash soup
+- **Caramelized Cabbage and Onions** → Cabbage  ×1 — variant: Cabbage prepared with a specific cooking method and accompaniment.
+- **Smothered Cabbage** → Cabbage  ×1 — variant: Smothered cabbage is cabbage prepared by braising, a cooking method variation.
+- **Buttered Savoy Cabbage** → Cabbage  ×1 — variant: Savoy cabbage with butter preparation, same vegetable form
+- **Curried Cabbage** → Cabbage  ×1 — variant: Cabbage with curry spicing; same vegetable, flavor variation
+- **Spaghetti Cacio e Pepe** → Cacio e Pepe  ×1 — accompaniment: Names the specific pasta form commonly used in the dish
+- **Creole Cajun Seasoning** → Cajun Seasoning  ×1 — variant: Regional name variation; Creole and Cajun are related Louisiana traditions
+- **Cajun Seasoning Spice Mix** → Cajun Seasoning  ×1 — spelling: Same spice blend, alternate phrasing with 'Spice Mix'
+- **Cajun Spice Mix** → Cajun Seasoning  ×1 — spelling: Spice Mix and Seasoning are interchangeable terms for same blend
+- **Cannoli Siciliani** → Cannoli  ×1 — regional: Siciliani specifies the regional origin; same dish
+- **Sicilian Cannoli** → Cannoli  ×1 — regional: Specifies the regional origin; same dish form and filling.
+- **Pasta alla Carbonara** → Carbonara  ×1 — translation: Italian formal name for the same Roman pasta dish
+- **Carnitas Tacos** → Carnitas  ×1 — accompaniment: Carnitas with tortillas named; tacos are traditional serving form
+- **Carrot Layer Cake** → Carrot Cake  ×1 — accompaniment: Layer cake is the standard form of carrot cake
+- **Cream of Cauliflower Soup** → Cauliflower Soup  ×1 — accompaniment: Cream of Cauliflower describes the same dish with its typical finish
+- **Cheesy Cauliflower Soup** → Cauliflower Soup  ×1 — variant: Cheese is a common flavor variation of cauliflower soup
+- **Chocolate Chip Challah** → Challah  ×1 — variant: Chocolate chips are a flavour variation of the same challah bread form
+- **Garlic Bread with Cheese** → Cheese Bread  ×1 — accompaniment: Same bread form, cheese and garlic butter are defining ingredients
+- **Cheese Stuffed Garlic Bread** → Cheese Bread  ×1 — variant: Same cheese bread form with garlic butter, specifies stuffed preparation method.
+- **Cheddar Cheese Sauce** → Cheese Sauce  ×1 — variant: Cheddar is a cheese type variation of generic Cheese Sauce
+- **Nacho Cheese Sauce** → Cheese Sauce  ×1 — variant: Nacho cheese sauce is cheese sauce with nacho as typical accompaniment/use case.
+- **Strawberry Cheesecake** → Cheesecake  ×1 — variant: Flavoring variation of the same cheesecake form
+- **Vanilla Cheesecake** → Cheesecake  ×1 — variant: Vanilla is a flavor variation of the same cheesecake form
+- **Raspberry Cheesecake** → Cheesecake  ×1 — variant: Cheesecake with fruit topping variation, same form
+- **Chicken Cacciatora** → Chicken Cacciatore  ×1 — spelling: Italian spelling variant of cacciatore using -a ending
+- **Poulet Chasseur** → Chicken Chasseur  ×1 — translation: Poulet is French for chicken; identical dish in original language
+- **Cordon Bleu Chicken** → Chicken Cordon Bleu  ×1 — spelling: Word order variation of same dish
+- **Chicken Soup with Noodles** → Chicken Noodle Soup  ×1 — spelling: Same dish, alternate word order phrasing
+- **Poulet à la Normande** → Chicken Normande  ×1 — translation: French name for the same classic Norman braised chicken dish
+- **Poulet à la Normande (Normandy Chicken)** → Chicken Normande  ×1 — translation: French name and English translation of identical dish
+- **Chicken Normandy (Poulet à la Normande)** → Chicken Normande  ×1 — translation: English translation of French Normande; identical dish and preparation
+- **Chicken Pie** → Chicken Pot Pie  ×1 — variant: Chicken Pie is common shorthand for Chicken Pot Pie
+- **Chicken Shawarma Sandwich** → Chicken Shawarma  ×1 — accompaniment: Shawarma is traditionally served in pita; sandwich specifies the serving form.
+- **Creamy Chicken Stew** → Chicken Stew  ×1 — variant: Creamy addition describes common preparation of base dish
+- **Country Chicken Stew** → Chicken Stew  ×1 — variant: Regional/style variation of the same braised chicken stew dish
+- **Stock** → Chicken Stock  ×1 — abbreviation: Stock is shorthand for Chicken Stock, understood in context.
+- **Chicken Thighs (Quick Weeknight Preparations)** → Chicken Thighs - Boneless  ×1 — variant: Same cut, different preparation context descriptor
+- **Garlic Butter Chicken Thighs** → Chicken Thighs - Boneless  ×1 — variant: Flavored preparation of boneless chicken thighs, same form
+- **Tinola (Tinolang Manok)** → Chicken Tinola  ×1 — regional: Tinolang Manok is Filipino name for Chicken Tinola
+- **Tinola (Chicken Tinola)** → Chicken Tinola  ×1 — translation: Tinola is the Filipino name; Chicken Tinola is English clarification
+- **Tinola** → Chicken Tinola  ×1 — other: Tinola is the common short name for Chicken Tinola dish
+- **Roast Chicken with Vegetables** → Chicken Traybake  ×1 — accompaniment: Roast Chicken with Vegetables names the dish with its standard accompaniment.
+- **Hot Wings** → Chicken Wings  ×1 — variant: Hot Wings is a flavored variation of Chicken Wings with spicy sauce.
+- **Sriracha Baked Chicken Wings** → Chicken Wings  ×1 — variant: Sriracha flavor variation of same chicken wings dish form
+- **Baked Lemon Pepper Chicken Wings** → Chicken Wings  ×1 — variant: Lemon pepper is a flavour variation of chicken wings
+- **Sichuan Fried Chicken Wings** → Chicken Wings  ×1 — variant: Same dish form with regional flavor variation (Sichuan spice profile)
+- **Crispy Baked Chicken Wings** → Chicken Wings  ×1 — variant: Specifies cooking method and texture of same base dish.
+- **Creole Baked Chicken Wings** → Chicken Wings  ×1 — variant: Regional flavor variation of chicken wings dish form
+- **Honey-Garlic Chicken Wings** → Chicken Wings  ×1 — variant: Flavored variation of the same dish form with specific sauce profile.
+- **Creamy Chicken and Rice** → Chicken and Rice  ×1 — variant: Same dish form with ingredient/flavor variation (creamy/Parmesan)
+- **Creamy Chicken and Rice (one-pot risotto-style dish)** → Chicken and Rice  ×1 — variant: Same dish form, different cooking method variation (risotto-style)
+- **Chimichurri** → Chimichurri Sauce  ×1 — other: Chimichurri is the base sauce; Chimichurri Sauce specifies its form.
+- **Char Siu (Chinese Barbecue Pork)** → Chinese BBQ Pork  ×1 — translation: Char Siu is the Cantonese name for the same dish
+- **Char Siu (Chinese Roasted BBQ Pork)** → Chinese BBQ Pork  ×1 — translation: Char Siu is the Cantonese name for the same dish
+- **Char Siu (Chinese Barbecued Pork)** → Chinese BBQ Pork  ×1 — translation: Char Siu is the Cantonese name for Chinese BBQ Pork
+- **Chinese Barbecued Pork** → Chinese BBQ Pork  ×1 — spelling: BBQ is abbreviation for Barbecued; same dish
+- **Yuxiang Eggplant (Fish-Fragrant Eggplant)** → Chinese Eggplant  ×1 — regional: Yuxiang is the classic Chinese name for fish-fragrant sauce eggplant
+- **Sichuan Eggplant (Fish-Fragrant Eggplant)** → Chinese Eggplant  ×1 — regional: Sichuan Eggplant is the regional name for Chinese Eggplant prepared Sichuan-style
+- **Chinese Fried Eggplant in Chili Garlic Sauce** → Chinese Eggplant  ×1 — variant: Same Sichuan-style stir-fried eggplant dish, sauce components named
+- **Yu Xiang Qie Zi (Fish Fragrant Eggplant)** → Chinese Eggplant  ×1 — translation: Yu Xiang Qie Zi is Chinese name for same Sichuan eggplant dish
+- **Chinese Eggplant in Garlic Sauce (魚香茄子)** → Chinese Eggplant  ×1 — variant: Same stir-fried Chinese eggplant dish, garlic-based sauce variation
+- **Eggplant Stir-fry** → Chinese Eggplant  ×1 — variant: Same stir-fried eggplant dish, simplified name without regional descriptor
+- **Fish-Fragrant Eggplant (鱼香茄子)** → Chinese Eggplant  ×1 — regional: Fish-Fragrant Eggplant is the traditional Chinese name for Sichuan stir-fried eggplant dish
+- **Chocolate Cake with Cream Cheese Frosting** → Chocolate Cake  ×1 — accompaniment: Specifies frosting accompaniment of the same chocolate cake dish
+- **Chocolate Pie** → Chocolate Cream Pie  ×1 — variant: Omits 'Cream' but describes identical dish with chocolate custard filling and whipped cream topping.
+- **Dark Chocolate Pudding** → Chocolate Pudding  ×1 — variant: Dark chocolate specifies ingredient variation of same pudding form
+- **Peach Clafoutis** → Clafoutis  ×1 — variant: Peach clafoutis is clafoutis with peach instead of traditional cherries
+- **Fruit Cobbler** → Cobbler  ×1 — accompaniment: Fruit Cobbler names the primary ingredient with the dish form.
+- **Strawberry Cobbler** → Cobbler  ×1 — variant: Specific fruit flavor of the same cobbler form
+- **Blueberry Cobbler** → Cobbler  ×1 — variant: Specific fruit flavor of the same cobbler form
+- **Cole Slaw** → Coleslaw  ×1 — spelling: Alternative spacing of same dish name
+- **Cheddar Corn Chowder** → Corn Chowder  ×1 — variant: Corn chowder with cheddar cheese flavoring, same dish form
+- **Cornbread with Sweet Corn** → Cornbread  ×1 — variant: Same cornbread form with ingredient variation (sweet corn added).
+- **Southern Cornbread** → Cornbread  ×1 — regional: Southern cornbread is a regional variation of cornbread
+- **Corned Beef Hash and Eggs** → Corned Beef Hash  ×1 — accompaniment: Hash with its typical egg topping named explicitly.
+- **Corned Beef Hash Patties** → Corned Beef Hash  ×1 — variant: Patties are the same dish in formed/pressed presentation
+- **Beef Pasties** → Cornish Pasty  ×1 — plural: Beef Pasties is plural form of beef pasty; same dish
+- **BBQ Country-Style Ribs** → Country Style Pork Ribs  ×1 — variant: BBQ specifies cooking method/flavor, same dish form
+- **Smoked Ribs** → Country Style Pork Ribs  ×1 — variant: Smoked is a cooking method variation of same cut
+- **Frijoles Charros (Cowboy Beans)** → Cowboy Beans  ×1 — translation: Frijoles Charros is the Spanish name for Cowboy Beans, same dish.
+- **Lemon Cream Pie** → Cream Pie  ×1 — variant: Lemon cream pie is cream pie with lemon flavoring variant
+- **Creamy Spinach Soup** → Cream of Spinach Soup  ×1 — variant: Same dish, alternate descriptor of cream-based preparation
+- **Apple Crostata** → Crostata  ×1 — variant: Apple is a flavor variation of the same crostata dish form.
+- **Peach Crostata** → Crostata  ×1 — variant: Peach Crostata is crostata with peach filling variant.
+- **Crostata di Frutta (Italian Fruit Tart)** → Crostata  ×1 — regional: Crostata di Frutta is the same Italian tart, fruit-filled variant.
+- **French Crêpes** → Crêpes  ×1 — regional: Crêpes are French; name specifies origin already in dish
+- **Crêpes aux Fraises et Crème Chantilly** → Crêpes  ×1 — accompaniment: Crêpes with strawberries and whipped cream—same dish form, named filling.
+- **Vietnamese Chicken Curry (Cà Ri Gà)** → Curry  ×1 — regional: Vietnamese curry is a regional adaptation of curry tradition.
+- **Coconut Curry Chicken** → Curry  ×1 — variant: Coconut Curry Chicken is a flavour/ingredient variation of Curry with coconut milk base specified.
+- **Chicken Coconut Curry** → Curry  ×1 — variant: Curry with specified protein and base ingredient combination
+- **Madras Curry** → Curry  ×1 — variant: Madras Curry is a spice-level variation of curry.
+- **Thai Yellow Curry with Chicken** → Curry  ×1 — variant: Regional curry variant with specific ingredient/style specification
+- **Coconut Chicken Curry** → Curry  ×1 — variant: Coconut Chicken Curry is a specific ingredient variation of Curry dish
+- **Daigaku Imo (Candied Sweet Potatoes)** → Daigakuimo  ×1 — spelling: Daigaku Imo is alternate romanization of Daigakuimo
+- **Daigaku Imo (Japanese-Style Glazed Sweet Potatoes)** → Daigakuimo  ×1 — spelling: Daigaku Imo is alternate romanization of Daigakuimo
+- **Devilled Eggs** → Deviled Eggs  ×1 — spelling: British spelling variant of Deviled Eggs
+- **Pork Tenderloin with Cream Sauce** → Dijon  ×1 — accompaniment: Dijon mustard is the defining sauce component of this dish
+- **Rice and Beans** → Diri Kole ak Pwa  ×1 — translation: English translation of Haitian Creole dish name
+- **Diriz Kolé ak Pwa (Rice and Beans)** → Diri Kole ak Pwa  ×1 — spelling: Alternative Haitian Creole spelling of same dish
+- **Diri kole ak Pwa Nwa (Rice and Black Beans)** → Diri Kole ak Pwa  ×1 — variant: Same Haitian rice and beans dish, different bean type substitution
+- **Haitian Rice and Red Beans (Diri Kole ak Pwa Wouj)** → Diri Kole ak Pwa  ×1 — translation: English translation of Haitian Creole dish name, same preparation
+- **Confit Duck Legs** → Duck Confit  ×1 — accompaniment: Names the specific cut (legs) with the technique; same dish
+- **Confit de Canard (Duck Confit)** → Duck Confit  ×1 — translation: French name for the same dish, Duck Confit
+- **Bigoli in Salsa (Duck Ragu Variation)** → Duck Ragu  ×1 — regional: Bigoli in Salsa is Venetian duck ragu served with bigoli pasta.
+- **Pappardelle with Duck Ragout** → Duck Ragu  ×1 — accompaniment: Pappardelle is the traditional pasta served with duck ragout/ragu
+- **Ragu (Duck Ragu variant)** → Duck Ragu  ×1 — variant: Ragu is the base sauce form; Duck Ragu specifies the meat protein variant.
+- **Ragu (Duck Ragu)** → Duck Ragu  ×1 — variant: Ragu is the same dish, duck is the protein variant.
+- **Bigoli con Ragù d'Anatra** → Duck Ragu  ×1 — translation: Italian regional name for duck ragu served over bigoli pasta
+- **Ragù d'Anatra (Duck Ragù)** → Duck Ragu  ×1 — translation: Italian translation of Duck Ragu, same dish and preparation
+- **Duck Ragù with Pappardelle** → Duck Ragu  ×1 — accompaniment: Ragù with specific pasta pairing, same sauce base
+- **Canard à l'Orange** → Duck à l'Orange  ×1 — translation: Canard is French for duck; direct translation equivalent
+- **Duck in Orange Sauce** → Duck à l'Orange  ×1 — translation: English translation of French 'à l'Orange' preparation
+- **Ekmek Kadayifi** → Ekmek Kataifi  ×1 — spelling: Alternative transliteration of Turkish Ekmek Kataifi
+- **Chicken Enchiladas Verdes** → Enchiladas  ×1 — variant: Enchiladas with specific filling and green sauce variation
+- **Cheese Enchiladas with Red Sauce** → Enchiladas  ×1 — variant: Specific filling and sauce variation of enchiladas form
+- **Cheese Enchiladas** → Enchiladas  ×1 — variant: Cheese filling is a standard enchilada variation, same dish form
+- **Enchiladas Rojas** → Enchiladas  ×1 — variant: Red sauce variation of enchiladas, same dish form
+- **Creamy Chicken Enchiladas** → Enchiladas  ×1 — variant: Enchiladas with creamy sauce variation, same dish form.
+- **White Chicken Enchiladas** → Enchiladas  ×1 — variant: Enchiladas with chicken and white sauce instead of chili sauce
+- **Cream Cheese Enchiladas** → Enchiladas  ×1 — variant: Enchiladas with cream cheese filling, same dish form
+- **Green Chicken Enchiladas** → Enchiladas de Pollo  ×1 — variant: Same dish form with ingredient variation (green sauce)
+- **Escabeche de Peixe** → Escabeche  ×1 — regional: Portuguese name for Spanish/Latin American escabeche dish
+- **Chicken Escabeche** → Escabeche  ×1 — variant: Escabeche with chicken as the protein; same dish form
+- **Escabeche de Pescado** → Escabeche  ×1 — accompaniment: Specifies fish as the protein; same dish form
+- **Farroto (Farro Risotto)** → Farro  ×1 — regional: Farroto is Italian regional name for farro prepared risotto-style
+- **Fasolatha** → Fasolada  ×1 — spelling: Fasolatha is a transliteration variant of Fasolada
+- **Foul Mudamas** → Fava  ×1 — regional: Arabic name for the same fava bean puree dish
+- **Filet Mignon with Garlic Butter** → Filet Mignon  ×1 — accompaniment: Garlic butter is a typical finishing for filet mignon
+- **Tarte Flambée** → Flammekueche  ×1 — translation: French name for the same Alsatian dish; flambée means flame-cooked
+- **Flourless Chocolate Torte** → Flourless Chocolate Cake  ×1 — regional: Torte is European term for rich cake; same dish
+- **Focaccia Bread** → Focaccia  ×1 — spelling: Focaccia Bread is focaccia with descriptive 'bread' appended
+- **Sourdough Focaccia** → Focaccia  ×1 — variant: Focaccia made with sourdough starter; same dish form
+- **Focaccia Genovese** → Focaccia  ×1 — regional: Genovese focaccia is the traditional Genoa regional variant
+- **Crusty French Bread** → French Bread  ×1 — variant: Emphasizes crust quality; same French bread form
+- **Baguette** → French Bread  ×1 — translation: Baguette is the French term for the same crusty European yeast bread
+- **French Onion Soup</likelyDish>
+</invoke>** → French Onion Soup  ×1 — spelling: Exact match to catalog dish name and description.
+- **Chicken Fricassee (Hühnerfrikassee)** → Fricassée  ×1 — regional: German version of French fricassée, same dish form and technique
+- **Pollo en Fricasé** → Fricassée  ×1 — translation: Spanish regional name for the same French fricassée dish
+- **Sunny-Side-Up Eggs** → Fried Eggs  ×1 — variant: Sunny-side-up is a specific preparation style of fried eggs
+- **Fried Eggs with Vinegar** → Fried Eggs  ×1 — variant: Same cooking method, adds vinegar as flavor variation
+- **Sheet Pan Frittata** → Frittata  ×1 — variant: Same frittata dish, different cooking vessel/method
+- **Potato Frittata** → Frittata  ×1 — variant: Frittata with specific ingredient variation (potato) featured.
+- **Peppermint Fudge** → Fudge  ×1 — variant: Flavored variation of fudge using peppermint
+- **S'mores Fudge** → Fudge  ×1 — variant: Fudge with s'mores flavoring, same confection form
+- **Fruit Galettes** → Galette  ×1 — plural: Plural form of galette, same dish structure and preparation
+- **Fruit Galette** → Galette  ×1 — variant: Fruit galette specifies ingredient but is same dish form
+- **Green Gazpacho** → Gazpacho  ×1 — variant: Same cold tomato-based soup, green ingredient variation
+- **Baked Giant Beans (Gigantes Plaki)** → Gigantes Plaki  ×1 — translation: English description of the same Greek dish with parenthetical original name
+- **Gnocchi al Pesto** → Gnocchi  ×1 — accompaniment: Gnocchi with its traditional pesto sauce accompaniment
+- **Gnocchi with Tomato Sauce** → Gnocchi  ×1 — accompaniment: Gnocchi with its typical sauce serving
+- **Potato Gnocchi with Butter Sage Sauce** → Gnocchi  ×1 — accompaniment: Gnocchi with its traditional butter sage sauce accompaniment
+- **Creamed Spinach Gnocchi** → Gnocchi  ×1 — variant: Spinach gnocchi is same dumpling form with ingredient variation.
+- **Gnocchi with Pomodoro Sauce** → Gnocchi  ×1 — accompaniment: Gnocchi with its typical sauce; same dish form
+- **Sheet Pan Gnocchi with Brown Butter Sage** → Gnocchi  ×1 — accompaniment: Sheet pan cooking method and brown butter sage sauce are typical gnocchi preparations
+- **Baked Custard** → GrapeNut Pudding  ×1 — variant: Same baked custard base; Grape-Nuts is ingredient variation
+- **Bread Pudding (Grape-Nuts variant)** → GrapeNut Pudding  ×1 — variant: Grape-Nuts Pudding is a cereal-based pudding variant of bread pudding form.
+- **Potatoes au Gratin (Dauphinoise)** → Gratin Dauphinois  ×1 — regional: Alternative name for same French potato gratin dish
+- **Pommes Dauphinoises** → Gratin Dauphinois  ×1 — translation: Pommes Dauphinoises is French for Potatoes Dauphinoise style, same dish
+- **Potato Gratin (Gratin Dauphinois variant)** → Gratin Dauphinois  ×1 — variant: Same dish, simplified English name without regional identifier
+- **Potato Dauphinoise** → Gratin Dauphinois  ×1 — variant: Omits 'Gratin' but names same French potato dish
+- **Salmon Gravlax** → Gravlax  ×1 — accompaniment: Salmon Gravlax specifies the fish type; gravlax is always salmon
+- **Revithia (Greek Chickpea Soup)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1 — translation: Revithia is the Greek name for the same chickpea soup dish
+- **Patates Lemonates (Greek Lemon Potatoes)** → Greek Lemon Roasted Potatoes  ×1 — translation: Patates Lemonates is Greek name for same dish
+- **Greek Lemon Potatoes** → Greek Lemon Roasted Potatoes  ×1 — variant: Omits 'roasted' but describes identical preparation method
+- **Patates Riganates (Greek Roasted Potatoes with Lemon and Garlic)** → Greek Lemon Roasted Potatoes  ×1 — translation: Patates Riganates is the Greek name for the same dish
+- **Roasted Greek Lemon Potatoes** → Greek Lemon Roasted Potatoes  ×1 — spelling: Word order variation of the same dish; identical ingredients and preparation.
+- **Roasted Lemon Potatoes** → Greek Lemon Roasted Potatoes  ×1 — spelling: Word order variation of same Greek lemon potato dish
+- **Ladenia** → Greek Pizza  ×1 — regional: Ladenia is the Greek regional name for Greek pizza
+- **House Salad** → Green Salad  ×1 — variant: House salad is green salad with specific dressing variation
+- **Italian Green Salad** → Green Salad  ×1 — regional: Italian preparation style of green salad, same dish form
+- **Grilled Corn with Herb Butter** → Grilled Corn on the Cob  ×1 — variant: Same grilled corn dish with flavored butter variation
+- **Chicken Gyoza** → Gyoza  ×1 — variant: Same dumpling form, filling ingredient variation of gyoza.
+- **Pork Dumplings** → Gyoza  ×1 — variant: Pork dumplings describes gyoza with its primary filling ingredient highlighted
+- **Hanetsuki Gyoza (Gyoza with Wings)** → Gyoza  ×1 — variant: Same gyoza with crispy lacy wings from frying technique.
+- **Pork Gyoza** → Gyoza  ×1 — variant: Pork Gyoza specifies the filling of the base dish.
+- **Vegetable Gyoza** → Gyoza  ×1 — variant: Same dumpling form, different filling ingredient substitution.
+- **Pan-Seared Halibut with Lemon Caper Sauce** → Halibut  ×1 — accompaniment: Halibut with its typical preparation method and sauce.
+- **Baked White Fish with Lemon and Herbs** → Halibut  ×1 — accompaniment: Generic white fish name for halibut with its typical preparation and accompaniments
+- **Pan-Seared Halibut with Garlic Butter Sauce** → Halibut  ×1 — accompaniment: Pan-searing and garlic butter are standard halibut preparations
+- **Pan-Roasted Halibut with Lemon Butter Sauce** → Halibut  ×1 — accompaniment: Halibut with its typical lemon butter sauce preparation
+- **Navy Bean Soup with Ham** → Ham and Bean Soup  ×1 — variant: Navy beans are traditional bean type for this classic American soup
+- **Burgers** → Hamburger  ×1 — plural: Burgers is the plural form of burger, informal for hamburger.
+- **Grilled Burgers** → Hamburger  ×1 — variant: Grilled burgers are hamburgers with cooking method variation.
+- **Beef Burgers** → Hamburger  ×1 — plural: Beef Burgers is plural form of hamburger/beef burger
+- **Spicy Honey Glazed Chicken** → Hot Honey Chicken Thighs  ×1 — variant: Same dish, different description of glaze application method.
+- **Herb Hummus** → Hummus  ×1 — variant: Hummus with herb flavoring, same base dish form
+- **Goulash (Gulyásleves)** → Hungarian Goulash  ×1 — translation: Gulyásleves is the Hungarian name for Hungarian Goulash
+- **Goulash (Gulyás)** → Hungarian Goulash  ×1 — translation: Gulyás is the Hungarian name for goulash; same dish
+- **Gulaschsuppe (Hungarian Goulash Soup)** → Hungarian Goulash  ×1 — translation: Gulaschsuppe is German/transliteration for Hungarian Goulash soup form
+- **Chicken Involtini** → Involtini  ×1 — variant: Chicken involtini is involtini with chicken as the protein
+- **Sicilian Veal Involtini** → Involtini  ×1 — variant: Regional variation of involtini using veal, specific to Sicily
+- **Involtini di Carne** → Involtini  ×1 — translation: Involtini di Carne specifies the meat variant in Italian
+- **Veal Roulades** → Involtini  ×1 — translation: Roulades are French term for same rolled/wrapped preparation as Italian involtini
+- **Pollo in Potacchio** → Italian Braised Chicken  ×1 — translation: Italian regional name for the same braised chicken dish
+- **Kare Raisu (Japanese Curry Rice)** → Japanese Beef Curry  ×1 — translation: Kare Raisu is the Japanese name for curry rice, same dish
+- **Japanese Curry Rice (Kare Raisu)** → Japanese Beef Curry  ×1 — translation: Kare Raisu is the Japanese name for curry served over rice, same dish
+- **Japanese Curry** → Japanese Beef Curry  ×1 — regional: Japanese Curry is the standard name for this dish; beef is common protein.
+- **Japanese Carrot Ginger Dressing** → Japanese Ginger Salad Dressing  ×1 — variant: Carrot addition is common flavor variation of same ginger dressing base
+- **Ginger Salad Dressing** → Japanese Ginger Salad Dressing  ×1 — variant: Removes 'Japanese' descriptor; same dressing form and function.
+- **Simmered Kabocha** → Kabocha no Nimono  ×1 — translation: English translation of Japanese dish name, same preparation
+- **Kabocha Nimono** → Kabocha no Nimono  ×1 — spelling: Omission of 'no' particle; same dish
+- **Greek Meatballs** → Keftedes (Greek Meatballs)  ×1 — translation: Greek Meatballs is the English translation of Keftedes
+- **Kibbeh Sahnieh (Baked Layered Kibbeh)** → Kibbeh  ×1 — variant: Same kibbeh base, different preparation form (layered/baked).
+- **Kibbeh Bil Sanieh** → Kibbeh  ×1 — variant: Baked kibbeh form; same dish, different preparation method
+- **Kibbeh Labanieh** → Kibbeh  ×1 — regional: Labanieh indicates Lebanese style; same dish form
+- **Napa Cabbage Kimchi** → Kimchi  ×1 — variant: Specifies primary vegetable but describes same fermented condiment
+- **Zucchini Pie** → Kolokithopita  ×1 — translation: English translation of Greek kolokithopita; same zucchini-feta-phyllo pie
+- **Zucchini Pie (Mpatina)** → Kolokithopita  ×1 — translation: English translation of kolokithopita; zucchini pie is the dish
+- **Zucchini Pie (Kolokithopita)** → Kolokithopita  ×1 — translation: English translation of Greek dish name; same savory pie
+- **Haitian Shrimp in Creole Sauce** → Kribich nan Sòs (Haitian Shrimp in Sauce)  ×1 — translation: English translation of Kribich nan Sòs with creole sauce specification
+- **Shrimp in Sauce (Kribich nan Sòs)** → Kribich nan Sòs (Haitian Shrimp in Sauce)  ×1 — translation: English translation of Haitian Creole dish name
+- **Sweet Lokshen Kugel** → Kugel  ×1 — variant: Lokshen kugel is noodle kugel with sweetened fruit; same dish form
+- **Potato Kugel** → Kugel  ×1 — variant: Potato Kugel is a ingredient variation of the same kugel form
+- **Yerushalmi Kugel** → Kugel  ×1 — regional: Jerusalem-style kugel, a specific regional variation of kugel.
+- **Stuffed Cabbage Rolls (Lahanodolmades)** → Lahanodolmades  ×1 — translation: English translation of Greek dish name Lahanodolmades
+- **Uyghur Lamb Skewers** → Lamb Kabobs  ×1 — regional: Uyghur lamb skewers are a regional variation of lamb kabobs from Central Asia
+- **Shish Kabob** → Lamb Kabobs  ×1 — regional: Shish Kabob is the Turkish/international name for lamb kabobs
+- **Seekh Kebab** → Lamb Kabobs  ×1 — regional: Seekh kebab is Indian/South Asian term for lamb skewer kabob
+- **Lamb Kebabs** → Lamb Kabobs  ×1 — spelling: Kebab and kabob are alternate transliterations of the same dish
+- **Moroccan Lamb Kebabs** → Lamb Kabobs  ×1 — regional: Moroccan variant of lamb kabobs/kebabs, same dish form
+- **Lamb Skewers (Yangrou Chuan)** → Lamb Kabobs  ×1 — regional: Chinese regional name for grilled lamb cubes on skewers
+- **Spiced Lamb Meatballs with Yogurt Sauce** → Lamb Meatballs  ×1 — accompaniment: Yogurt sauce is typical accompaniment, not a distinct dish form
+- **Greek Lamb Meatballs** → Lamb Meatballs  ×1 — regional: Greek is a regional variation of Lamb Meatballs
+- **Lamb Meatballs with Romesco Sauce** → Lamb Meatballs  ×1 — accompaniment: Sauce is usual accompaniment, not distinct dish form.
+- **Tiger Vegetable Salad (Lao Hu Cai)** → Lao Hu Cai (Tiger Salad)  ×1 — translation: English translation of Chinese dish name, same preparation
+- **Tiger Vegetable Salad (Laohuocai)** → Lao Hu Cai (Tiger Salad)  ×1 — translation: English translation of Lao Hu Cai with transliteration variant
+- **Lao Tiger Salad (Lao Hu Cai)** → Lao Hu Cai (Tiger Salad)  ×1 — translation: English translation of the same Chinese dish name
+- **Tiger Vegetable Salad** → Lao Hu Cai (Tiger Salad)  ×1 — translation: Tiger Vegetable Salad translates Lao Hu Cai; same dish
+- **Tiger Salad** → Lao Hu Cai (Tiger Salad)  ×1 — translation: English translation of Lao Hu Cai; same dish
+- **Tiger's Salad** → Lao Hu Cai (Tiger Salad)  ×1 — translation: Direct English translation of Lao Hu Cai; same dish
+- **Lasagne al Forno (Bolognese)** → Lasagna  ×1 — variant: Regional Italian name with Bolognese specification, same dish form
+- **Lasagne Verdi alla Bolognese** → Lasagna  ×1 — variant: Green lasagne (verdi) with Bolognese ragù, same dish form
+- **Lemon Squares** → Lemon Bars  ×1 — plural: Bars and squares are the same cut dessert form
+- **Greek Lentil Soup** → Lentil Soup  ×1 — regional: Greek lentil soup is lentil soup from Greece, a regional variation.
+- **Italian Lentil Soup** → Lentil Soup  ×1 — regional: Italian regional variation of lentil soup, same base dish
+- **Egyptian Red Lentil Soup** → Lentil Soup  ×1 — regional: Egyptian variant of red lentil soup, same dish form
+- **Licurdia Calabrese** → Licurdia  ×1 — regional: Calabrese specifies the Calabria region origin of the same confection
+- **Lingonberry Jam (Lingonsylt)** → Lingonberry  ×1 — accompaniment: Jam is the standard form of lingonberry condiment.
+- **Loukoumathes** → Loukoumades  ×1 — spelling: Greek plural form variation of loukoumades
+- **Spinach and Cheese Manicotti** → Manicotti  ×1 — variant: Specific filling variation of the same dish form
+- **Meat Filled Manicotti** → Manicotti  ×1 — variant: Same manicotti form, filling ingredient variation
+- **Cheese Manicotti** → Manicotti  ×1 — variant: Specifies filling ingredient; same dish form and preparation
+- **Stuffed Manicotti** → Manicotti  ×1 — variant: Stuffed emphasizes manicotti's essential characteristic of being filled.
+- **Crab Manicotti** → Manicotti  ×1 — variant: Same manicotti form, different filling ingredient
+- **Crab Stuffed Manicotti** → Manicotti  ×1 — variant: Same baked pasta tube form, different filling ingredient
+- **Blue Margarita** → Margarita  ×1 — variant: Same cocktail form, different flavoring ingredient (blue curaçao).
+- **Spaghetti al Pomodoro** → Marinara Sauce  ×1 — accompaniment: Spaghetti al Pomodoro is marinara sauce with its traditional pasta accompaniment named.
+- **Spaghetti Marinara** → Marinara Sauce  ×1 — accompaniment: Spaghetti Marinara is marinara sauce with its usual pasta accompaniment named.
+- **Seville Orange Marmalade** → Marmalade  ×1 — variant: Seville orange is the traditional citrus for marmalade, a flavor specification
+- **Lemon Marmalade** → Marmalade  ×1 — variant: Lemon Marmalade is marmalade with specific citrus flavor.
+- **Citrus Marmalade** → Marmalade  ×1 — variant: Citrus marmalade specifies ingredient type, same preserve form
+- **Greek Salad (Maroulosalata)** → Maroulosalata  ×1 — translation: Greek Salad is the English translation of Maroulosalata
+- **Greek Lettuce Salad** → Maroulosalata  ×1 — translation: English translation of Greek dish name Maroulosalata
+- **Chicken in Cream Sauce with Sun-Dried Tomatoes** → Marry Me Chicken  ×1 — accompaniment: Describes the same dish by its sauce and key ingredient
+- **Chicken in Creamy Tomato Sauce** → Marry Me Chicken  ×1 — accompaniment: Describes Marry Me Chicken by its defining sauce.
+- **Chicken Pasta with Creamy Sun-Dried Tomato Sauce** → Marry Me Chicken  ×1 — accompaniment: Same dish with pasta as typical accompaniment named
+- **Creamy Chicken with Sundried Tomatoes** → Marry Me Chicken  ×1 — variant: Same dish, emphasizes key ingredient and sauce component
+- **Smashed Potatoes** → Mashed Potatoes  ×1 — spelling: Smashed and mashed are interchangeable terms for the same potato preparation method.
+- **Chicken Matzoh Ball Soup** → Matzoh Ball Soup  ×1 — accompaniment: Chicken broth is the standard base; naming the protein is redundant.
+- **Matzah Ball Soup** → Matzoh Ball Soup  ×1 — spelling: Matzah and Matzoh are transliteration variants of the same Hebrew word.
+- **Meatballs and Gravy** → Meatballs  ×1 — accompaniment: Meatballs with gravy as typical serving, same dish form
+- **Sicilian Meatballs** → Meatballs  ×1 — regional: Sicilian variation of the same meatball dish form
+- **Meat Loaf** → Meatloaf  ×1 — spelling: Two-word variant of same dish, standard spelling variation.
+- **Lamb Meatloaf** → Meatloaf  ×1 — variant: Same dish form, different meat ingredient variation
+- **BBQ Meatloaf** → Meatloaf  ×1 — variant: Same meatloaf form, different glaze/topping variation
+- **Barbecue Meatloaf** → Meatloaf  ×1 — variant: Same meatloaf form with barbecue flavoring variation
+- **Baked Stuffed Eggplant** → Melanzane Ripiene (Stuffed Eggplants)  ×1 — translation: English name for same Italian dish with identical preparation
+- **Melanzane Imbottite (Stuffed Eggplant)** → Melanzane Ripiene (Stuffed Eggplants)  ×1 — translation: Both Italian names describe identical stuffed eggplant dish
+- **Honey Cookies (Melomakarona)** → Melomakarona (Greece)  ×1 — translation: English description of the same Greek honey walnut cookie.
+- **Honey Cookies (Koulourakia or Melomakarona variant)** → Melomakarona (Greece)  ×1 — variant: Honey cookies describes melomakarona's defining characteristic.
+- **Mexican Red Rice (Arroz Rojo)** → Mexican Rice  ×1 — variant: Red rice is the same dish, emphasizing the tomato-based red color
+- **Mexican Red Rice** → Mexican Rice  ×1 — variant: Red refers to tomato color; same dish form and preparation
+- **Arroz Rojo (Mexican Red Rice)** → Mexican Rice  ×1 — translation: Arroz Rojo is Spanish name for Mexican red rice dish
+- **Migas Extremeñas** → Migas  ×1 — regional: Migas Extremeñas is migas from Extremadura region
+- **Miso Glazed Chicken** → Miso Chicken  ×1 — variant: Glazed describes the preparation method of the same miso chicken dish.
+- **Miso Grilled Chicken** → Miso Chicken  ×1 — accompaniment: Grilling is the typical cooking method for miso chicken.
+- **Chocolate Molten Lava Cake** → Molten Lava Cake  ×1 — variant: Chocolate specification of the same molten cake form
+- **Lava Cake** → Molten Lava Cake  ×1 — spelling: Lava Cake is common shorthand omitting Molten descriptor
+- **Molten Chocolate Lava Cakes** → Molten Lava Cake  ×1 — plural: Plural form with descriptive 'Chocolate' specifying the flavor.
+- **Chocolate Molten Lava Cakes** → Molten Lava Cake  ×1 — plural: Plural form of the same molten chocolate cake dish.
+- **Mongolian Beef Noodles** → Mongolian Beef  ×1 — accompaniment: Mongolian Beef with its typical noodle accompaniment named
+- **Pan-Seared Fish with Lemon Butter Sauce** → Monkfish  ×1 — variant: Same monkfish preparation, different sauce variation
+- **Monkfish in Lemon Butter Wine Sauce** → Monkfish  ×1 — variant: Same monkfish dish, different sauce preparation method
+- **Butter Poached Fish** → Monkfish  ×1 — variant: Cooking method variation of monkfish; same fish, different preparation
+- **Monkfish Fillets Dijon Style** → Monkfish  ×1 — variant: Monkfish prepared with Dijon mustard sauce; same fish, flavor variation
+- **Vegetable Muffins** → Muffins  ×1 — variant: Vegetable muffins are muffins with vegetable ingredient variation
+- **Brown Sugar Muffins** → Muffins  ×1 — variant: Flavour variation of standard muffins, same form and baking method
+- **Chocolate Muffins** → Muffins  ×1 — variant: Chocolate muffins are muffins with chocolate as a flavor variation
+- **Cinnamon Sugar Muffins** → Muffins  ×1 — variant: Flavored variation of muffins with cinnamon sugar
+- **Risotto with Mushrooms** → Mushroom Risotto  ×1 — variant: Same dish, different word order phrasing
+- **Wild Mushroom Risotto** → Mushroom Risotto  ×1 — variant: Wild mushrooms are typical risotto ingredient variation
+- **Garlic Naan** → Naan  ×1 — variant: Naan with garlic as flavoring variation of same bread form
+- **Butter Naan** → Naan  ×1 — variant: Naan with butter brushing, same flatbread form
+- **Nachos Supreme** → Nachos  ×1 — variant: Supreme specifies a topping variation of nachos, same dish form.
+- **Taiwanese Beef Noodle Soup (Niu Rou Mien)** → Niu Rou Mian  ×1 — regional: Taiwanese regional name variant with transliteration spelling difference
+- **Braised Beef Noodle Soup** → Niu Rou Mian  ×1 — translation: English translation of Niu Rou Mian, same dish form
+- **Braised Beef Noodle Soup (Hong Sao Niu Rou Mien)** → Niu Rou Mian  ×1 — translation: Hong Sao Niu Rou Mien is English translation of Chinese name
+- **Taiwanese Spicy Beef Noodle Soup** → Niu Rou Mian  ×1 — regional: Taiwanese variant name for the same braised beef noodle soup dish
+- **No-Knead Crusty White Bread** → No-Knead Bread  ×1 — variant: Specifies the bread type and crust characteristic of the base no-knead method.
+- **No-Knead Artisan Bread** → No-Knead Bread  ×1 — variant: Adds 'Artisan' descriptor to core no-knead bread method
+- **No-Knead Dutch Oven Bread** → No-Knead Bread  ×1 — accompaniment: Dutch oven is the essential method/vessel, not a variation
+- **Oatmeal Chocolate Chip Cookies** → Oatmeal Cookies  ×1 — variant: Chocolate chips are common oatmeal cookie variation, same form.
+- **Oat Cookies** → Oatmeal Cookies  ×1 — spelling: Oat Cookies is abbreviated form of Oatmeal Cookies
+- **Lemon Orzo** → Orzo  ×1 — variant: Orzo with lemon flavoring, same pasta form and dish structure.
+- **Overnight Oatmeal** → Overnight Oats  ×1 — spelling: Oats and oatmeal are interchangeable terms for the same grain product
+- **Fluffy American Pancakes** → Pancakes  ×1 — variant: Describes pancakes with emphasis on texture (fluffy) and origin (American).
+- **Eggplant Parmesan (Melanzane alla Parmigiana)** → Parmigiana alla Calabrese  ×1 — translation: English translation of Italian regional eggplant parmigiana variant
+- **Melanzane alla Calabrese** → Parmigiana alla Calabrese  ×1 — translation: Melanzane is Italian for eggplant; same Calabrese preparation
+- **Greek Pasta Salad** → Pasta Salad  ×1 — variant: Greek-style variation with same pasta salad form and structure
+- **Creamy Italian Pasta Salad** → Pasta Salad  ×1 — variant: Pasta salad with Italian seasonings and creamy dressing variation
+- **Pasta alle Vongole** → Pasta Vongole  ×1 — translation: Italian regional name variation of same dish
+- **Rigatoni al Forno** → Pasta al Forno  ×1 — variant: Same dish form, specific pasta shape variation of Pasta al Forno
+- **Pasta al Forno with Sausage** → Pasta al Forno  ×1 — variant: Sausage is a common protein variation of the same dish form.
+- **Baked Pasta with Meat Ragù** → Pasta al Forno  ×1 — variant: Describes same baked pasta casserole form with ragù, just generic English name
+- **Anelletti al Forno alla Palermitana** → Pasta al Forno  ×1 — regional: Sicilian pasta al forno using ring pasta (anelletti) instead of tubes
+- **Spaghetti al Tonno (Spaghetti with Tuna)** → Pasta al Tonno  ×1 — accompaniment: Specifies pasta type (spaghetti) used in the dish
+- **Pasta con Tonno (Tuna Pasta)** → Pasta al Tonno  ×1 — translation: Italian regional name variation; con/al both mean 'with tuna'
+- **Tuna Pasta** → Pasta al Tonno  ×1 — translation: English translation of Italian Pasta al Tonno
+- **Pasta con Tonno** → Pasta al Tonno  ×1 — translation: Italian variant: 'con' (with) vs 'al' (in the style of)
+- **Spaghetti con Pomodoro e Tonno** → Pasta al Tonno  ×1 — regional: Italian regional variation naming the specific pasta shape and tomato component explicitly
+- **Spaghetti alla Gricia** → Pasta alla Gricia  ×1 — accompaniment: Spaghetti is the typical pasta form for alla Gricia
+- **Rooster Pastitsada** → Pastitsada  ×1 — variant: Specifies rooster meat; core dish form unchanged.
+- **Strawberry Pavlova** → Pavlova  ×1 — variant: Pavlova with strawberry as the fruit topping
+- **Pesto Rosso (Sicilian Red Pesto)** → Pesto Trapanese  ×1 — regional: Pesto Rosso is the alternative regional name for Pesto Trapanese, both Sicilian.
+- **Pesto alla Siciliana** → Pesto Trapanese  ×1 — regional: Sicilian pesto; alla Siciliana = Trapanese regional variant name
+- **Petit Pois à la Française** → Petits Pois A La Francaise - French Peas  ×1 — spelling: Diacritic and capitalization variant of same dish
+- **Peas with Pearl Onions and Lettuce (Petits Pois à la Française)** → Petits Pois A La Francaise - French Peas  ×1 — accompaniment: Names the dish with its characteristic accompaniments included.
+- **Seafood Pho** → Pho  ×1 — variant: Same dish form with different protein ingredient substitution
+- **Phở Bò (Beef Pho)** → Pho  ×1 — regional: Phở Bò is Vietnamese spelling with diacritic; beef variant
+- **Pho Bo** → Pho  ×1 — regional: Pho Bo is beef pho, standard Vietnamese regional variant
+- **Shrimp Pho** → Pho  ×1 — variant: Same soup form, different protein ingredient variation
+- **Cuban Picadillo** → Picadillo  ×1 — regional: Cuban variant of picadillo, same dish form with regional preparation
+- **Cuban Beef Picadillo** → Picadillo  ×1 — regional: Cuban variant of Spanish picadillo, same dish form
+- **Pie Dough** → Pie Crust  ×1 — spelling: Pie dough and pie crust are identical preparations, same terminology variation
+- **Stuffed Peppers (Calabrian)** → Pipi Chini  ×1 — regional: Calabrian specification of same stuffed pepper dish
+- **Stuffed Peppers (Peperoni Chini)** → Pipi Chini  ×1 — translation: English translation of Italian dish name with regional specification
+- **Stuffed Peppers Calabrese (Pipi Chini)** → Pipi Chini  ×1 — regional: Calabrese is the regional variation of Pipi Chini from Calabria, Southern Italy
+- **Peperoni Ripieni** → Pipi Chini  ×1 — translation: Peperoni Ripieni is Italian for Stuffed Peppers; same dish
+- **White Pizza (Pizza Bianca)** → Pizza Bianca  ×1 — translation: English translation of Italian dish name Pizza Bianca
+- **Neapolitan Pizza Dough** → Pizza Dough  ×1 — regional: Neapolitan is a regional variation of pizza dough from Naples, Italy.
+- **Pizza Crust** → Pizza Dough  ×1 — variant: Crust is the baked result of the same dough foundation
+- **Neapolitan Pizza Crust** → Pizza Dough  ×1 — regional: Neapolitan is a regional variation of pizza dough from Naples, Italy.
+- **Curried Chicken Ployes** → Ployes  ×1 — variant: Same dish form with ingredient/flavor variation (curried chicken filling)
+- **Ahi Poke Bowl** → Poke Bowl  ×1 — variant: Specifies ahi tuna type; same dish form and preparation
+- **Ahi Tuna Poke Bowl** → Poke Bowl  ×1 — variant: Specifies the tuna type; same dish form and preparation
+- **Salmon Poke Bowl** → Poke Bowl  ×1 — variant: Same poke bowl form, different fish protein
+- **Creamy Polenta** → Polenta  ×1 — variant: Describes polenta in its soft, creamy state form
+- **Polenta with Poached Egg** → Polenta  ×1 — accompaniment: Poached egg is a typical topping for polenta base dish
+- **Polenta with Caramelized Fennel** → Polenta  ×1 — accompaniment: Polenta base with specific topping; same dish form
+- **Chicken Roman-style (Pollo alla Romana)** → Pollo alla Romana  ×1 — translation: English translation of Italian dish name Pollo alla Romana
+- **Pommes de Terre Boulangère** → Pommes Boulangère  ×1 — translation: Pommes de Terre is full French name for potatoes; identical dish
+- **Dwaeji Bulgogi** → Pork Bulgogi Rice Bowl  ×1 — translation: Dwaeji Bulgogi is Korean name for pork bulgogi
+- **Bulgogi Rice Bowl** → Pork Bulgogi Rice Bowl  ×1 — variant: Omits pork protein; bulgogi rice bowl is same dish form with different meat option.
+- **Gochujang Pork Rice Bowl** → Pork Bulgogi Rice Bowl  ×1 — variant: Same pork rice bowl dish, spicy gochujang variation of bulgogi marinade.
+- **Glazed Pork Chops** → Pork Chops  ×1 — variant: Glazed variation of the same pork chop dish form
+- **Garlic Butter Pork Chops** → Pork Chops  ×1 — variant: Flavored variation of pork chops, same dish form
+- **Seared and Roasted Pork Chops** → Pork Chops  ×1 — variant: Cooking method variation of the same pork chop dish form
+- **Creamy Pork Chops** → Pork Chops  ×1 — variant: Same dish form with sauce/ingredient variation added
+- **Pork Loin Roast with Gravy** → Pork Loin Roast  ×1 — accompaniment: Gravy is the usual accompaniment to pork loin roast.
+- **Herb-Crusted Pork Roast** → Pork Loin Roast  ×1 — variant: Same pork loin roast form with herb seasoning variation
+- **Barbecued Pork and Beans** → Pork and Beans  ×1 — variant: BBQ version of classic pork and beans, same dish form
+- **Chourico and Kale Soup** → Portuguese Kale Soup  ×1 — regional: Chourico is Portuguese spelling of chorizo; same dish
+- **Portuguese Linguica Kale Soup** → Portuguese Kale Soup  ×1 — variant: Linguica substitutes chorizo in same Portuguese kale soup base
+- **Pot Roast with Gravy** → Pot Roast  ×1 — accompaniment: Gravy is the natural, typical accompaniment to pot roast
+- **Braised Chuck Roast** → Pot Roast  ×1 — variant: Same braised beef dish, specifies cut and cooking method
+- **Potatoes Dauphinoise** → Potato Gratin  ×1 — regional: Dauphinoise is the classic French regional name for potato gratin.
+- **Creamy Potato Gratin** → Potato Gratin  ×1 — variant: Creamy emphasizes the dish's defining characteristic, same form
+- **Potato Au Gratin** → Potato Gratin  ×1 — translation: French 'au gratin' means 'with gratin'; same dish
+- **Kartoffelpuffer (German Potato Pancakes)** → Potato Pancake  ×1 — translation: Kartoffelpuffer is the German name for potato pancakes, same dish form.
+- **Creamy Potato Salad** → Potato Salad  ×1 — variant: Creamy emphasizes the mayonnaise-based nature of standard potato salad.
+- **Loaded Potato Soup** → Potato Soup  ×1 — variant: Loaded indicates toppings/additions to standard potato soup base
+- **Chicken with Mustard and Cream Sauce** → Poulet à la Moutarde  ×1 — translation: English translation of French dish name, same preparation method
+- **Chicken with Mustard Cream Sauce** → Poulet à la Moutarde  ×1 — translation: English translation of French dish name, same preparation and components
+- **Chicken with Mustard and Tarragon** → Poulet à la Moutarde  ×1 — variant: Same braised chicken in creamy mustard sauce; tarragon is common herb variation
+- **Chicken in Mustard Sauce** → Poulet à la Moutarde  ×1 — translation: English translation of French dish name, same preparation method
+- **Chicken with Mustard Sauce** → Poulet à la Moutarde  ×1 — translation: English translation of French dish name, same preparation
+- **Chicken Sauté with Mustard Cream Sauce** → Poulet à la Moutarde  ×1 — translation: English translation of French dish with same preparation method and sauce
+- **Buttermilk Pound Cake** → Pound Cake  ×1 — variant: Buttermilk substitutes milk in traditional pound cake recipe
+- **Red Chile Pozole** → Pozole  ×1 — variant: Pozole with red chile as the primary flavoring ingredient variation
+- **Red Pork Pozole** → Pozole  ×1 — variant: Pozole with specific chile/color variation; same dish form
+- **Standing Rib Roast** → Prime Rib  ×1 — regional: Standing Rib Roast is the British term for Prime Rib
+- **Penne Puttanesca** → Puttanesca  ×1 — variant: Same puttanesca sauce, different pasta shape used
+- **Puttanesca Pasta** → Puttanesca  ×1 — accompaniment: Names the dish with its traditional pasta accompaniment.
+- **Cheese Quesadilla** → Quesadillas  ×1 — variant: Quesadilla with cheese filling, standard preparation.
+- **Spinach and Feta Quiche** → Quiche  ×1 — variant: Spinach and feta are ingredient variations of the classic quiche form
+- **Vegetable Quiche** → Quiche  ×1 — variant: Quiche with vegetable filling, same dish form
+- **Beef Ragu (Ragù di Manzo)** → Ragù  ×1 — variant: Beef ragù is ragù specified with beef; traditional variation.
+- **Ragù Napoletano** → Ragù  ×1 — regional: Napoletano specifies Naples regional style of ragù
+- **Pasta alla Montecarlo (Creamy Beef Ragu)** → Ragù  ×1 — accompaniment: Pasta alla Montecarlo names the dish with its traditional pasta accompaniment.
+- **Sausage Ragù** → Ragù  ×1 — variant: Sausage ragù is a meat ragù variant using sausage instead of other meats.
+- **Chicken Ragu (Lagu Gà)** → Ragù  ×1 — variant: Chicken Ragu is regional/ingredient variation of Ragù form
+- **Spicy Garlic Ramen** → Ramen  ×1 — variant: Ramen with spicy garlic flavoring variation
+- **Chintan Shoyu Ramen** → Ramen  ×1 — variant: Specific ramen style variation; shoyu-based broth type
+- **Spicy Miso Ramen** → Ramen  ×1 — variant: Miso ramen is a recognized flavor variation of ramen, same dish form.
+- **Ravioli al Burro e Salvia (Ravioli with Browned Butter and Sage)** → Ravioli  ×1 — accompaniment: Ravioli with its traditional sauce preparation named.
+- **Pesto Ravioli** → Ravioli  ×1 — variant: Ravioli with pesto sauce/filling variation
+- **Mushroom Ravioli** → Ravioli  ×1 — variant: Ravioli with mushroom filling, same dish form and preparation method
+- **Spinach and Ricotta Ravioli** → Ravioli  ×1 — variant: Specific filling variation of the same ravioli form
+- **Crab Ravioli** → Ravioli  ×1 — variant: Ravioli with crab filling, same dish form and preparation method
+- **Ravioli ai Piselli** → Ravioli  ×1 — variant: Ravioli with peas filling; same pasta parcel form.
+- **Ricotta Ravioli** → Ravioli  ×1 — variant: Ravioli with specific filling; same dish form
+- **Cheese Ravioli** → Ravioli  ×1 — variant: Cheese filling is a common ravioli variation, same dish form.
+- **Revithada (Greek Chickpea Stew)** → Revithia  ×1 — spelling: Revithada is alternate spelling/transliteration of Revithia
+- **Rigatoni alla Calabrese** → Rigatoni alla Silana  ×1 — regional: Both names refer to same Calabrian rigatoni dish, Silana and Calabrese are synonymous regional identifiers
+- **Vegetable Risotto** → Risotto  ×1 — variant: Vegetable risotto is risotto with vegetable ingredient variation
+- **Risotto al Parmigiano** → Risotto  ×1 — variant: Risotto with parmesan cheese, standard preparation variation
+- **Risotto al Parmigiano (Parmesan Risotto)** → Risotto  ×1 — variant: Risotto with parmesan is a classic risotto preparation variation
+- **Roast Chicken with Root Vegetables** → Roast Chicken  ×1 — accompaniment: Root vegetables are typical roast chicken accompaniment, not a distinct dish form
+- **Crispy Roasted Potatoes** → Roast Potatoes  ×1 — variant: Emphasizes the crispy texture, same roasting method and dish form.
+- **Roasted Baby Potatoes** → Roast Potatoes  ×1 — variant: Same roasting method and technique, potato size variation only
+- **Roast Turkey with Pan Gravy** → Roast Turkey  ×1 — accompaniment: Pan gravy is traditional roast turkey accompaniment, not distinct dish
+- **Roasted Garlic Cauliflower** → Roasted Cauliflower  ×1 — variant: Garlic is a typical seasoning variation of roasted cauliflower
+- **Roasted Parmesan Cauliflower** → Roasted Cauliflower  ×1 — variant: Same roasted cauliflower dish, Parmesan is flavor variation
+- **Roasted Root Vegetables** → Roasted Vegetables  ×1 — variant: Root vegetables are a specific seasonal produce category, same dish form.
+- **Vegetable Fries** → Rutabaga  ×1 — variant: Rutabaga prepared in fried form, same vegetable dish
+- **Roasted Vegetable Steaks** → Rutabaga  ×1 — variant: Roasted rutabaga cut into steaks, same vegetable preparation
+- **Whipped Rutabaga** → Rutabaga  ×1 — variant: Whipped preparation method of the same rutabaga dish
+- **Cheese Saganaki** → Saganaki  ×1 — variant: Specifies cheese type, same fried cheese dish form
+- **Red Salsa** → Salsa  ×1 — variant: Red salsa is a color/ingredient variation of salsa
+- **Salsa Verde** → Salsa  ×1 — variant: Green salsa with tomatillos; same dish form, different ingredient variation
+- **Salsa Fresca (Pico de Gallo)** → Salsa  ×1 — regional: Salsa Fresca and Pico de Gallo are regional names for fresh tomato salsa
+- **Jean Vignard Sauce** → Sauce Jean Vignard  ×1 — spelling: Name order variation of same French sauce
+- **Sazón** → Sazon Seasoning  ×1 — spelling: Sazón is the standard Spanish spelling with accent mark.
+- **Sazón Seasoning Blend** → Sazon Seasoning  ×1 — spelling: Sazón is the accented Spanish spelling of Sazon, same seasoning blend.
+- **Scallion Oil Pancake** → Scallion Pancakes  ×1 — variant: Oil is implicit ingredient in traditional scallion pancake preparation
+- **Chinese Scallion Pancakes** → Scallion Pancakes  ×1 — regional: Specifies the cuisine origin of the same dish form.
+- **Green Onion Pancake** → Scallion Pancakes  ×1 — regional: Green onion is North American term for scallion
+- **Shanghai Scallion Pancakes** → Scallion Pancakes  ×1 — regional: Shanghai style is a regional variation of scallion pancakes.
+- **Schweineschnitzel (Pork Schnitzel)** → Schnitzel  ×1 — variant: Pork schnitzel is a flavour/ingredient variation of schnitzel
+- **Seafood Spaghetti (Spaghetti ai Frutti di Mare)** → Scoglio  ×1 — translation: Frutti di Mare is Italian seafood pasta; Scoglio is regional variant name
+- **Pasta allo Scoglio (Linguine with Shellfish Sauce)** → Scoglio  ×1 — translation: Pasta allo Scoglio is Italian name, Linguine with Shellfish Sauce is English translation
+- **Spaghetti ai Frutti di Mare** → Scoglio  ×1 — translation: Italian name for same mixed shellfish pasta dish
+- **Tagliatelle allo Scoglio** → Scoglio  ×1 — variant: Same scoglio seafood dish, different pasta shape used
+- **Linguine allo Scoglio (Seafood Pasta)** → Scoglio  ×1 — accompaniment: Linguine allo Scoglio names the dish with its typical pasta accompaniment.
+- **Sugo Scoglio (Seafood Pasta)** → Scoglio  ×1 — translation: Sugo Scoglio is Italian name for the same seafood pasta dish
+- **Frutti Di Mare** → Scoglio  ×1 — translation: Frutti di mare is Italian for 'fruits of the sea,' the standard name for mixed seafood pasta dishes
+- **Pasta alla Marinara (Allo Scoglio)** → Scoglio  ×1 — regional: Marinara is regional Italian name for mixed seafood pasta
+- **Fruit Scones** → Scones  ×1 — variant: Fruit scones are scones with fruit added, same dish form.
+- **Strawberry Scones** → Scones  ×1 — variant: Scones with strawberry flavoring; same dish form
+- **Soft-Scrambled Eggs** → Scrambled Eggs  ×1 — variant: Same dish form, only texture/cooking variation specified.
+- **Chocolate Self-Saucing Cake** → Self-Saucing Pudding  ×1 — variant: Chocolate flavor variation of the same self-saucing pudding form.
+- **Butterscotch Self-Saucing Pudding** → Self-Saucing Pudding  ×1 — variant: Butterscotch flavor variation of self-saucing pudding form
+- **Chocolate Pudding Cake** → Self-Saucing Pudding  ×1 — variant: Chocolate-flavored version of self-saucing pudding form
+- **Shakshuka with Lentils** → Shakshuka  ×1 — variant: Same dish form with ingredient variation (lentils added)
+- **Sheet-Pan Roasted Fish with Peppers** → Sheet Pan Fish  ×1 — variant: Same sheet pan fish technique with vegetable specificity.
+- **Sheet Pan Fish Dinner** → Sheet Pan Fish  ×1 — accompaniment: Dinner specifies the complete meal; same dish form.
+- **Sheet Pan Baked Fish with Vegetables** → Sheet Pan Fish  ×1 — accompaniment: Names the fish with its typical vegetable accompaniment on sheet pan.
+- **Sheet Pan Baked Fish** → Sheet Pan Fish  ×1 — spelling: Same dish, just adds 'baked' which describes the cooking method already inherent in sheet pan fish preparation
+- **Sheet Pan Fish with Vegetables** → Sheet Pan Fish  ×1 — accompaniment: Names the dish with its standard vegetable accompaniment
+- **Sheet Pan Baked Cod with Vegetables** → Sheet Pan Fish  ×1 — variant: Specific fish type and vegetables named, same sheet pan cooking method
+- **Puttanesca Fish Tray Bake** → Sheet Pan Fish  ×1 — variant: Same sheet pan fish form, different flavor profile (puttanesca)
+- **Sheet Pan Fish with Roasted Potatoes** → Sheet Pan Fish  ×1 — accompaniment: Roasted potatoes are typical vegetable accompaniment to sheet pan fish
+- **Sheet Pan Fish and Vegetables** → Sheet Pan Fish  ×1 — accompaniment: Names the dish with its typical vegetable accompaniment included.
+- **Shorbat Adas (Lentil Soup)** → Shorabet Adas  ×1 — spelling: Transliteration variant of Shorabet Adas; same dish
+- **Lebanese Lentil Soup (Shorbet Adas)** → Shorabet Adas  ×1 — regional: Lebanese variant name for the same Middle Eastern lentil soup dish
+- **Lentil Soup (Shorabet Adas)** → Shorabet Adas (Lentil Soup)  ×1 — translation: English translation of the Arabic dish name Shorabet Adas
+- **Adas bi Hamod** → Shorabet Adas (Lentil Soup)  ×1 — regional: Adas bi Hamod is alternate Arabic name for lentil soup
+- **Egyptian Lentil Soup (Shorbet Ads)** → Shorabet Adas (Lentil Soup)  ×1 — regional: Egyptian variant of Shorabet Adas; same dish, regional specification
+- **Lebanese Lentil Soup** → Shorabet Adas (Lentil Soup)  ×1 — regional: Lebanese variant of the same Middle Eastern lentil soup
+- **Scottish Shortbread** → Shortbread Cookies  ×1 — regional: Scottish Shortbread specifies the regional origin already inherent in the dish
+- **Shrimp and Okra Gumbo** → Shrimp Gumbo  ×1 — accompaniment: Okra is a standard ingredient explicitly named in gumbo preparation.
+- **Louisiana Shrimp Gumbo** → Shrimp Gumbo  ×1 — regional: Louisiana specifies the regional origin already inherent in Shrimp Gumbo
+- **Linguine with Shrimp Scampi** → Shrimp Scampi  ×1 — accompaniment: Linguine is the standard accompaniment to Shrimp Scampi
+- **Shrimp Scampi Pasta** → Shrimp Scampi  ×1 — accompaniment: Pasta is the typical serving base for Shrimp Scampi
+- **Shrimp Scampi with Linguini** → Shrimp Scampi  ×1 — accompaniment: Linguini is the standard stated accompaniment in dish description.
+- **Cajun Shrimp and Corn Chowder** → Shrimp and Corn Chowder  ×1 — variant: Same dish form with Cajun flavor seasoning variation
+- **Blackened Shrimp and Grits** → Shrimp and Grits  ×1 — variant: Blackened is a cooking technique applied to the shrimp component, same dish form.
+- **Strawberry Smoothie** → Smoothie  ×1 — variant: Specific fruit flavor variation of the same blended beverage form
+- **Tropical Smoothie** → Smoothie  ×1 — variant: Tropical Smoothie is smoothie with specific fruit flavors
+- **Green Smoothie** → Smoothie  ×1 — variant: Green smoothie is a flavor/ingredient variation of smoothie
+- **Berry Smoothie** → Smoothie  ×1 — variant: Specific flavor variation of the base smoothie form
+- **Chocolate Smoothie** → Smoothie  ×1 — variant: Chocolate is a flavor variation of the base smoothie form.
+- **Power Smoothie** → Smoothie  ×1 — variant: Smoothie with added nutritional ingredients or protein boost
+- **Fruit and Vegetable Smoothie** → Smoothie  ×1 — variant: Specifies ingredient content (fruit and vegetable) of base smoothie form
+- **Dover Sole Meunière** → Sole Meunière  ×1 — variant: Dover sole is the specific fish species used in classic Sole Meunière preparation
+- **Pistou Soup (Soupe au Pistou)** → Soupe au Pistou (French Minestrone)  ×1 — translation: English translation of French dish name, same soup
+- **Soutzouakia (Smyrna Meatballs)** → Soutzoukakia  ×1 — spelling: Alternative spelling of Soutzoukakia; Smyrna is regional origin
+- **Soutzoukia** → Soutzoukakia  ×1 — spelling: Greek plural form of soutzoukakia, same dish
+- **Souzoukakia** → Soutzoukakia  ×1 — spelling: Alternative transliteration of Greek Soutzoukakia; same dish
+- **Souvlakia** → Souvlaki (Greece)  ×1 — plural: Souvlakia is the plural form of Souvlaki
+- **Spaghetti with Meat Ragu (spaghetti squash variant)** → Spaghetti Squash  ×1 — accompaniment: Spaghetti squash with its typical meat ragu topping
+- **Spaghetti Squash with Garlic and Breadcrumbs** → Spaghetti Squash  ×1 — accompaniment: Names the dish with its usual toppings/accompaniments.
+- **Spaghetti Squash Parmesan** → Spaghetti Squash  ×1 — accompaniment: Spaghetti Squash with its typical cheese topping named
+- **Spaghetti Squash Pasta** → Spaghetti Squash  ×1 — accompaniment: Names the dish with its typical serving form (pasta-style preparation with sauce).
+- **Victoria Sponge** → Sponge Cake  ×1 — regional: Victoria Sponge is traditional British name for sponge cake with jam and cream.
+- **Fresh Spring Rolls (Gỏi Cuốn)** → Spring Rolls  ×1 — variant: Fresh spring rolls are the unfried version of spring rolls, same dish form.
+- **Vietnamese Fresh Spring Rolls** → Spring Rolls  ×1 — regional: Specifies the Vietnamese origin and fresh preparation method of spring rolls
+- **Summer Rolls** → Spring Rolls  ×1 — regional: Summer Rolls is the Western name for fresh spring rolls, same dish.
+- **Cheesy Squash Casserole** → Squash Casserole  ×1 — variant: Cheese topping is standard variation of squash casserole
+- **Southern Squash Casserole** → Squash Casserole  ×1 — regional: Southern specifies the regional origin already in dish description
+- **Sirloin Steak Tips** → Steak Tips  ×1 — variant: Specifies cut source; same dish form and preparation
+- **Beef Steak Tips** → Steak Tips  ×1 — plural: Beef Steak Tips is the same dish, specifying beef type.
+- **Balsamic Glazed Steak Tips and Mushrooms** → Steak Tips  ×1 — variant: Same steak tips form with different glaze and mushroom accompaniment
+- **Beef Tips** → Steak Tips  ×1 — variant: Beef Tips is the same dish, just without specifying the cut.
+- **Grilled Steak Tips with Garlic Herb Butter** → Steak Tips  ×1 — accompaniment: Steak tips with garlic herb butter as typical serving method
+- **Steak Haché à l'Oignon (Ground Steak with Onions)** → Steak haché  ×1 — variant: Same ground beef patty, traditional variation with onions added.
+- **Sticky Date Pudding** → Sticky Toffee Pudding  ×1 — regional: Australian/NZ name for British Sticky Toffee Pudding
+- **Sticky Toffee Pudding Cake** → Sticky Toffee Pudding  ×1 — accompaniment: Cake clarifies the sponge form; pudding includes toffee sauce.
+- **Strawberry Layer Cake** → Strawberry Cake  ×1 — variant: Specifies the layered construction method of the same dish
+- **Fresh Strawberry Cake** → Strawberry Cake  ×1 — variant: Emphasizes freshness of strawberries; same layered cake form
+- **Strawberry Cake with Cream Cheese Frosting** → Strawberry Cake  ×1 — variant: Same cake form with specific frosting variation
+- **Fish Stew (Stufato di Pesce)** → Stufato di Pesce  ×1 — translation: English translation of Italian dish name Stufato di Pesce
+- **Golubtsi (Cabbage Rolls)** → Stuffed Cabbage Rolls  ×1 — translation: Golubtsi is Eastern European name for stuffed cabbage rolls
+- **Golumpki (Stuffed Cabbage Rolls)** → Stuffed Cabbage Rolls  ×1 — regional: Golumpki is the Polish/Eastern European name for stuffed cabbage rolls.
+- **Cabbage Rolls (Golubtsi)** → Stuffed Cabbage Rolls  ×1 — regional: Golubtsi is Eastern European name for Stuffed Cabbage Rolls
+- **Sausage Stuffed Mushrooms** → Stuffed Mushrooms  ×1 — variant: Sausage variant of the same stuffed mushrooms dish
+- **Stuffed Mushrooms with Sausage** → Stuffed Mushrooms  ×1 — variant: Sausage is a common optional ingredient variation of the base dish.
+- **Soft Sugar Cookies** → Sugar Cookies  ×1 — variant: Same sugar cookie form, texture variation only
+- **Vanilla Sugar Cookies** → Sugar Cookies  ×1 — variant: Vanilla is typical flavoring for sugar cookies; same form and technique.
+- **Cut-Out Sugar Cookies** → Sugar Cookies  ×1 — variant: Cut-out describes the shaping method of standard sugar cookies
+- **Cajun Sweet Potato Fries** → Sweet Potato Fries  ×1 — variant: Cajun seasoning is a flavor variation of the base dish
+- **Swordfish Steaks with Compound Butter** → Swordfish  ×1 — variant: Same swordfish steaks, different finishing preparation method.
+- **Pan-Seared Swordfish with Olives and Capers** → Swordfish  ×1 — variant: Same swordfish base with specific ingredient variation added.
+- **Grilled Swordfish with Lemon and Caper Sauce** → Swordfish  ×1 — accompaniment: Swordfish with its typical sauce preparation named
+- **Swordfish with Olives and Capers** → Swordfish  ×1 — variant: Same swordfish dish with traditional Mediterranean flavor additions
+- **Agghiotta di Pesce Spada** → Swordfish  ×1 — regional: Sicilian name for braised swordfish; pesce spada is swordfish
+- **Swordfish Steak** → Swordfish  ×1 — accompaniment: Swordfish steak specifies the cut form of swordfish dish
+- **Seared Swordfish with Compound Butter** → Swordfish  ×1 — variant: Same swordfish preparation, different finishing butter
+- **Blackened Swordfish** → Swordfish  ×1 — variant: Same swordfish steak dish, different cooking method/seasoning
+- **Tabouli Salad** → Tabouleh  ×1 — spelling: Tabouli is alternative transliteration of Tabouleh
+- **Chicken Tinga Tacos** → Tacos  ×1 — variant: Chicken Tinga is a specific filling variation of tacos.
+- **Hard-Shell Tacos** → Tacos  ×1 — variant: Crispy corn tortilla variation of standard tacos
+- **Beef Puffy Tacos** → Tacos  ×1 — variant: Beef filling and puffy tortilla variation of tacos
+- **Street Tacos** → Tacos  ×1 — variant: Street tacos are traditional tacos with specific regional preparation style.
+- **Puffy Tacos** → Tacos  ×1 — regional: San Antonio regional variation of tacos, same form
+- **Tacos al Pastor (or Mexican Street Tacos)** → Tacos  ×1 — variant: Specific seasoning/ingredient variation of tacos, same dish form
+- **Crispy Tacos** → Tacos  ×1 — variant: Crispy tacos are tacos with crispy tortillas, a texture variation of the same dish form.
+- **Tagliatelle Pasta** → Tagliatelle  ×1 — spelling: Tagliatelle Pasta is the full descriptive name; Tagliatelle is the standard dish name.
+- **Tagliatelle ai Funghi (Tagliatelle with Mushrooms)** → Tagliatelle  ×1 — accompaniment: Tagliatelle with mushrooms is the same pasta form with a traditional sauce variation.
+- **Tagliatelle alla Carbonara (cream variant with mushrooms and truffle oil)** → Tagliatelle  ×1 — variant: Same pasta form with different sauce/ingredient variation
+- **Tagliatelle al Limone** → Tagliatelle  ×1 — variant: Same pasta form with lemon sauce variation
+- **Tagliatelle al Burro (Tagliatelle with Butter)** → Tagliatelle  ×1 — accompaniment: Tagliatelle with its traditional butter sauce preparation
+- **Tagliatelle alla Bolognese** → Tagliatelle  ×1 — accompaniment: Tagliatelle with its traditional ragù Bolognese accompaniment named
+- **Tagliatelle al Pomodoro** → Tagliatelle  ×1 — accompaniment: Tagliatelle with its traditional tomato sauce variation
+- **Black Olive Tapenade** → Tapenade  ×1 — variant: Tapenade variant specifying primary ingredient type.
+- **Tartare Sauce** → Tartar Sauce  ×1 — spelling: British English spelling variant of Tartar Sauce
+- **Thai Red Curry Chicken** → Thai Red Curry  ×1 — accompaniment: Chicken is the typical protein in Thai Red Curry
+- **Thai Red Curry Chicken Soup** → Thai Red Curry  ×1 — accompaniment: Chicken is the typical protein in Thai Red Curry; naming it specifies the standard ingredient.
+- **Spaghetti Sauce** → Tomato Sauce  ×1 — accompaniment: Spaghetti Sauce is Tomato Sauce with its usual pasta accompaniment named.
+- **Pomodoro Sauce** → Tomato Sauce  ×1 — translation: Pomodoro is Italian word for tomato; same sauce, different language name.
+- **Cream of Tomato Soup** → Tomato Soup  ×1 — variant: Cream of tomato is tomato soup with cream as standard accompaniment.
+- **Chicken Tortellini Soup** → Tortellini Soup  ×1 — variant: Chicken specifies filling/ingredient variation of same dish form
+- **Creamy Sausage Tortellini Soup** → Tortellini Soup  ×1 — variant: Same tortellini soup base with sausage and cream additions.
+- **Cherry and Almond Traybake** → Traybake Recipes  ×1 — variant: Specific flavor variation of the traybake form itself
+- **Oat Traybake** → Traybake Recipes  ×1 — variant: Oat traybake is a specific ingredient variation of traybake form
+- **Citrus Tray Bake Cake** → Traybake Recipes  ×1 — variant: Citrus flavor variation of the traybake form with icing/topping.
+- **Chocolate Tres Leches Cake** → Tres Leches Cake  ×1 — variant: Chocolate flavor variation of the same tres leches cake form
+- **Trofie al Pesto Genovese** → Trofie  ×1 — accompaniment: Trofie with its traditional pesto Genovese accompaniment named
+- **Tsourike (Greek Easter Bread)** → Tsoureki  ×1 — spelling: Tsourike is a spelling/transliteration variant of Tsoureki
+- **Tsourekia** → Tsoureki  ×1 — plural: Tsourekia is the plural form of Tsoureki
+- **Pumpkin Turkey Chili** → Turkey Chili  ×1 — variant: Pumpkin is ingredient variation of Turkey Chili base
+- **Turkey Chili with Beans** → Turkey Chili  ×1 — accompaniment: Beans are integral to turkey chili; naming them is redundant.
+- **Tuscan Bean Soup** → Tuscan White Bean Soup  ×1 — variant: Omits 'white' descriptor; same Tuscan bean soup base
+- **Tuscan White Bean & Vegetable Soup** → Tuscan White Bean Soup  ×1 — variant: Same Tuscan bean soup base with vegetable additions
+- **Tzatziki Sauce** → Tzatziki  ×1 — accompaniment: Tzatziki Sauce names the dish with its typical use/form
+- **Vanilla Butter Cake** → Vanilla Cake  ×1 — variant: Butter is a standard ingredient in vanilla cake; naming it emphasizes this common component.
+- **Vassilopita** → Vasilopita  ×1 — spelling: Alternative transliteration of Greek Vasilopita with double 's'
+- **Vassilopita Cake** → Vasilopita  ×1 — spelling: Vassilopita is alternate transliteration of Vasilopita
+- **Vegetable Lasagne** → Vegetable Lasagna  ×1 — spelling: British English spelling variant of Lasagna
+- **Hearty Vegetable Soup** → Vegetable Soup  ×1 — variant: Hearty describes the same vegetable soup with emphasis on substance.
+- **Fish Velouté** → Velouté Sauce  ×1 — variant: Velouté made with fish stock, same mother sauce form
+- **Balsamic Vinaigrette** → Vinaigrette  ×1 — variant: Flavoring variation of vinaigrette; same emulsified dressing form
+- **Welsh Rabbit** → Welsh Rarebit  ×1 — spelling: Welsh Rabbit is the original name; Rarebit is a folk etymology variant.
+- **White Bread Loaf** → White Bread  ×1 — accompaniment: Loaf specifies the form of the white bread dish.
+- **Soft White Bread** → White Bread  ×1 — variant: Soft describes the texture, inherent to white bread definition.
+- **Wonton Noodle Soup** → Wonton Soup  ×1 — accompaniment: Noodles are standard accompaniment to wonton soup
+- **Pork Wonton Soup** → Wonton Soup  ×1 — variant: Specifies filling ingredient; same dish form
+- **Xiamen Fried Rice Noodles** → Xiamen Chow Mei Fun  ×1 — translation: Alternative English name for same Xiamen stir-fried rice noodle dish
+- **Fried Rice Noodles (Xiamen-style sweet-and-sour variant)** → Xiamen Chow Mei Fun  ×1 — regional: Same Xiamen stir-fried rice noodle dish, alternate name
+- **Stir-Fried Udon** → Yaki Udon  ×1 — translation: English translation of Japanese stir-fried udon preparation method
+- **Beef Yaki Udon** → Yaki Udon  ×1 — variant: Beef Yaki Udon specifies protein variation of base Yaki Udon dish
+- **Yakiudon** → Yaki Udon  ×1 — spelling: Yakiudon is spacing variant of Yaki Udon
+- **Oyster Stir-Fried Udon** → Yaki Udon  ×1 — variant: Stir-fried udon with oyster as protein variation
+- **Yakiudon (Stir-fried Udon)** → Yaki Udon  ×1 — spelling: Yakiudon is spacing variant of Yaki Udon, same dish
+- **Lemon Berry Yogurt Cake** → Yogurt Cake  ×1 — variant: Yogurt cake with specific flavor additions (lemon, berry).
+- **Giouvetsi (Greek Chicken Orzo)** → Youvetsi  ×1 — spelling: Giouvetsi is alternate transliteration of Youvetsi
+- **Steamed Pork Dumplings** → Zhēngjiǎo  ×1 — variant: Specific filling variant of zhēngjiǎo steamed dumplings.
+- **Steamed Vegetable Dumplings** → Zhēngjiǎo  ×1 — variant: Same dumpling form, steamed method; vegetable filling variant
+- **Steamed Pork and Cabbage Dumplings (Zhēngjiǎo)** → Zhēngjiǎo  ×1 — variant: Specific filling variant of the same steamed dumpling form.
+- **Steamed Dumplings (Xiaolongbao or Jiaozi variant)** → Zhēngjiǎo  ×1 — translation: Steamed Dumplings is English translation of Zhēngjiǎo; xiaolongbao/jiaozi are related Chinese dumpling forms
+- **Sautéed Zucchini with Lemon and Garlic** → Zucchini  ×1 — variant: Zucchini with specific preparation method and common seasonings
+- **Chocolate Zucchini Bread** → Zucchini Bread  ×1 — variant: Same bread form with chocolate ingredient variation
+- **Vodka Sauce (Penne alla Vodka)** → alla Vodka  ×1 — accompaniment: Sauce named with its traditional pasta pairing; same dish.
+- **Spaghetti con Colatura di Alici** → alla colatura  ×1 — accompaniment: Spaghetti with its typical colatura di alici sauce preparation
+- **Spaghetti al Colatura di Alici** → alla colatura  ×1 — accompaniment: Spaghetti named with its characteristic sauce; same dish
+- **Spaghetti alla Colatura di Alici** → alla colatura  ×1 — accompaniment: Spaghetti with colatura di alici sauce; pasta form specified
+- **Spaghetto alla Colatura di Alici** → alla colatura  ×1 — accompaniment: Same dish specified with its key ingredient and pasta form
+- **Djon Djon (Haitian Black Rice)** → diri ak djon djon  ×1 — regional: Djon Djon is the common shortened name for Dri ak Djon Djon
+- **Djon Djon (Black Mushroom Rice)** → diri ak djon djon  ×1 — regional: Djon Djon is the common English name for the same Haitian dish
+- **Shrimp Etoufee** → Étouffée Recipes  ×1 — variant: Shrimp Étouffée is the classic shellfish version of étouffée dish
+
+## R — NOT the same dish (the judge's view; these recipes sit under a parent/sibling today) (637 aliases, 872 recipes)
+
+- **Bolognese Sauce** → Bolognese  ×16 — component: Bolognese is fundamentally the sauce itself, not a finished pasta dish
+- **Roasted Broccoli** → Broccoli  ×14 — attribute: Roasted is a cooking method attribute, not the dish itself.
+- **Sautéed Swiss Chard** → Swiss Chard  ×13 — attribute: Sautéed specifies cooking method, not the vegetable itself
+- **Baked Chicken Wings** → Chicken Wings  ×9 — attribute: Baked specifies cooking method not in base dish name.
+- **Licorice Liqueur** → Licurdia  ×9 — other: Licurdia is a solid confection; liqueur is a beverage
+- **Braised Beef Short Ribs** → Beef Short Ribs  ×8 — attribute: Braised is a cooking method attribute, not part of dish identity.
+- **Seafood Gumbo** → Shrimp Gumbo  ×7 — sibling: Seafood Gumbo includes multiple seafood types, not just shrimp
+- **Sautéed Cabbage** → Cabbage  ×6 — attribute: Sautéing is a specific cooking method, not the dish itself.
+- **Roasted Zucchini** → Zucchini  ×6 — attribute: Roasting is a cooking method attribute not stated in dish name
+- **Sautéed Zucchini** → Zucchini  ×6 — attribute: Sautéed specifies cooking method; dish name doesn't state it
+- **Baked Halibut** → Halibut  ×5 — attribute: Baked specifies cooking method; catalog holds as distinct dish
+- **Baked Macaroni and Cheese** → Macaroni and Cheese  ×5 — attribute: Baked specifies cooking method; base dish exists unbaked
+- **Baked Mac and Cheese** → Macaroni and Cheese  ×5 — attribute: Baked specifies cooking method not in base dish name
+- **Clam Chowder** → New England Clam Chowder  ×5 — sibling: Clam Chowder encompasses multiple regional variants as distinct dishes.
+- **Roasted Rutabaga** → Rutabaga  ×5 — attribute: Roasting is a cooking method attribute, not an alias.
+- **Baked Sweet Potato Fries** → Sweet Potato Fries  ×5 — attribute: Baked method differs from deep-fried preparation stated in DISH
+- **Carne Asada Tacos** → Carne Asada  ×4 — accompaniment: Tacos are the vessel/accompaniment, not the dish itself.
+- **No-Bake Cheesecake** → Cheesecake  ×4 — attribute: No-Bake is a preparation method attribute, not the dish itself.
+- **Barbecued Pork Ribs** → Country Style Pork Ribs  ×4 — attribute: Barbecued adds cooking method not stated in dish name
+- **Chicken Dijon** → Dijon  ×4 — accompaniment: Chicken Dijon is a dish using Dijon mustard as ingredient/sauce, not Dijon itself.
+- **Cooked Farro** → Farro  ×4 — attribute: Cooked vs uncooked farro are distinct preparation states in cookbook indexing
+- **Farro Salad** → Farro  ×4 — child: Farro salad is a distinct dish form; cooked farro becomes salad ingredient.
+- **Eggplant Involtini** → Involtini  ×4 — child: Eggplant Involtini is a specific vegetable variation with its own identity
+- **Chicken in Cream Sauce** → Marry Me Chicken  ×4 — other: Generic descriptor; doesn't capture signature sun-dried tomato and basil elements
+- **Strawberry Sauce** → Strawberries  (Fresh)  ×4 — component: Sauce is a prepared component, not the fresh fruit itself.
+- **Arrabbiata Sauce** → Arrabbiata  ×3 — component: Sauce is a component; finished dish is the pasta.
+- **Cooked Barley** → Barley  ×3 — attribute: Cooked state is an attribute, not the dish itself.
+- **Beef Broth** → Beef Stock  ×3 — sibling: Stock and broth are distinct culinary preparations with different cooking times and uses.
+- **Roasted Brussels Sprouts with Bacon** → Brussels Sprouts  ×3 — variant: Adds bacon ingredient beyond base roasted preparation
+- **Roasted Cabbage** → Cabbage  ×3 — attribute: Roasting is a specific cooking method; cabbage has many preparation styles.
+- **Chicken Broth** → Chicken Stock  ×3 — sibling: Stock and broth are distinct products with different cooking methods and uses.
+- **Grilled Chicken Thighs** → Chicken Thighs - Boneless  ×3 — attribute: Grilled specifies cooking method not stated in dish name
+- **Fried Chicken Wings** → Chicken Wings  ×3 — attribute: Frying is a cooking method attribute, not intrinsic to dish identity.
+- **Chicken and Rice Casserole** → Chicken and Rice  ×3 — attribute: Casserole specifies cooking method/vessel not in dish name
+- **Hoisin Chicken Stir Fry** → Hoisin Sauce  ×3 — other: Hoisin Chicken Stir Fry is a finished dish using hoisin sauce as ingredient, not the sauce itself
+- **Italian Pasta Salad** → Pasta Salad  ×3 — variant: Regional variation with distinct Italian preparation style
+- **Plum Torte** → Plum Tart  ×3 — sibling: Torte is a distinct cake form, not an open tart.
+- **Roasted Pork Belly** → Pork Belly  ×3 — attribute: Roasting is a distinct cooking method from braising; changes dish fundamentally.
+- **Pork Bulgogi** → Pork Bulgogi Rice Bowl  ×3 — component: Pork Bulgogi is the main component; bowl format is presentation
+- **Baked Potato Soup** → Potato Soup  ×3 — attribute: Baked potato soup specifies cooking method; base dish does not.
+- **Crustless Quiche** → Quiche  ×3 — attribute: Removes pastry crust, a defining structural element of quiche.
+- **Shrimp Stock** → Seafood Stock  ×3 — sibling: Specific seafood stock type, not generic seafood stock
+- **Shrimp and Sausage Gumbo** → Shrimp Gumbo  ×3 — variant: Adds sausage ingredient; distinct enough for separate indexing
+- **Roasted Spaghetti Squash** → Spaghetti Squash  ×3 — attribute: Roasted adds cooking method not in base dish name.
+- **Garlic Butter Steak Bites** → Steak Tips  ×3 — variant: Different marinade/flavoring (garlic butter vs soy-garlic) changes dish identity
+- **Grilled Swordfish** → Swordfish  ×3 — attribute: Grilled is the typical preparation method for the swordfish dish described.
+- **Teriyaki Chicken** → Teriyaki Sauce  ×3 — component: Teriyaki Chicken is the finished dish; sauce is a component
+- **Roasted Tomato Soup** → Tomato Soup  ×3 — attribute: Roasting is a preparation method not stated in Tomato Soup base name.
+- **Tuna Salad Sandwich** → Tuna Salad  ×3 — accompaniment: Sandwich adds bread as stated accompaniment, distinct dish form.
+- **Creamy Vegetable Soup** → Vegetable Soup  ×3 — variant: Creamy version adds specific cooking method/texture attribute not in base dish
+- **Lemon Yogurt Cake** → Yogurt Cake  ×3 — variant: Lemon is a specific flavor variation, not the base yogurt cake
+- **Apple Cider Cake** → Apple Cake  ×2 — variant: Apple Cider Cake uses cider as primary flavoring, distinct ingredient profile.
+- **Apple Pie Filling** → Apple Pie  ×2 — component: Filling is a component of the pie, not the finished dish.
+- **Apple Hand Pies** → Apple Pie  ×2 — child: Hand pies are distinct portable form, not standard pie.
+- **Fruit Crumble** → Berry Crisp  ×2 — sibling: Crisp and Crumble are distinct dessert forms with different toppings.
+- **Upside Down Cake** → Blood Orange  ×2 — child: Upside Down Cake is distinct cake form with its own identity.
+- **Blueberry Crumb Bars** → Blueberry Crumble  ×2 — child: Bars are a distinct form from crumble; different structure and serving.
+- **Roasted Broccoli with Parmesan** → Broccoli  ×2 — attribute: Adds cooking method (roasted) and accompaniment (Parmesan) not in base dish name
+- **Sautéed Brussels Sprouts** → Brussels Sprouts  ×2 — attribute: Sautéed differs from roasted in cooking method
+- **Roasted Butternut Squash Soup** → Butternut Squash Soup  ×2 — attribute: Roasting is the standard preparation method for the squash in this soup.
+- **Braised Cabbage** → Cabbage  ×2 — attribute: Braising is a cooking method attribute, not the dish itself.
+- **Cajun Chicken** → Cajun  ×2 — child: Cajun Chicken is a specific dish, not the cuisine style itself.
+- **Carrot Cake with Cream Cheese Frosting** → Carrot Cake  ×2 — attribute: Cream cheese frosting is the standard, not a distinguishing attribute.
+- **Pan-Roasted Chicken Breasts** → Chicken Breast - Bone-In  ×2 — attribute: Pan-roasted describes cooking method, not the ingredient itself.
+- **Roasted Chicken Breasts** → Chicken Breast - Bone-In  ×2 — attribute: Roasting is a cooking method, not an ingredient or cut attribute.
+- **Grilled Chicken Breast** → Chicken Breast - Boneless  ×2 — attribute: Grilled specifies cooking method, not the ingredient itself
+- **Creamy Chicken Noodle Soup** → Chicken Noodle Soup  ×2 — variant: Creamy base is distinct preparation from light broth base.
+- **Oven Baked Chicken Thighs** → Chicken Thighs - Bone In  ×2 — attribute: Cooking method (oven baked) adds attribute not in dish name.
+- **Honey Mustard Chicken** → Chicken Thighs - Boneless  ×2 — variant: Flavored preparation, not the base ingredient dish itself
+- **Pan-Seared Chicken Thighs** → Chicken Thighs - Boneless  ×2 — attribute: Pan-searing is a cooking method, not part of the dish itself.
+- **Saltimbocca** → Chicken With Peas and Prosciutto  ×2 — sibling: Saltimbocca is distinct: prosciutto wraps/stuffs chicken; different preparation and form.
+- **Farro Pilaf** → Farro  ×2 — sibling: Pilaf is distinct cooking method from risotto-style preparation
+- **Fettuccine Alfredo with Chicken** → Fettuccine Alfredo  ×2 — variant: Adds chicken protein; distinct dish form from base pasta.
+- **Pan Seared Halibut** → Halibut  ×2 — attribute: Pan-searing is a cooking method attribute, not the dish itself
+- **Hoisin Chicken Noodles** → Hoisin Sauce  ×2 — other: Hoisin Chicken Noodles is a finished dish using hoisin sauce as ingredient, not the sauce itself.
+- **Hoisin Chicken** → Hoisin Sauce  ×2 — other: Hoisin Chicken is a dish using hoisin sauce, not the sauce itself.
+- **Hot Honey Chicken** → Hot Honey Chicken Thighs  ×2 — sibling: Generic form of specific cut; same dish, different specificity
+- **American Goulash** → Hungarian Goulash  ×2 — sibling: American Goulash is a distinct dish with pasta, tomato sauce, ground beef; different form and ingredients.
+- **Carrot Ginger Dressing** → Japanese Ginger Salad Dressing  ×2 — variant: Adds carrot as distinctive ingredient; different base composition.
+- **Sweet Noodle Kugel** → Kugel  ×2 — child: Sweet Noodle Kugel is a specific variation with its own identity, distinct from general kugel.
+- **Miso-Roasted Chicken** → Miso Chicken  ×2 — attribute: Roasting is a specific cooking method not stated in Miso Chicken definition.
+- **Baked Monkfish** → Monkfish  ×2 — attribute: Baking is a cooking method attribute, not inherent to the dish
+- **Smothered Pork Chops** → Pork Chops  ×2 — variant: Smothered adds gravy/sauce preparation method, distinct dish form
+- **Baked Pork Chops** → Pork Chops  ×2 — attribute: Baking is a cooking method attribute not stated in Pork Chops definition.
+- **Baked Ravioli** → Ravioli  ×2 — attribute: Baked specifies cooking method not in base dish name
+- **Fusilli alla Silana** → Rigatoni alla Silana  ×2 — sibling: Different pasta shape; distinct indexable variation of Silana preparation.
+- **Oven Roasted Potatoes** → Roast Potatoes  ×2 — attribute: Specifies cooking method (oven) but describes identical dish
+- **Oven Roasted Vegetables** → Roasted Vegetables  ×2 — attribute: Specifies cooking method already inherent in Roasted Vegetables
+- **Smoothie Bowl** → Smoothie  ×2 — child: Smoothie Bowl is a distinct dish form with its own identity
+- **White Cake** → Sponge Cake  ×2 — sibling: White Cake is a distinct cake type, not sponge cake variant
+- **Grilled Steak Tips** → Steak Tips  ×2 — attribute: Grilled specifies cooking method not in base dish name
+- **Strawberry Shortcake** → Strawberries  (Fresh)  ×2 — child: Shortcake is a distinct assembled dessert, not just strawberries with accompaniment.
+- **Mushroom Stroganoff** → Stroganoff  ×2 — sibling: Mushroom Stroganoff is vegetarian variant, distinct dish identity
+- **Tagliatelle with Mushroom Cream Sauce** → Tagliatelle  ×2 — variant: Specific sauce variation; cookbook would index separately.
+- **Chicken Teriyaki Stir Fry** → Teriyaki Sauce  ×2 — child: Finished dish using teriyaki sauce, not the sauce itself.
+- **Teriyaki Chicken Stir Fry** → Teriyaki Sauce  ×2 — other: Teriyaki Chicken Stir Fry is a finished dish using teriyaki sauce as component.
+- **Roasted Tomato Sauce** → Tomato Sauce  ×2 — attribute: Roasting is a cooking method attribute not stated in base dish name.
+- **Trofie with Pesto** → Trofie  ×2 — accompaniment: Specifies a particular sauce pairing, not the pasta itself
+- **Roasted Zucchini with Parmesan** → Zucchini  ×2 — attribute: Roasting is a specific cooking method; Parmesan is added ingredient attribute.
+- **Spaghetti Aglio, Olio e Mollica** → Aglio e Olio  ×1 — variant: Mollica (breadcrumbs) is additional ingredient not in base dish.
+- **Spaghetti Aglio e Olio (creamy variant with anchovy and breadcrumbs)** → Aglio e Olio  ×1 — variant: Creamy variant with anchovy differs from traditional oil-based dish
+- **Pasta Dough for Agnolotti** → Agnolotti  ×1 — component: Pasta dough is a component of agnolotti, not the finished dish itself.
+- **Creamy Amatriciana (Amatriciana with cream)** → Amatriciana  ×1 — variant: Adds cream ingredient; traditional Amatriciana contains no cream.
+- **French Apple Cake** → Apple Cake  ×1 — other: French Apple Cake is a distinct regional variation with different preparation method and structure.
+- **Irish Apple Cake** → Apple Cake  ×1 — sibling: Irish Apple Cake is a distinct regional cake form with different preparation and ingredients.
+- **Custard Pie** → Apple Pie  ×1 — sibling: Custard Pie is a different pie with its own identity and ingredients.
+- **French Apple Pie** → Apple Pie  ×1 — variant: French Apple Pie is a distinct regional variation with different preparation methods and ingredients from standard Apple Pie.
+- **Vegetable Au Gratin** → Asparagus Au Gratin  ×1 — sibling: Generic category; Asparagus Au Gratin is a specific vegetable variant
+- **Baked Salmon with Soy Glaze** → Baked Salmon  ×1 — variant: Soy glaze adds a distinct flavor profile, not just preparation method.
+- **Oven Baked Salmon** → Baked Salmon  ×1 — attribute: Oven baked is the cooking method already inherent in Baked Salmon
+- **Ziti Bake** → Baked Ziti  ×1 — sibling: Ziti Bake and Baked Ziti are the same dish, different word order.
+- **Baklava Rolls** → Baklava  ×1 — child: Different form: rolls vs layered sheets, distinct indexing identity
+- **Chocolate Banana Cream Pie** → Banana Cream Pie  ×1 — variant: Chocolate addition creates distinct flavor profile cookbook indexes separately
+- **Sweet Banitsa** → Banitsa  ×1 — variant: Sweet filling fundamentally changes the dish's savory nature and identity.
+- **Pearl Barley Soup** → Barley  ×1 — component: Pearl Barley Soup is finished dish; Barley is ingredient
+- **Grain Bowl** → Barley  ×1 — other: Grain Bowl is a dish form/preparation, not barley itself
+- **Barley and Eggs with Spinach** → Barley  ×1 — child: Specific dish with eggs and spinach, not barley alone.
+- **Baked Barley with Mushrooms** → Barley  ×1 — attribute: Baked Barley with Mushrooms adds preparation method and ingredient not in base dish name.
+- **Vegetable Barley Soup** → Barley  ×1 — component: Soup is a finished dish; barley is an ingredient within it.
+- **Mornay Sauce** → Bechamel  ×1 — variant: Mornay adds cheese to béchamel; distinct dish identity
+- **Barbecued Beef Short Ribs** → Beef Short Ribs  ×1 — attribute: Barbecued specifies cooking method not in base dish name
+- **Smoked Beef Short Ribs** → Beef Short Ribs  ×1 — attribute: Smoking is a distinct cooking method, not the braising described.
+- **Beef Stock or Broth** → Beef Stock  ×1 — sibling: Stock and broth are distinct products with different cooking times and uses.
+- **Teriyaki Marinade** → Beef Teriyaki  ×1 — component: Marinade is an ingredient/component, not the finished beef dish
+- **Teriyaki Steak Bites** → Beef Teriyaki  ×1 — child: Steak bites are a distinct portioned form with separate indexing identity.
+- **Teriyaki Steak Rice Bowl** → Beef Teriyaki  ×1 — accompaniment: Bowl format with rice is a serving style, not the dish itself.
+- **Teriyaki Steak with Fried Rice** → Beef Teriyaki  ×1 — accompaniment: Fried rice is a distinct accompaniment, not the dish itself.
+- **Slow Cooker Teriyaki Beef** → Beef Teriyaki  ×1 — attribute: Slow cooker is a cooking method attribute, not the dish itself
+- **Teriyaki Steak Stir-Fry** → Beef Teriyaki  ×1 — sibling: Stir-fry is distinct cooking technique from grilled/pan-seared teriyaki beef.
+- **Blood Orange Sorbet** → Blood Orange  ×1 — child: Sorbet is a distinct dish form from blood orange itself
+- **Posset** → Blood Orange  ×1 — component: Posset is a dessert form; blood orange is an ingredient.
+- **Fresh Vegetable Juice** → Blood Orange  ×1 — other: Vegetable juice is distinct from blood orange fruit/beverage
+- **Citrus and Olive Salad** → Blood Orange  ×1 — other: Salad is a different dish form; blood orange is ingredient not focus
+- **Citrus Salad with Soy-Sesame Dressing** → Blood Orange  ×1 — other: Salad is a different dish form; dressing adds specific preparation method.
+- **Citrus Cake** → Blood Orange  ×1 — other: Citrus Cake is broader category; Blood Orange is specific fruit variant
+- **Bee's Knees** → Blood Orange  ×1 — sibling: Bee's Knees is a distinct cocktail with its own identity
+- **Grilled Fish** → Bluefish  ×1 — attribute: Grilled is a cooking method attribute, not the dish itself.
+- **Smoked Fish Pâté** → Bluefish  ×1 — component: Pâté is a prepared component/dish made from bluefish, not bluefish itself.
+- **Baked Fish with Tomatoes and Lemon** → Bluefish  ×1 — attribute: Baked method and specific toppings are attributes, not the dish itself
+- **Baked Fish en Papillote** → Bluefish  ×1 — attribute: Baked specifies cooking method; papillote is preparation style.
+- **Baked Fish with Breadcrumb Topping** → Bluefish  ×1 — attribute: Breadcrumb topping is a specific preparation attribute, not the dish itself.
+- **Broiled Fish Fillets with Aioli** → Bluefish  ×1 — attribute: Broiling is a cooking method attribute; bluefish can be broiled but isn't defined by it.
+- **Baked Fish** → Bluefish  ×1 — attribute: Baked is a cooking method, not the dish itself
+- **Baked Fish with Dijonnaise** → Bluefish  ×1 — attribute: Specific preparation method and sauce of bluefish
+- **Marinated Fish** → Bluefish  ×1 — attribute: Marinating is a preparation method, not the dish itself.
+- **Baked Whole Fish** → Bluefish  ×1 — attribute: Baking is a cooking method attribute; Bluefish is the ingredient/species
+- **Filet Mignon with Bordelaise Sauce** → Bordelaise Sauce  ×1 — accompaniment: Names the dish with its usual accompaniment; different from sauce alone.
+- **Steak with Sauce Bordelaise** → Bordelaise Sauce  ×1 — accompaniment: Steak is the dish; sauce is the accompaniment, not the dish itself.
+- **Slow Cooker Brisket** → Braised Brisket  ×1 — attribute: Slow cooker is a cooking method attribute, not the dish itself
+- **Braised Corned Beef Brisket** → Braised Brisket  ×1 — variant: Corned beef brisket is a distinct preparation using cured/brined meat
+- **Banana Bread (bar form)** → Breakfast Bars  ×1 — child: Banana Breakfast Bars is a specific flavor variant with distinct identity.
+- **Energy Bars** → Breakfast Bars  ×1 — sibling: Energy bars are distinct portable snacks with different purpose and form
+- **Ground Beef and Broccoli** → Broccoli  ×1 — other: Broccoli is an ingredient, not the finished dish itself.
+- **Broccoli Salad** → Broccoli  ×1 — child: Broccoli Salad is a prepared dish; broccoli is the ingredient.
+- **Creamy Broccoli Pasta** → Broccoli  ×1 — other: Pasta dish with broccoli, not broccoli itself
+- **Steamed Broccoli** → Broccoli  ×1 — attribute: Steamed is a cooking method attribute, not the dish itself
+- **Pasta al Burro e Salvia (Pasta with Butter and Sage)** → Brown Butter and Sage Sauce  ×1 — sibling: Finished pasta dish, not just the sauce component.
+- **Pumpkin Ravioli** → Brown Butter and Sage Sauce  ×1 — other: Pumpkin Ravioli is a dish; sauce is a component, not the dish itself.
+- **Ravioli with Browned Butter and Sage Sauce** → Brown Butter and Sage Sauce  ×1 — child: Ravioli dish with sauce, not the sauce itself.
+- **Pasta with Brown Butter and Sage** → Brown Butter and Sage Sauce  ×1 — accompaniment: Names the sauce with its typical serving dish, not the sauce itself.
+- **Gnocchi in Brown Butter Sage Sauce** → Brown Butter and Sage Sauce  ×1 — accompaniment: Names the dish with its typical accompaniment (gnocchi), not the sauce itself.
+- **Gnocchi with Brown Butter and Sage** → Brown Butter and Sage Sauce  ×1 — accompaniment: Names the dish with its usual accompaniment (gnocchi), not the sauce itself.
+- **Brown Butter Sauce (vegan variant)** → Brown Butter and Sage Sauce  ×1 — variant: Vegan variant removes sage, a key ingredient defining the dish
+- **Grilled Brussels Sprouts** → Brussels Sprouts  ×1 — attribute: Grilling is a cooking method attribute distinct from roasting
+- **Roasted Brussels Sprouts with Asian Glaze** → Brussels Sprouts  ×1 — variant: Asian glaze is a distinct flavor variation, not core dish
+- **Roasted Brussels Sprouts with Pecans and Gorgonzola** → Brussels Sprouts  ×1 — variant: Adds specific ingredients (pecans, gorgonzola) creating distinct dish
+- **Korean Beef Bulgogi (Ground Beef)** → Bulgogi  ×1 — variant: Ground beef changes traditional thin-sliced bulgogi form
+- **Bulgogi Sauce** → Bulgogi  ×1 — component: Sauce is a component of bulgogi, not the finished dish itself.
+- **Sour Cream Pound Cake** → Bundt Cake  ×1 — variant: Pound cake is distinct cake form, not bundt cake variant
+- **Chocolate Chip Peanut Butter Cookies** → Butter Cookies  ×1 — variant: Adds chocolate chips and peanut butter; distinct flavor variation.
+- **Cream Cheese Buttercream** → Buttercream Frosting  ×1 — variant: Cream cheese buttercream is a flavored variation with distinct ingredient.
+- **Drop Biscuits** → Buttermilk Biscuits  ×1 — sibling: Drop biscuits are a distinct form; different technique and shape.
+- **Italian Braised Cabbage with Beans** → Cabbage  ×1 — other: Specific dish with beans; cabbage is ingredient not identity
+- **Creamed Cabbage** → Cabbage  ×1 — variant: Creamed cabbage is a specific preparation method variation, not plain cabbage itself.
+- **Boiled Cabbage** → Cabbage  ×1 — attribute: Boiled is a cooking method attribute, not the dish itself
+- **Braised Cabbage (Młoda Kapusta Zasmażana)** → Cabbage  ×1 — attribute: Braised is a cooking method attribute, not the dish itself.
+- **Cajun Spiced Fish with Tomatoes** → Cajun  ×1 — other: Specific dish, not the cooking style itself
+- **Cajun Chicken and Rice** → Cajun  ×1 — child: Specific dish using Cajun techniques, not Cajun cuisine itself
+- **Creamy Cajun Chicken** → Cajun  ×1 — attribute: Adds 'creamy' attribute; specific dish, not Cajun cuisine itself
+- **Creamy Cajun Chicken Pasta** → Cajun  ×1 — child: Specific dish with pasta, not the cooking style itself.
+- **Boudin** → Cajun  ×1 — sibling: Boudin is a specific Cajun sausage dish, not the cooking style itself.
+- **Cajun Shrimp Pasta** → Cajun  ×1 — other: Specific dish, not cooking style alias
+- **Galician Roast Beef (Carne Asada Gallega)** → Carne Asada  ×1 — regional: Galician version uses different cooking method and regional preparation
+- **Carne Asada Gallega** → Carne Asada  ×1 — regional: Gallega version is distinct Spanish/Galician preparation, not Mexican carne asada
+- **Tacos de Carnitas** → Carnitas  ×1 — accompaniment: Tacos de Carnitas names the dish with its usual serving form.
+- **Pork Carnitas Tacos** → Carnitas  ×1 — accompaniment: Tacos add a serving form; Carnitas is the base dish itself.
+- **Cheddar Sourdough Bread** → Cheese Bread  ×1 — variant: Different cheese type and sourdough base changes dish identity
+- **Jalapeno Cheese Bread** → Cheese Bread  ×1 — variant: Jalapeno adds a specific ingredient variation that creates distinct identity.
+- **Stuffed Cheese Bread** → Cheese Bread  ×1 — variant: Stuffing transforms the dish form; distinct preparation and structure.
+- **Cheesecake Bars** → Cheesecake  ×1 — child: Bars are a distinct form; cheesecake vs portioned bar dessert.
+- **Barbecue Baked Chicken** → Chicken Breast - Bone-In  ×1 — attribute: Barbecue baked adds cooking method and sauce attribute not in base dish name.
+- **Braised Chicken with Vegetables** → Chicken Breast - Bone-In  ×1 — attribute: Braised is a cooking method; dish itself is the cut of meat
+- **Herb Roasted Chicken Breasts** → Chicken Breast - Bone-In  ×1 — attribute: Herb roasted adds cooking method and flavoring not stated in dish name.
+- **Greek Lemon Chicken** → Chicken Breast - Bone-In  ×1 — other: Greek Lemon Chicken is a prepared dish, not a poultry cut
+- **Stuffed Chicken Breast** → Chicken Breast - Bone-In  ×1 — child: Stuffed chicken breast is a prepared dish form, not the cut itself.
+- **Oven Roasted Chicken Breasts** → Chicken Breast - Bone-In  ×1 — attribute: Cooking method (oven roasted) is an attribute, not the dish itself.
+- **Baked Chicken Breast with Roasted Vegetables** → Chicken Breast - Bone-In  ×1 — attribute: Baked method and roasted vegetables are preparation attributes, not the dish itself.
+- **Smoked Chicken Breasts** → Chicken Breast - Bone-In  ×1 — attribute: Smoked is a cooking method attribute, not inherent to the dish form.
+- **Oven-Baked Chicken Breasts** → Chicken Breast - Bone-In  ×1 — attribute: Oven-baked is a cooking method attribute, not the dish itself.
+- **Roasted Chicken with Vegetables** → Chicken Breast - Bone-In  ×1 — attribute: Roasted is a cooking method attribute; vegetables are accompaniment.
+- **Grilled Bone-In Chicken Breasts** → Chicken Breast - Bone-In  ×1 — attribute: Grilled specifies cooking method not stated in dish name
+- **Braised Chicken with Root Vegetables** → Chicken Breast - Bone-In  ×1 — attribute: Braised is a cooking method; dish itself is the cut, not the preparation
+- **Air Fryer Chicken Breast** → Chicken Breast - Boneless  ×1 — attribute: Air fryer is a cooking method attribute, not the dish itself.
+- **Creamy Garlic Chicken** → Chicken Breast - Boneless  ×1 — variant: Specific prepared dish, not the raw ingredient itself
+- **Lemon Chicken Breasts** → Chicken Breast - Boneless  ×1 — variant: Lemon Chicken Breasts specifies a prepared dish with flavor, not the base ingredient.
+- **Pan-Seared Chicken Breasts** → Chicken Breast - Boneless  ×1 — attribute: Pan-seared specifies cooking method; not the dish itself.
+- **Pan-Seared Chicken Breast** → Chicken Breast - Boneless  ×1 — attribute: Pan-seared describes cooking method, not the ingredient itself
+- **Baked Chicken Breast with Tomatoes and Herbs** → Chicken Breast - Boneless  ×1 — attribute: Adds cooking method (baked) and ingredients not in dish name
+- **Seared Chicken Breast** → Chicken Breast - Boneless  ×1 — attribute: Seared describes cooking method, not the ingredient itself
+- **Chicken Breast Braised in Wine** → Chicken Breast - Boneless  ×1 — attribute: Braising method and wine addition create distinct prepared dish
+- **Chicken Cordon Bleu Casserole** → Chicken Cordon Bleu  ×1 — child: Casserole is a different dish form with its own identity
+- **Chicken Skewers** → Chicken Kabobs  ×1 — sibling: Both are grilled skewered chicken, but different marinades/preparations.
+- **Escalope de Poulet à la Normande (Chicken Normandy)** → Chicken Normande  ×1 — sibling: Escalope is thin cutlet; Chicken Normande is braise. Different forms.
+- **Chicken and Cornbread Stuffing Casserole** → Chicken Normande  ×1 — sibling: Casserole dish distinct from braised sauce-based Norman preparation
+- **Parmesan Crusted Chicken** → Chicken Parmigiana  ×1 — other: Parmesan Crusted Chicken lacks the layering, sauce, and baking that define Parmigiana
+- **Chicken Piccata Meatballs** → Chicken Piccata  ×1 — child: Meatballs are distinct form from cutlets; different dish structure.
+- **Chicken Pot Pie Turnovers** → Chicken Pot Pie  ×1 — child: Turnovers are distinct pastry form from pie; different shape and structure.
+- **Chicken Pot Pie Casserole** → Chicken Pot Pie  ×1 — child: Casserole is a distinct dish form from pie; different structure.
+- **Crispy Baked Chicken Thighs** → Chicken Thighs - Bone In  ×1 — attribute: Crispy and baked are cooking methods/attributes not stated in dish name
+- **Pan-Seared Chicken Thighs with Vinegar and Spices** → Chicken Thighs - Bone In  ×1 — attribute: Adds cooking method and specific seasonings not stated in dish name
+- **Crispy Skin Chicken Thighs** → Chicken Thighs - Bone In  ×1 — attribute: Crispy skin is a cooking method/result attribute, not the ingredient form itself.
+- **Roasted Sheet Pan Chicken with Vegetables** → Chicken Thighs - Bone In  ×1 — attribute: Roasting method and vegetable accompaniment are attributes, not the dish itself.
+- **Roasted Chicken Thighs with Vegetables** → Chicken Thighs - Bone In  ×1 — attribute: Roasting is a cooking method attribute not stated in dish name.
+- **Chicken with Garlic and White Wine Sauce** → Chicken Thighs - Boneless  ×1 — accompaniment: Sauce preparation method, not the boneless thigh cut itself.
+- **Glazed Baked Chicken Thighs** → Chicken Thighs - Boneless  ×1 — attribute: Glazed/baked are preparation methods not part of base dish name
+- **Greek Yogurt Marinated Chicken Thighs** → Chicken Thighs - Boneless  ×1 — variant: Greek yogurt marinade is a preparation method, not the base dish itself.
+- **Dry-Rubbed Chicken Thighs** → Chicken Thighs - Boneless  ×1 — attribute: Dry-rubbed adds preparation method not in dish name
+- **Pan-Seared Cajun Chicken Thighs** → Chicken Thighs - Boneless  ×1 — variant: Cajun seasoning is a flavored preparation, not the base dish form.
+- **Asian Glazed Chicken Thighs** → Chicken Thighs - Boneless  ×1 — variant: Specific glaze/flavor variation, not the base ingredient
+- **Pan-Fried Chicken Thighs** → Chicken Thighs - Boneless  ×1 — attribute: Pan-fried is a cooking method, not the dish itself
+- **Rotisserie Chicken (baked boneless thigh variant)** → Chicken Thighs - Boneless  ×1 — attribute: Rotisserie is a cooking method, not the cut itself.
+- **Seared Chicken Thighs** → Chicken Thighs - Boneless  ×1 — attribute: Seared specifies cooking method, not the ingredient cut itself
+- **Boneless Chicken Wings** → Chicken Wings  ×1 — sibling: Different form: boneless vs bone-in are distinct products
+- **Grilled Chicken Wings** → Chicken Wings  ×1 — attribute: Grilled is a cooking method not stated in Chicken Wings dish definition
+- **Chicken Saltimbocca** → Chicken With Peas and Prosciutto  ×1 — sibling: Saltimbocca is distinct Italian dish with veal/chicken, prosciutto, sage, specific preparation method
+- **Pressed Vegetable and Prosciutto Sandwich** → Chicken With Peas and Prosciutto  ×1 — other: Sandwich is different dish form from sautéed chicken entrée
+- **Stuffed Chicken Breasts** → Chicken With Peas and Prosciutto  ×1 — sibling: Stuffing changes the dish form; distinct preparation method.
+- **Pan-Seared Chicken with Peas and Prosciutto** → Chicken With Peas and Prosciutto  ×1 — attribute: Pan-seared specifies cooking method, same dish core.
+- **Prosciutto-Wrapped Chicken Breast with Fontina** → Chicken With Peas and Prosciutto  ×1 — sibling: Different dish form: wrapping vs sautéed preparation with peas.
+- **Chicken and Prosciutto Pasta Skillet** → Chicken With Peas and Prosciutto  ×1 — sibling: Pasta skillet is distinct dish form; pasta is primary component here.
+- **Prosciutto-Wrapped Chicken with Asparagus** → Chicken With Peas and Prosciutto  ×1 — sibling: Different vegetable and cooking method; distinct dish identity.
+- **Esquites (Mexican Street Corn Salad)** → Chilaquiles  ×1 — other: Esquites is corn-based; chilaquiles is tortilla-based. Different dishes.
+- **Smoked Pork Shoulder with Char Siu Glaze** → Chinese BBQ Pork  ×1 — attribute: Smoking is a distinct cooking method; char siu is traditionally roasted/hung.
+- **Deep Fried Eggplant with Spicy Garlic Sauce** → Chinese Eggplant  ×1 — attribute: Deep frying is a different cooking method than stir-frying
+- **Lo Mein** → Chow Mein  ×1 — sibling: Lo Mein and Chow Mein are distinct Chinese noodle dishes with different cooking methods and textures.
+- **German Chocolate Cake** → Coconut Cake  ×1 — sibling: German Chocolate Cake is a distinct chocolate cake with pecan-coconut frosting.
+- **Poke Cake** → Coconut Cake  ×1 — sibling: Poke cake is distinct cake form with holes poked and liquid added.
+- **Lemon Coconut Cake** → Coconut Cake  ×1 — variant: Lemon adds distinct flavor profile; cookbook would index separately.
+- **Berry Cream Pie** → Coconut Cream Pie  ×1 — sibling: Different fruit filling; distinct pie variant with own identity.
+- **Coq au Vin Blanc** → Coq au Vin  ×1 — variant: White wine version; different sauce base and flavor profile
+- **Corn Casserole** → Corn Muffin  ×1 — other: Casserole is baked dish form, muffin is individual quick bread
+- **Corn Dog Mini Muffins** → Corn Muffin  ×1 — child: Corn Dog Mini Muffins is a distinct savory variation with hot dog filling, not plain corn muffin.
+- **Corned Beef Hash Frittata** → Corned Beef Hash  ×1 — child: Frittata is distinct dish form, not hash variant
+- **Pasty** → Cornish Pasty  ×1 — sibling: Pasty is broader category; Butte Pasty is distinct regional variant
+- **Shepherd's Pie (Cottage Pie)** → Cottage Pie  ×1 — sibling: Shepherd's Pie uses lamb; Cottage Pie uses beef. Different dishes.
+- **Braised Pork Ribs** → Country Style Pork Ribs  ×1 — attribute: Braising is the primary cooking method for country style pork ribs
+- **Oven-Baked Ribs** → Country Style Pork Ribs  ×1 — attribute: Same dish, specifies cooking method (oven-baked vs braised/slow-cooked)
+- **Oven Roasted Pork Ribs** → Country Style Pork Ribs  ×1 — attribute: Oven roasting is a cooking method attribute distinct from braising/slow-cooking.
+- **Smoked Pork Ribs** → Country Style Pork Ribs  ×1 — attribute: Smoked is a cooking method attribute, not inherent to dish name.
+- **Gnocchi with Trapanese Pesto** → Couscous alla Trapanese  ×1 — sibling: Different dish form: gnocchi vs couscous, distinct recipes.
+- **Couscous with Fish and Pesto alla Trapanese** → Couscous alla Trapanese  ×1 — variant: Pesto addition distinguishes this as a flavor variant, not the base dish.
+- **Pasta alla Trapanese** → Couscous alla Trapanese  ×1 — sibling: Different pasta forms with distinct identities: couscous vs pasta
+- **Pasta al Pesto Trapanese** → Couscous alla Trapanese  ×1 — sibling: Different dishes: couscous base vs pasta base, different preparations
+- **Baked Beans with Beef and Bacon** → Cowboy Beans  ×1 — attribute: Baked specifies cooking method not in Cowboy Beans name
+- **Cowboy Baked Beans** → Cowboy Beans  ×1 — attribute: Baked beans differ from stewed beans; baking is a distinct cooking method.
+- **Baked Crab Cakes** → Crab Cakes  ×1 — attribute: Baking differs from pan-frying; cooking method creates distinct dish form.
+- **Cream of Spinach and Artichoke Soup** → Cream of Spinach Soup  ×1 — sibling: Adds artichoke as distinct ingredient, creates separate dish identity
+- **Croque Monsieur (Croque Madame with egg)** → Croque Madame  ×1 — sibling: Croque Monsieur is the base sandwich without egg; distinct dish.
+- **Croque Madame Casserole** → Croque Madame  ×1 — child: Casserole form is distinct dish, not sandwich
+- **Savory Crème Brûlée** → Crème Brûlée  ×1 — variant: Savory version fundamentally changes the dish's nature.
+- **Japanese Chicken Curry** → Curry  ×1 — regional: Japanese curry is distinct regional adaptation, not Indian/South Asian curry.
+- **Satsuma-imo Yōkan (Japanese Sweet Potato Custard)** → Daigakuimo  ×1 — sibling: Yōkan is a distinct custard form; daigakuimo is candied cubes.
+- **Baked Sweet Potato** → Daigakuimo  ×1 — attribute: Baked is an attribute; daigakuimo is specifically candied/glazed.
+- **Sweet Potato Paste** → Daigakuimo  ×1 — other: Paste is different form; daigakuimo is candied cubes, not spread
+- **Detroit-Style Pan Pizza** → Deep Dish Pizza  ×1 — sibling: Different regional pizza style with distinct characteristics and identity
+- **Chicken and Potatoes with Cream Sauce** → Dijon  ×1 — other: Finished dish using Dijon as ingredient, not Dijon itself
+- **Dijon Vinaigrette** → Dijon  ×1 — component: Vinaigrette is a finished dressing; Dijon is an ingredient within it.
+- **Chicken with Dijon Mustard Cream Sauce** → Dijon  ×1 — component: Finished dish using Dijon as ingredient, not Dijon itself
+- **Steak Diane** → Dijon  ×1 — other: Steak Diane is a dish, not a mustard condiment variation.
+- **Dijon Chicken Skillet** → Dijon  ×1 — other: Dijon chicken is a prepared dish using Dijon as ingredient, not Dijon itself
+- **Chicken with Dijon Cream Sauce** → Dijon  ×1 — component: Finished dish using Dijon as ingredient, not Dijon itself
+- **Green Beans with Cream Sauce** → Dijon  ×1 — component: Dijon is an ingredient in the sauce, not the dish itself.
+- **Dijon Cream Sauce** → Dijon  ×1 — component: Sauce made with Dijon mustard as ingredient, not the mustard itself.
+- **Creamy Dijon Chicken** → Dijon  ×1 — other: Chicken dish using Dijon as ingredient, not Dijon itself
+- **Chicken with Dijon Mustard Sauce** → Dijon  ×1 — component: Dijon is the condiment; this is a finished chicken dish using it.
+- **Tomato Confit** → Duck Confit  ×1 — sibling: Different protein; confit is technique applied to various ingredients.
+- **Roast Duck with Orange and Ginger** → Duck à l'Orange  ×1 — variant: Ginger addition creates distinct flavor profile from classic Duck à l'Orange
+- **Esquites (Street Corn Salad)** → Elote (Mexican Street Corn)  ×1 — sibling: Esquites is corn kernels off the cob; elote is corn on the cob.
+- **Chicken Enchilada Casserole** → Enchiladas  ×1 — child: Casserole form distinct from traditional rolled enchiladas.
+- **Chicken and Bean Enchiladas** → Enchiladas de Pollo  ×1 — variant: Adds beans as a distinct ingredient variation not in base dish.
+- **Black Bean Burgers** → Farro  ×1 — other: Black Bean Burgers is a burger dish, not a grain dish like Farro.
+- **Broiled Halloumi with Tomatoes and White Beans** → Farro  ×1 — other: Halloumi cheese dish, not a grain; different category entirely
+- **Warm Farro Salad with Roasted Vegetables** → Farro  ×1 — other: Salad form differs from risotto-style creamy grain dish
+- **Spiced Lentils with Carrots** → Farro  ×1 — other: Lentils are a different legume; farro is a grain.
+- **Farro Salad with Roasted Vegetables** → Farro  ×1 — sibling: Salad is distinct preparation; creamy risotto-style vs cold salad form.
+- **Fava Beans with Mint and Lemon** → Fava  ×1 — other: Cooked whole beans, not pureed dip; different form and presentation
+- **Foul Mudammas** → Fava  ×1 — sibling: Different regional dish form; Egyptian stewed beans vs Greek puree
+- **Maccu di Fave (Broad Bean Puree with Greens)** → Fava  ×1 — variant: Adds greens component; distinct Sicilian dish form.
+- **Marinated Beans** → Fava  ×1 — other: Marinated beans is a preparation method, not the specific fava puree dish.
+- **Sautéed Fava Beans** → Fava  ×1 — attribute: Sautéed preparation changes form from puree dip to cooked whole beans.
+- **Chicken Fettuccine Alfredo** → Fettuccine Alfredo  ×1 — variant: Adds protein ingredient; distinct dish a cookbook indexes separately
+- **Steak** → Filet Mignon  ×1 — other: Steak is a broad category; Filet Mignon is a specific cut.
+- **Pan-Seared Filet Mignon** → Filet Mignon  ×1 — attribute: Pan-seared specifies cooking method, distinct indexable variation.
+- **Fish Taco Sauce** → Fish Tacos  ×1 — component: Sauce is a component of the dish, not the dish itself.
+- **Oven Fries** → French Fries  ×1 — attribute: Oven fries use baking instead of deep-frying, a cooking method attribute.
+- **French Toast Casserole** → French Toast  ×1 — child: Casserole is distinct dish form; baked vs pan-fried
+- **French Toast Bake** → French Toast  ×1 — child: Baked casserole form differs from pan-fried slices fundamentally
+- **Oven Fried Chicken** → Fried Chicken  ×1 — attribute: Cooking method (oven) distinguishes it from deep-fried form
+- **Fried Chicken Tenders** → Fried Chicken  ×1 — sibling: Tenders are a specific cut with distinct preparation identity.
+- **Chicken-Fried Chicken with Cream Gravy** → Fried Chicken  ×1 — sibling: Chicken-fried technique applied to chicken; distinct preparation method and accompaniment.
+- **Chicken Fried Chicken** → Fried Chicken  ×1 — other: Chicken Fried Chicken is breaded chicken cooked in chicken frying style, not fried chicken itself
+- **Fried Eggs with Sweet and Sour Sauce** → Fried Eggs  ×1 — variant: Sweet and sour sauce is a distinct preparation, not basic fried eggs.
+- **Huevos con Ajos (Spanish Garlic Eggs)** → Fried Eggs  ×1 — variant: Adds garlic ingredient; distinct preparation from plain fried eggs
+- **Japanese Rice** → Furikake  ×1 — other: Japanese Rice is a dish; Furikake is a seasoning condiment.
+- **Savory Galette** → Galette  ×1 — attribute: Savory specifies ingredient type, not inherent to galette form
+- **Galette Dough** → Galette  ×1 — component: Dough is a component, not the finished galette dish
+- **Yemista (Greek Stuffed Tomatoes and Peppers)** → Gemista  ×1 — sibling: Yemista stuffs tomatoes/peppers; Gemista layers them baked.
+- **General Tso Sauce** → General Tso’s Chicken  ×1 — component: Sauce is a component of the dish, not the dish itself.
+- **Soft Gingerbread Cookies** → Gingerbread Cookies  ×1 — attribute: Soft texture is an attribute distinct from base gingerbread cookie.
+- **Chicken Gnocchi Soup** → Gnocchi  ×1 — component: Soup is a dish form; gnocchi is a component within it.
+- **Panzanella (Gnocchi Variant)** → Gnocchi  ×1 — other: Panzanella is Tuscan bread salad, different dish form entirely
+- **Sheet Pan Gnocchi** → Gnocchi  ×1 — attribute: Sheet pan cooking method adds preparation attribute not in base dish
+- **Cauliflower Gnocchi** → Gnocchi  ×1 — variant: Different base ingredient changes the dish form fundamentally.
+- **Fried Gnocchi** → Gnocchi  ×1 — attribute: Frying is a cooking method attribute not stated in gnocchi definition.
+- **Lemon Puff Pudding** → GrapeNut Pudding  ×1 — sibling: Different pudding with distinct ingredient/flavor profile
+- **Potato Gratin (Gratin Dauphinois)** → Gratin Dauphinois  ×1 — sibling: Potato Gratin is broader category; Dauphinois is specific regional variant
+- **Avgolemono (Egg-Lemon Soup)** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×1 — sibling: Different Greek soups with distinct ingredients and character
+- **Slow Roasted Greek Lemon Potatoes** → Greek Lemon Roasted Potatoes  ×1 — attribute: Slow roasting is a cooking method attribute not in original dish name
+- **Green Salad with Quinoa** → Green Salad  ×1 — variant: Adding quinoa creates a distinct composed dish with protein component
+- **Dumplings with Daikon Wrappers** → Gyoza  ×1 — attribute: Daikon wrappers are a specific ingredient variation distinct from traditional wheat wrappers.
+- **Gyoza Wrappers** → Gyoza  ×1 — component: Wrappers are a component of gyoza, not the finished dish itself.
+- **Pan-Seared Halibut Fillets** → Halibut  ×1 — attribute: Pan-searing is a preparation method mentioned in dish description
+- **Baked White Fish with Vegetables** → Halibut  ×1 — attribute: Baking is a preparation method attribute, not the dish itself.
+- **Roasted Halibut with Lemons, Olives and Rosemary** → Halibut  ×1 — attribute: Roasting is a specific cooking method; halibut is the ingredient.
+- **Broiled Halibut with Cheese Topping** → Halibut  ×1 — attribute: Broiling and cheese topping are cooking method and ingredient attributes not in base dish definition.
+- **Grilled Halibut** → Halibut  ×1 — attribute: Grilling is a cooking method attribute not stated in dish name.
+- **Hamburger Patty** → Hamburger  ×1 — component: Patty is the cooked meat component, not the finished sandwich dish
+- **Hamburger Steaks** → Hamburger  ×1 — sibling: Hamburger Steaks is ground beef patty without bun; distinct dish form.
+- **Hamburger Patties** → Hamburger  ×1 — component: Patties are a component, not the finished hamburger sandwich.
+- **Cheeseburger** → Hamburger  ×1 — sibling: Cheeseburger is distinct sandwich with cheese as defining feature
+- **Slow Cooker Braised Chicken** → Hoisin Sauce  ×1 — other: Finished chicken dish, not the sauce ingredient itself.
+- **Sticky Chinese Chicken Wings** → Hoisin Sauce  ×1 — other: Finished dish using sauce, not the sauce itself
+- **Crispy Sesame Chicken** → Hoisin Sauce  ×1 — other: Finished dish, not the sauce component itself
+- **Stir Fry Sauce** → Hoisin Sauce  ×1 — sibling: Stir fry sauce is a distinct condiment, not hoisin sauce itself
+- **Sheet Pan Hoisin Chicken** → Hoisin Sauce  ×1 — other: Sheet Pan Hoisin Chicken is a finished dish using hoisin sauce as ingredient, not the sauce itself.
+- **Hoisin Tofu Stir-fry** → Hoisin Sauce  ×1 — other: Stir-fry is a finished dish; hoisin sauce is a component ingredient.
+- **Hoisin Teriyaki Chicken** → Hoisin Sauce  ×1 — child: Finished dish using hoisin sauce, not the sauce itself
+- **Hoisin Chicken Rice Bowl** → Hoisin Sauce  ×1 — component: Bowl is finished dish using hoisin sauce as ingredient
+- **Gochujang Beef (Korean-style ground beef in spicy-sweet sauce)** → Hoisin Sauce  ×1 — other: Gochujang Beef is a finished dish; Hoisin Sauce is an ingredient/condiment
+- **Hoisin Glazed Chicken** → Hoisin Sauce  ×1 — child: Finished dish using hoisin sauce, not the sauce itself.
+- **Hoisin Butter Salmon** → Hoisin Sauce  ×1 — other: Salmon dish using hoisin as ingredient, not hoisin sauce itself
+- **Mock Hollandaise Sauce** → Hollandaise Sauce  ×1 — variant: Mock substitutes ingredients; distinct recipe identity.
+- **Roasted Chicken Thighs with Hot Honey Glaze** → Hot Honey Chicken Thighs  ×1 — attribute: Roasted differs from fried; cooking method changes dish form
+- **Honey Soy Baked Chicken** → Hot Honey Chicken Thighs  ×1 — variant: Different cooking method (baked vs fried) and flavor profile (soy vs spicy honey butter)
+- **Payasam (Indian Rice Pudding)** → Indian Pudding  ×1 — other: Payasam is a distinct South Asian pudding, different base and origin
+- **Braised Chicken with Tomato Sauce** → Italian Braised Chicken  ×1 — other: Generic braised chicken lacks Italian identity and specific ingredients
+- **Cajun Jambalaya** → Jambalaya  ×1 — variant: Cajun vs Creole are distinct regional styles of jambalaya
+- **Chicken Katsu** → Japanese Chicken Katsu Curry  ×1 — component: Katsu is the breaded cutlet; curry sauce is essential to the dish
+- **Asian Salad with Sesame Ginger Vinaigrette** → Japanese Ginger Salad Dressing  ×1 — sibling: Salad is the dish; dressing is a component
+- **Roasted Kabocha Squash** → Kabocha no Nimono  ×1 — attribute: Roasting differs from simmering; distinct cooking method
+- **Kibbeh Nayeh** → Kibbeh  ×1 — sibling: Raw preparation; distinct dish form requiring separate indexing.
+- **Kibbeh Nayyeh** → Kibbeh  ×1 — sibling: Kibbeh Nayyeh is raw/uncooked; Kibbeh is cooked form
+- **Slow Roasted Leg of Lamb** → Kleftiko  ×1 — attribute: Adds 'slow roasted' and 'leg of lamb' specifics not in Kleftiko name
+- **Tako no Sunomono** → Kokokari Salad  ×1 — sibling: Different Japanese salad dishes with distinct ingredients and preparation methods.
+- **Octopus Salad (Tako Su)** → Kokokari Salad  ×1 — other: Octopus Salad is a different dish; contains octopus as main ingredient
+- **Okra Goma-ae** → Kokokari Salad  ×1 — other: Different vegetables and dish; okra vs cabbage/carrot/cucumber base
+- **Zucchini Pie (Cretan-style, without phyllo)** → Kolokithopita  ×1 — attribute: Explicitly omits phyllo, making it a distinct dish form
+- **Kolokotes (Cypriot Squash Turnovers)** → Kolokithopita  ×1 — sibling: Turnovers are distinct pastry form from pie; different structure.
+- **Diri kole ak pwa Kongo** → Kribich nan Sòs (Haitian Shrimp in Sauce)  ×1 — sibling: Different dish: rice with pigeon peas, not shrimp in sauce.
+- **Pad Kra Pao (Pad Gaprao) Chicken** → Kung Pao Chicken  ×1 — sibling: Different stir-fry with distinct ingredients and flavor profile
+- **Adana Kebabs** → Lamb Kabobs  ×1 — sibling: Adana Kebabs use ground lamb; Lamb Kabobs use cubed lamb. Different forms.
+- **Chinese Lamb Skewers (Yang Rou Chuan'r)** → Lamb Kabobs  ×1 — regional: Chinese preparation differs from Middle Eastern kabobs in spicing, marinade, and culinary tradition.
+- **Lamb Meatballs with Tahini Yogurt Sauce** → Lamb Meatballs  ×1 — accompaniment: Sauce is stated accompaniment, not part of core dish form.
+- **Lamb Meatballs in Curry Sauce** → Lamb Meatballs  ×1 — accompaniment: Sauce preparation changes dish identity; meatballs alone vs. in curry sauce
+- **Lamb Meatballs with Caramelized Onions** → Lamb Meatballs  ×1 — accompaniment: Caramelized onions are a topping/accompaniment, not the dish itself.
+- **Xinjiang Salad** → Lao Hu Cai (Tiger Salad)  ×1 — sibling: Different regional Chinese salad with distinct ingredients and preparation method
+- **Cold Noodle Salad** → Lao Hu Cai (Tiger Salad)  ×1 — sibling: Cold noodle salad is distinct dish form; noodles fundamentally change the dish
+- **Cold Mixed Vegetable Salad** → Lao Hu Cai (Tiger Salad)  ×1 — other: Generic descriptor lacks Lao Hu Cai's distinctive Sichuan peppercorn and chili oil signature.
+- **Red Lentil Chili** → Lentil Soup  ×1 — sibling: Chili is a distinct dish form from soup, different structure.
+- **Thai Coconut Red Lentil Soup** → Lentil Soup  ×1 — variant: Thai coconut version differs fundamentally from Mediterranean/Middle Eastern base dish
+- **Lingonberry Relish** → Lingonberry  ×1 — variant: Relish is a distinct condiment form from jam/preserve.
+- **Lingonberry-Cardamom Cake** → Lingonberry  ×1 — other: Cake is different form from jam/preserve condiment
+- **Baked Brie** → Lingonberry  ×1 — component: Baked Brie is a distinct dish; lingonberry jam is its component.
+- **Lingonberry Jam Muffins** → Lingonberry  ×1 — child: Muffins are a distinct dish form; jam is component.
+- **Lingonberry Cake** → Lingonberry  ×1 — child: Cake is a distinct dish form from jam/preserve condiment
+- **Fruit Wine** → Lingonberry  ×1 — other: Wine is fermented beverage; lingonberry jam is preserved condiment.
+- **Cranberry-Lingonberry Sauce** → Lingonberry  ×1 — variant: Adds cranberry as distinct ingredient; different flavor profile
+- **Cheesecake with lingonberry topping** → Lingonberry  ×1 — child: Cheesecake with lingonberry topping is a distinct dish, not lingonberry jam itself.
+- **Thumbprint Cookies** → Lingonberry  ×1 — child: Thumbprint cookies are a distinct cookie form; lingonberry is filling/flavoring.
+- **Lingonberry Mousse (Trollkrem)** → Lingonberry  ×1 — sibling: Mousse is distinct dessert form from jam/preserve.
+- **Shortbread Bars** → Lingonberry  ×1 — sibling: Shortbread Bars is a distinct baked good, not the lingonberry condiment itself.
+- **Scallop Bisque** → Lobster Bisque  ×1 — sibling: Different shellfish protein; distinct dish with its own identity
+- **Mac and Cheese Casserole** → Macaroni and Cheese  ×1 — attribute: Casserole is an attribute of cooking method/vessel, not the dish itself
+- **Cannelloni** → Manicotti  ×1 — sibling: Both are stuffed pasta tubes, but distinct Italian dishes with separate identities
+- **Creamy Tomato Pasta Sauce** → Marinara Sauce  ×1 — variant: Creamy tomato sauce differs fundamentally from marinara's oil-based composition.
+- **Chicken Piccata (creamy sundried tomato variant)** → Marry Me Chicken  ×1 — sibling: Chicken Piccata is distinct pan-seared chicken dish with lemon-caper sauce tradition
+- **Chicken Piccata (sun-dried tomato cream variant)** → Marry Me Chicken  ×1 — sibling: Chicken Piccata is a distinct Italian dish with lemon-caper sauce, not creamy tomato-based.
+- **Chicken Noodle Soup with Matzo Balls** → Matzo Ball Soup  ×1 — sibling: Noodles change the soup form; distinct dish identity.
+- **Matzo Balls** → Matzo Ball Soup  ×1 — component: Matzo Balls are the dumpling component, not the finished soup dish.
+- **Vegetarian Meatballs** → Meatballs  ×1 — variant: Different primary ingredient changes dish identity fundamentally
+- **Kourbiedes (Honey Cookies)** → Melomakarona (Greece)  ×1 — sibling: Both are Greek butter cookies but distinct forms: kourbiedes are ball-shaped, coated in powdered sugar; melomakarona are oval, honey-soaked.
+- **Miso Chicken and Rice** → Miso Chicken  ×1 — accompaniment: Rice is a typical accompaniment, not part of the dish itself
+- **Roasted Chicken and Vegetables** → Miso Chicken  ×1 — attribute: Roasting is a cooking method attribute; miso glaze is the defining characteristic
+- **Miso-Marinated Roasted Chicken** → Miso Chicken  ×1 — attribute: Roasting is a specific cooking method not stated in Miso Chicken base dish name.
+- **Creamy Miso Tomato Chicken** → Miso Chicken  ×1 — variant: Adds cream and tomato; distinct flavor profile from base miso chicken.
+- **Gingerbread House** → Monkey Bread  ×1 — other: Gingerbread House is a decorative structure, not pull-apart bread.
+- **Cinnamon Roll Monkey Bread** → Monkey Bread  ×1 — variant: Cinnamon roll-specific variation adds distinct preparation method.
+- **Gan Bian Si Ji Dou (Sichuan Dry-Fried Green Beans)** → Moo Goo Gai Pan  ×1 — other: Different dish: vegetable stir-fry vs chicken stir-fry
+- **Thai Cashew Chicken** → Moo Goo Gai Pan  ×1 — sibling: Different stir-fried chicken dish with distinct ingredients and origin.
+- **Sticky Rice (Lo Mai Fan)** → Moo Goo Gai Pan  ×1 — other: Sticky rice is different dish form, not stir-fried chicken with vegetables
+- **Polenta and Shellfish Cassolettes** → Moules en Cassolette  ×1 — other: Polenta addition makes it a distinct dish form
+- **Mussels in Blue Cheese Sauce** → Moules en Cassolette  ×1 — variant: Different sauce base changes the dish identity significantly.
+- **Shellfish Cassolette with Saffron** → Moules en Cassolette  ×1 — sibling: Different shellfish mix and saffron ingredient variation warrant separate indexing.
+- **Mussels in Cream Sauce** → Moules en Cassolette  ×1 — variant: Cream sauce differs from herb-garlic butter topping preparation
+- **Mussels with Leeks in Cream Sauce** → Moules en Cassolette  ×1 — variant: Different preparation: cream sauce with leeks vs herb-garlic butter topping
+- **Mussels in Cream and Tarragon Mustard Sauce** → Moules en Cassolette  ×1 — variant: Different sauce base: cream/tarragon/mustard vs herb-garlic butter.
+- **Cassolette of Mussels with Chorizo** → Moules en Cassolette  ×1 — variant: Chorizo addition creates distinct flavor profile variation
+- **Mussels in White Wine Sauce** → Moules en Cassolette  ×1 — variant: Different cooking method and sauce base than herb-garlic butter
+- **Mussels in Red Wine** → Mussels & Moules  ×1 — variant: Red wine replaces white wine; different flavor profile dish
+- **Mussels in Garlic Wine Broth** → Mussels & Moules  ×1 — variant: Garlic wine broth differs from classic Moules Marinière's shallot-butter base
+- **New York-Style Pizza Dough** → New York-Style Pizza  ×1 — component: Dough is an ingredient component, not the finished pizza dish.
+- **New York Pizza Dough** → New York-Style Pizza  ×1 — component: Dough is a component of pizza, not the finished dish itself.
+- **Iced Oatmeal Cookies** → Oatmeal Cookies  ×1 — attribute: Icing is an added attribute not stated in Oatmeal Cookies base form
+- **Okonomiyaki Sauce** → Okonomiyaki  ×1 — component: Sauce is a component of the dish, not the dish itself.
+- **One-Pot Orzo with Sausage and Vegetables** → Orzo  ×1 — other: One-Pot preparation method with added ingredients, not orzo itself.
+- **Orzo Pasta Salad with Roasted Vegetables** → Orzo  ×1 — child: Specific prepared dish, not the ingredient orzo itself.
+- **Baked Orzo (Greek-style)** → Orzo  ×1 — attribute: Baked preparation and Greek style add cooking method and regional attributes
+- **Creamy Chicken Orzo** → Orzo  ×1 — child: Creamy Chicken Orzo is a finished dish using orzo, not orzo itself.
+- **Orzo with Grilled Vegetables and Goat Cheese** → Orzo  ×1 — attribute: Specific dish preparation with added ingredients, not base orzo
+- **Creamy Parmesan Spinach Orzo** → Orzo  ×1 — variant: Specific prepared dish, not the plain pasta ingredient itself
+- **Orzo with Butter and Lemon** → Orzo  ×1 — accompaniment: Orzo with specific preparation/sauce differs from base orzo dish
+- **Orzo Paella de Mariscos (Seafood Orzo Paella)** → Paella de Mariscos (Seafood Paella)  ×1 — other: Orzo pasta substitutes rice; fundamentally different dish form.
+- **Pasta alla Siciliana** → Pasta alla Norma  ×1 — sibling: Siciliana is broader regional style, not specific Norma recipe
+- **Spaghetti alla Norma** → Pasta alla Norma  ×1 — sibling: Same Sicilian dish, specific pasta shape variant
+- **Lasagna alla Norma** → Pasta alla Norma  ×1 — sibling: Different pasta form; lasagna sheets vs. long pasta strands.
+- **Pecan Pie Cake** → Pecan Pie  ×1 — child: Cake is different form from pie; distinct dessert category.
+- **Black Pepper Beef Stir-Fry** → Pepper Steak  ×1 — variant: Black pepper beef differs from bell pepper steak dish
+- **Poached Eggs with Peas à la Française** → Petits Pois A La Francaise - French Peas  ×1 — component: Poached eggs are added component, not the pea dish itself.
+- **Pipi e Patate** → Pipi Chini  ×1 — sibling: Pipi e Patate includes potatoes; Pipi Chini doesn't. Different dishes.
+- **Peperonata (Calabrese variant)** → Pipi Chini  ×1 — sibling: Peperonata is a distinct pepper dish with tomatoes; different form.
+- **Pipi e Patati** → Pipi Chini  ×1 — sibling: Different dish: potatoes added, distinct Calabrian preparation
+- **Calabrian Peppers and Potatoes** → Pipi Chini  ×1 — sibling: Different dish: potatoes addition creates distinct preparation
+- **Neapolitan Pizza** → Pizza Dough  ×1 — child: Neapolitan Pizza is finished dish, Pizza Dough is component.
+- **Raw Tomato Sauce (Salsa di Pomodoro Crudo)** → Pizza Sauce  ×1 — sibling: Raw tomato sauce is a distinct sauce with different preparation and broader culinary use.
+- **Pizza Topping: Fresh Tomato Sauce** → Pizza Sauce  ×1 — other: Fresh tomato sauce is a topping component, not the foundational pizza sauce layer
+- **Fruit Tarts** → Plum Tart  ×1 — sibling: Fruit Tarts is broader category; plums are specific fruit variation.
+- **Polenta Cakes** → Polenta  ×1 — child: Polenta Cakes are a distinct dish form; cooled, sliced polenta is a preparation step, not the named dish itself.
+- **Polenta with Mushrooms** → Polenta  ×1 — accompaniment: Mushrooms are a topping, not the dish itself.
+- **Chicken Roman Style with Peppers** → Pollo alla Romana  ×1 — variant: Adds peppers as a distinguishing ingredient not in original dish.
+- **Chicken with Tomatoes and Peppers (Pollo alla Romana)** → Pollo alla Romana  ×1 — other: Peppers not in original dish; different ingredient composition.
+- **Chicken and Peppers** → Pollo alla Romana  ×1 — other: Different dish: peppers not in Pollo alla Romana's signature ingredients
+- **Pollo ai Peperoni** → Pollo alla Romana  ×1 — variant: Pollo ai Peperoni features peppers as primary ingredient, different from tomatoes/olives base.
+- **Chicken with Peppers Roman Style** → Pollo alla Romana  ×1 — other: Peppers are not mentioned in Pollo alla Romana's core ingredients
+- **Chicken and Peppers (Roman-style)** → Pollo alla Romana  ×1 — other: Peppers are not a defining ingredient in Pollo alla Romana
+- **Siu Yuk (Crispy Pork Belly)** → Pork Belly  ×1 — attribute: Crispy preparation is distinct from braised; different cooking method.
+- **Marinated Pork Belly** → Pork Belly  ×1 — attribute: Marinating is a preparation method not stated in the base dish name.
+- **Crispy Pork Belly** → Pork Belly  ×1 — attribute: Crispy texture is a distinct cooking method/finish not in base dish name.
+- **Korean Spicy Pork Bowl** → Pork Bulgogi Rice Bowl  ×1 — variant: Spicy pork bowl differs from bulgogi's signature soy-ginger-sesame marinade.
+- **Beef Bulgogi Bowl** → Pork Bulgogi Rice Bowl  ×1 — sibling: Different protein (beef vs pork), distinct dish in a cookbook
+- **Spicy Pork Bulgogi (Jeyuk Bokkeum)** → Pork Bulgogi Rice Bowl  ×1 — sibling: Jeyuk Bokkeum is stir-fried, not grilled; distinct preparation
+- **Baked Pork Chops with Creamy Topping** → Pork Chops  ×1 — attribute: Baked method and creamy topping add distinct preparation attributes not in base dish definition.
+- **Roasted Pork Chops** → Pork Chops  ×1 — attribute: Roasting is a cooking method attribute not stated in the base dish name
+- **Breaded Baked Pork Chops** → Pork Chops  ×1 — attribute: Breading and baking are preparation methods not in original dish definition.
+- **Pan-Fried Pork Chops** → Pork Chops  ×1 — attribute: Pan-fried is a cooking method variation of pork chops.
+- **Pork Tenderloin with Creamy Mustard Sauce** → Pork Loin Roast  ×1 — sibling: Pork tenderloin is different cut; distinct dish form.
+- **Rotisserie Pork Loin** → Pork Loin Roast  ×1 — attribute: Rotisserie specifies cooking method; distinct preparation technique.
+- **Roasted Pork Tenderloin** → Pork Loin Roast  ×1 — sibling: Pork tenderloin is different cut than pork loin; distinct dishes.
+- **Slow-Cooker Pork Loin Roast** → Pork Loin Roast  ×1 — attribute: Slow-cooker is a cooking method attribute, not the dish itself.
+- **Roast Pork Loin with Potatoes** → Pork Loin Roast  ×1 — accompaniment: Potatoes are a typical side, not part of the core dish definition.
+- **Pulled Pork Roast** → Pork Loin Roast  ×1 — sibling: Pulled pork is different form; shredded vs sliced roast.
+- **Dutch Oven Pork Roast with Root Vegetables** → Pork Loin Roast  ×1 — attribute: Specifies cooking method (Dutch oven) and added component (root vegetables)
+- **Roast Pork Shoulder (Pulled Pork)** → Pork Shoulder  ×1 — attribute: Roast adds cooking method attribute not in base dish name.
+- **Slow-Roast Pork Shoulder** → Pork Shoulder  ×1 — attribute: Slow-roast is a cooking method attribute, not the dish itself
+- **Smoked Pork Shoulder** → Pork Shoulder  ×1 — attribute: Smoked specifies cooking method; distinct from base dish.
+- **Braised Pork Shoulder** → Pork Shoulder  ×1 — attribute: Braised is a cooking method attribute, not the dish itself
+- **Pork Roast with Vegetables** → Pork Shoulder  ×1 — attribute: Adding vegetables as an accompaniment creates distinct dish identity.
+- **Slow-Roasted Pork Shoulder** → Pork Shoulder  ×1 — attribute: Slow-roasted is a cooking method attribute, not the dish itself.
+- **Pork and Beans Stew** → Pork and Beans  ×1 — other: Stew implies different cooking method and consistency than baked beans dish.
+- **Braised Pork and Bean Stew** → Pork and Beans  ×1 — attribute: Braised and stew denote cooking method and form not in original dish name
+- **Phyllo Cake (Mediterranean style with citrus and spiced syrup)** → Portokalopita  ×1 — other: Phyllo Cake is broader category; Portokalopita is specific orange custard phyllo pie.
+- **Azorean Kale and Bean Soup (Sopa de Couve)** → Portuguese Kale Soup  ×1 — sibling: Adds beans as distinct ingredient; regional variation with own identity.
+- **Chicken Fillets in Mustard and Cream Sauce** → Poulet à la Moutarde  ×1 — attribute: Fillets are a specific cut; dish uses whole pieces.
+- **Chicken with Dijon Mustard and Mushroom Cream Sauce** → Poulet à la Moutarde  ×1 — variant: Adds mushrooms, changing the dish composition significantly.
+- **Chicken with Mustard and Honey Sauce** → Poulet à la Moutarde  ×1 — variant: Honey addition changes flavor profile significantly from original.
+- **Mustard Roasted Chicken** → Poulet à la Moutarde  ×1 — attribute: Roasting is different cooking method than braising
+- **Smoked Prime Rib** → Prime Rib  ×1 — attribute: Smoking is a cooking method attribute distinct from roasting.
+- **Pulled Pork Chili** → Pulled Pork  ×1 — child: Chili is a distinct dish form using pulled pork as ingredient.
+- **Mini Quiche** → Quiche  ×1 — attribute: Mini indicates size; a distinct indexable dish form.
+- **Pasta al Ragù (Beef Ragù)** → Ragù  ×1 — accompaniment: Pasta al Ragù names the dish with its traditional accompaniment pasta; the sauce itself is the catalog item.
+- **Pasta with Chicken Ragù** → Ragù  ×1 — sibling: Chicken Ragù is a distinct regional variant with its own identity.
+- **Ragu with Pasta** → Ragù  ×1 — accompaniment: Ragù is the sauce; pasta is the traditional accompaniment, not part of the dish itself.
+- **Tonkotsu Ramen Broth** → Ramen  ×1 — component: Broth is a component of ramen, not the finished dish itself.
+- **Tonkotsu Ramen Broth (vegan variant)** → Ramen  ×1 — component: Broth alone is a component, not the complete dish
+- **Ramen Broth** → Ramen  ×1 — component: Broth is a component of ramen, not the finished dish
+- **Red Velvet Cheesecake Cake** → Red Velvet Cake  ×1 — sibling: Cheesecake cake is distinct layered form with different structure.
+- **Chickpea Soup (Revithokouloura)** → Revithia  ×1 — sibling: Soup is different form from stew; distinct dish identity.
+- **Revithia Sto Fourno (Greek Baked Chickpeas)** → Revithia  ×1 — attribute: Baked preparation differs from slow-simmered stew form
+- **Sausage and Peppers Rigatoni** → Rigatoni alla Silana  ×1 — sibling: Different regional dish with distinct ingredient profile and origin.
+- **Rigatoni with Spicy Sausage and Vodka Cream Sauce** → Rigatoni alla Silana  ×1 — variant: Different sauce composition and primary ingredients than guanciale-tomato base.
+- **Rigatoni alla Siciliana** → Rigatoni alla Silana  ×1 — sibling: Different regional Italian pasta dishes with distinct origins and recipes
+- **Pot Roast Chicken** → Roast Chicken  ×1 — sibling: Pot roasting is different cooking method from roasting.
+- **Roasted Potatoes and Onions** → Roast Potatoes  ×1 — sibling: Adds onions as distinct component; cookbook indexes separately.
+- **Roasted Turkey Breast** → Roast Turkey  ×1 — child: Turkey breast is a distinct cut, not the whole bird.
+- **Herb Crusted Turkey Roast** → Roast Turkey  ×1 — attribute: Boneless turkey roast is different form from whole bird.
+- **Pita Pizza** → Roasted Brussels Sprouts  ×1 — other: Pita Pizza is a different dish form with pita bread base.
+- **Crispy Roasted Brussels Sprouts with Sriracha Aioli** → Roasted Brussels Sprouts  ×1 — variant: Adds sriracha aioli sauce; distinct preparation from plain roasted.
+- **Whole Roasted Cauliflower** → Roasted Cauliflower  ×1 — attribute: Whole specifies form; florets vs intact head are distinct dishes.
+- **Roasted Cauliflower with Yogurt Sauce** → Roasted Cauliflower  ×1 — accompaniment: Yogurt sauce is an addition, not the core roasted cauliflower dish itself.
+- **Roasted Cauliflower with Bacon** → Roasted Cauliflower  ×1 — variant: Adds bacon ingredient creating distinct dish variation
+- **Baked Rutabaga Gratin** → Rutabaga  ×1 — attribute: Baked and gratin add specific preparation methods not in base dish name.
+- **Hash with Eggs** → Rutabaga  ×1 — child: Hash is a distinct dish form, not rutabaga preparation method
+- **Spiralized Vegetable Noodles** → Rutabaga  ×1 — attribute: Spiralized is a preparation method, not the dish itself.
+- **Creamy White Bean and Vegetable Soup** → Rutabaga  ×1 — other: Soup is different dish form from vegetable side dish
+- **Vegetable Fries with Dipping Sauce** → Rutabaga  ×1 — child: Rutabaga Fries is a distinct preparation form with its own identity
+- **Vegetable Chips** → Rutabaga  ×1 — attribute: Chips are a different preparation form, not the dish itself.
+- **Prawn Saganaki** → Saganaki  ×1 — sibling: Different protein ingredient creates distinct dish variant
+- **Cream Sauce (French-style wine reduction)** → Sauce Jean Vignard  ×1 — other: Cream sauce is fundamentally different; Jean Vignard is brown sauce with wine and mushrooms.
+- **Cream and Mustard Sauce (Sauce Jean Vignard)** → Sauce Jean Vignard  ×1 — other: Cream and mustard differ from red wine and mushrooms base
+- **Tomato Sauce (Australian-style spiced condiment)** → Sauce Tomate  ×1 — variant: Australian-style spiced condiment differs from French mother sauce.
+- **Scallion Pancake with Eggs** → Scallion Pancakes  ×1 — accompaniment: Adds eggs as a served accompaniment, distinct dish form.
+- **Scalloped Potatoes with Ham** → Scalloped Potatoes  ×1 — variant: Ham addition creates distinct dish variant, not core recipe.
+- **Scalloped Potatoes and Ham** → Scalloped Potatoes  ×1 — sibling: Ham addition creates distinct dish; cookbook would index separately.
+- **Scialatielli Allo Scoglio (Italian Seafood Pasta)** → Scoglio  ×1 — sibling: Different pasta shape (scialatielli vs spaghetti/linguine); distinct dish form
+- **Seafood Pasta with Cream Sauce** → Scoglio  ×1 — variant: Cream sauce differs from Scoglio's wine-tomato broth base
+- **Seafood Pasta** → Scoglio  ×1 — other: Generic descriptor, not specific Italian dish identity
+- **Tattie Scones** → Scones  ×1 — sibling: Tattie scones are potato-based, distinct from butter-flour scones
+- **Fish Stock (Fumet)** → Seafood Stock  ×1 — sibling: Fish Stock is narrower scope; Seafood Stock includes shellfish
+- **Fish Stock** → Seafood Stock  ×1 — sibling: Fish Stock is core component; Seafood Stock adds shellfish.
+- **Caramelized Banana Pudding** → Self-Saucing Pudding  ×1 — variant: Flavored variation with specific ingredient, not the base dish form
+- **Malva Pudding** → Self-Saucing Pudding  ×1 — sibling: Malva Pudding is a distinct South African dish with unique ingredient profile
+- **Baked Fish with Lemon Butter Sauce** → Sheet Pan Fish  ×1 — variant: Baked fish with sauce is different form than sheet pan roasted vegetable dish
+- **Fish and Chips** → Sheet Pan Fish  ×1 — sibling: Fish and Chips is distinct dish form: fried, breaded, with potatoes as essential component
+- **Fish Fajitas** → Sheet Pan Fish  ×1 — variant: Fajitas is a distinct dish form with seared strips and tortillas.
+- **Baked Fish with Thai Glaze** → Sheet Pan Fish  ×1 — variant: Thai glaze is a specific flavor variation, not the standard sheet pan fish.
+- **Serbian Salad** → Shopska Salata  ×1 — sibling: Serbian and Bulgarian salads are distinct regional variants with separate identities
+- **Garlic Shrimp** → Shrimp Creole  ×1 — variant: Garlic Shrimp lacks Creole stew form, tomatoes, peppers, file powder.
+- **Gumbo** → Shrimp Gumbo  ×1 — sibling: Gumbo is a broader category; shrimp is one protein variation among many.
+- **Shrimp and Crab Gumbo** → Shrimp Gumbo  ×1 — sibling: Adds crab as distinct ingredient; cookbook would index separately.
+- **Shrimp Bisque** → Shrimp and Corn Chowder  ×1 — sibling: Bisque is distinct soup form from chowder; different preparations.
+- **Shrimp and Bacon Corn Chowder** → Shrimp and Corn Chowder  ×1 — variant: Bacon addition creates distinct flavor profile, separate indexable dish
+- **Shrimp and Grits Casserole** → Shrimp and Grits  ×1 — attribute: Casserole specifies a baking vessel/preparation method not in original dish name.
+- **Baked Pasta with Shrimp and Feta** → Shrimp with Tomatoes and Feta  ×1 — attribute: Baked pasta is a different dish form from shrimp with tomatoes.
+- **Baked Feta Shrimp and Tomatoes** → Shrimp with Tomatoes and Feta  ×1 — attribute: Baking method adds attribute not in original dish name
+- **Shrimp with Orzo and Feta** → Shrimp with Tomatoes and Feta  ×1 — sibling: Orzo pasta addition creates distinct dish form requiring separate indexing
+- **Soda Bread Buns** → Soda Bread  ×1 — child: Buns are a different form from round loaf; distinct indexing.
+- **Sourdough Sandwich Bread** → Sourdough Bread  ×1 — sibling: Sandwich bread is distinct loaf form with different crumb structure.
+- **Stuffed Spaghetti Squash** → Spaghetti Squash  ×1 — variant: Stuffed variation adds preparation method not in base dish definition
+- **Spaghetti Squash Casserole** → Spaghetti Squash  ×1 — child: Casserole is a distinct prepared dish form, not the base ingredient.
+- **Twice-Baked Spaghetti Squash** → Spaghetti Squash  ×1 — variant: Twice-baked is a distinct preparation method, not the base dish
+- **Spaghetti Squash with Garlic Parmesan Sauce** → Spaghetti Squash  ×1 — attribute: Specifies cooking method (slow cooker) and particular sauce, not the dish itself.
+- **Spaghetti Squash with Mushrooms** → Spaghetti Squash  ×1 — accompaniment: Mushrooms are a topping, not the dish itself.
+- **Spaghetti with Sausage and Marinara** → Spaghetti Squash  ×1 — other: Specific dish with sausage and marinara, not the base squash ingredient.
+- **Baked Spaghetti Squash** → Spaghetti Squash  ×1 — attribute: Baked specifies cooking method; roasted is the standard preparation
+- **Buttered Spaghetti Squash** → Spaghetti Squash  ×1 — attribute: Buttered adds preparation method not in base dish name
+- **Coffee Walnut Layer Cake** → Sponge Cake  ×1 — variant: Flavour/ingredient variation with distinct identity; walnut and coffee are specific additions.
+- **Spaghetti with Creamy Ssamjang Sauce and Pork Belly** → Ssamjang  ×1 — other: Spaghetti pasta dish, not the condiment itself
+- **Doenjang-jjigae** → Ssamjang  ×1 — sibling: Doenjang-jjigae is a stew; Ssamjang is a condiment/dip.
+- **Steak Bites** → Steak Tips  ×1 — sibling: Same preparation, different portion/serving context naming
+- **Ground Beef Steaks with Onions and Cream Sauce** → Steak haché  ×1 — variant: Adds cream sauce and spices; different preparation and accompaniment.
+- **Ground Beef Steaks with Shallots and Mustard Sauce** → Steak haché  ×1 — variant: Adds specific ingredients (shallots, mustard sauce) not in simple steak haché
+- **Spiced Ground Steak** → Steak haché  ×1 — variant: Adds spice seasoning beyond steak haché's simple salt/pepper profile
+- **Strawberry Crumb Bars** → Strawberries  (Fresh)  ×1 — other: Crumb bars are a baked dessert form, not fresh berries
+- **Strawberry Crisp** → Strawberries  (Fresh)  ×1 — child: Crisp is a distinct baked dish form, not plain strawberries
+- **Strawberry Cream Cheese Pie** → Strawberries  (Fresh)  ×1 — child: Pie is distinct dish form; strawberries are component
+- **Strawberry Pound Cake** → Strawberries  (Fresh)  ×1 — child: Pound cake with strawberry is distinct dish form, not fresh strawberries.
+- **Strawberry Rhubarb Slab Pie** → Strawberry Rhubarb Pie  ×1 — other: Slab pie is a distinct dish form, not traditional pie.
+- **Slab Pie** → Strawberry Rhubarb Pie  ×1 — attribute: Slab pie is a different form/serving style, not the same dish.
+- **Harcsapaprikás (Hungarian Catfish Stew)** → Stufato di Pesce  ×1 — sibling: Different regional stew with distinct cuisine, spice profile, ingredients
+- **Stuffed Cabbage** → Stuffed Cabbage Rolls  ×1 — sibling: Common shorthand name for the same dish; minor naming variation.
+- **Stuffed Hot Peppers** → Stuffed Peppers  ×1 — sibling: Hot peppers are distinct ingredient; different pepper type, distinct dish.
+- **Sweet Potato Fries with Sriracha Mayo** → Sweet Potato Fries  ×1 — accompaniment: Sriracha mayo is a condiment served with the fries, not the dish itself.
+- **Grilled Sweet Potato Fries** → Sweet Potato Fries  ×1 — attribute: Grilled changes cooking method from deep-fried to grilled.
+- **Wilted Greens Salad** → Swiss Chard  ×1 — other: Salad is a different dish form from prepared vegetable
+- **Sautéed Swiss Chard with Raisins and Pine Nuts** → Swiss Chard  ×1 — attribute: Adds specific preparation method and ingredients not in base dish
+- **Sautéed Swiss Chard with Garlic** → Swiss Chard  ×1 — attribute: Adds cooking method and ingredient not in base dish name
+- **Pan Roasted Swordfish** → Swordfish  ×1 — attribute: Pan roasting is a specific cooking method not stated in the dish definition.
+- **Pan-Seared Swordfish** → Swordfish  ×1 — attribute: Pan-searing is a cooking method variation of swordfish preparation
+- **Baked Swordfish** → Swordfish  ×1 — attribute: Baked method distinguishes it from grilled/seared preparation
+- **Baked Swordfish with Capers and Tomatoes** → Swordfish  ×1 — attribute: Baking is a specific cooking method; swordfish dish itself is cooking-method agnostic.
+- **Baked Swordfish with Cream Sauce** → Swordfish  ×1 — attribute: Baking and cream sauce are preparation methods not in base dish definition.
+- **Broiled Swordfish** → Swordfish  ×1 — attribute: Broiling is a cooking method variation of the same dish form.
+- **Swordfish Piccata** → Swordfish  ×1 — variant: Piccata is a distinct preparation method with capers and lemon sauce.
+- **Baked Swordfish Steak** → Swordfish  ×1 — attribute: Baked method adds cooking attribute not in base dish name.
+- **Pasta with Mushrooms** → Tagliatelle  ×1 — other: Different dish form; mushrooms are ingredient, not tagliatelle definition
+- **Tagliatelle with Prosciutto and Butter** → Tagliatelle  ×1 — accompaniment: Specific dish with named ingredients, not just pasta form
+- **Tagliatelle with Tomato Sauce** → Tagliatelle  ×1 — accompaniment: Tomato sauce is a specific accompaniment, not the dish itself.
+- **Tagliatelle Carbonara** → Tagliatelle  ×1 — accompaniment: Specific dish with carbonara sauce, not just tagliatelle.
+- **Tagliatelle with Mushrooms and Sage Butter** → Tagliatelle  ×1 — variant: Specific ingredient preparation, not the base pasta form itself.
+- **Seafood Pasta with Spicy Tomato Sauce** → Tagliatelle  ×1 — variant: Specific ingredient/sauce variation, not the base dish form
+- **Tagliatelle with Tomato and Pancetta Sauce** → Tagliatelle  ×1 — attribute: Specifies sauce preparation, not the pasta form itself.
+- **Tagliatelle with Porcini Mushrooms and Crème Fraîche** → Tagliatelle  ×1 — variant: Specific sauce preparation, not the pasta form itself.
+- **Garlic Toasts with Tapenade** → Tapenade  ×1 — other: Finished dish with accompaniment, not tapenade itself
+- **Teriyaki Chicken Rice Bowl** → Teriyaki Sauce  ×1 — other: Bowl is finished dish using sauce as component, not the sauce itself.
+- **Chicken Teriyaki** → Teriyaki Sauce  ×1 — accompaniment: Chicken Teriyaki is a finished dish; Teriyaki Sauce is a component.
+- **Teriyaki Salmon** → Teriyaki Sauce  ×1 — component: Teriyaki Salmon is a finished dish; sauce is component
+- **Kua Kling** → Thai Red Curry  ×1 — sibling: Kua Kling is a distinct Thai curry dish form with its own cooking method and regional identity.
+- **Thai Red Curry Paste** → Thai Red Curry  ×1 — component: Paste is an ingredient component, not the finished dish.
+- **Red Thai Curry Sauce** → Thai Red Curry  ×1 — component: Sauce is a component; curry is the finished dish.
+- **Thai Red Curry Noodle Soup** → Thai Red Curry  ×1 — sibling: Curry soup with noodles is distinct dish form from curry stew.
+- **Pasta with Cherry Tomato Sauce** → Tomato Sauce  ×1 — child: Pasta dish with sauce as component, not the sauce itself.
+- **Pork Katsu Curry** → Tonkotsu Curry  ×1 — sibling: Katsu curry uses breaded cutlet; tonkotsu uses bone broth base.
+- **Pork Katsu Curry (Tonkatsu)** → Tonkotsu Curry  ×1 — sibling: Katsu curry uses breaded fried pork cutlet; tonkotsu uses pork bone broth base.
+- **Tonkotsu Broth** → Tonkotsu Ramen  ×1 — component: Broth is a component of the finished tonkotsu ramen dish
+- **Chocolate Chip Cookies (white chocolate and cranberry variant)** → Traybake Recipes  ×1 — other: Cookies are individual items, not sheet-pan baked goods cut into pieces.
+- **Baked Eggs with Bacon and Tomatoes** → Traybake Recipes  ×1 — other: Savory egg dish, not sweet baked goods in sheet pan form
+- **Chicken & Chorizo Traybake** → Traybake Recipes  ×1 — other: Savory chicken dish, not sweet baked goods in sheet pan.
+- **Pasta with Broad Beans** → Trofie  ×1 — other: Different dish; broad bean preparation, not trofie shape itself
+- **Trofie with Pesto, Potato and Green Beans** → Trofie  ×1 — accompaniment: Names specific dish preparation with ingredients, not pasta form itself
+- **Pasta with Pesto** → Trofie  ×1 — accompaniment: Pesto is the sauce, not the pasta shape itself.
+- **Trofie with Walnut Sauce** → Trofie  ×1 — accompaniment: Sauce variation creates distinct indexable dish identity
+- **Pasta with Pistachio Pesto** → Trofie  ×1 — accompaniment: Names the dish with a specific sauce, not the pasta shape itself.
+- **Tuscan Sausage and White Bean Soup** → Tuscan White Bean Soup  ×1 — variant: Sausage addition creates distinct dish identity cookbook would index separately
+- **Ribollita** → Tuscan White Bean Soup  ×1 — sibling: Ribollita is a distinct Tuscan soup with bread as integral component, not just accompaniment.
+- **Tuscan White Bean Soup with Sausage and Kale** → Tuscan White Bean Soup  ×1 — variant: Adds sausage as distinct ingredient variation cookbook would index separately.
+- **Vanilla Birthday Cake** → Vanilla Cake  ×1 — attribute: Birthday cake adds occasion attribute, not inherent to vanilla cake form
+- **Blended Vegetable Soup** → Vegetable Soup  ×1 — attribute: Blended texture is a preparation method attribute, not the base dish.
+- **Chicken Vegetable Soup** → Vegetable Soup  ×1 — sibling: Adding chicken protein creates distinct dish variant cookbook indexes separately
+- **Roasted Vegetable Soup** → Vegetable Soup  ×1 — attribute: Roasting is a preparation method attribute not stated in base dish name
+- **Potato and Carrot Soup** → Vegetable Soup  ×1 — variant: Specific vegetable combination, not generic vegetable soup
+- **White Bread Dough** → White Bread  ×1 — component: Dough is an ingredient/component, not the finished bread dish.
+- **Crusty White Bread** → White Bread  ×1 — attribute: Crusty crust is distinct attribute; white bread has tender golden crust
+- **Artisan No-Knead Bread** → White Bread  ×1 — other: No-knead bread is distinct method/style, not white bread variant
+- **Crispy Fried Udon (Karaage Udon)** → Yaki Udon  ×1 — variant: Crispy texture from deep frying differs from stir-frying method
+- **Yakisoba Pan** → Yakisoba  ×1 — sibling: Pan version is distinct preparation method/form
+- **Zucchini Butter** → Zucchini  ×1 — component: Zucchini Butter is a prepared condiment, not the vegetable itself.
+- **Baked Zucchini with Marinara and Cheese** → Zucchini  ×1 — attribute: Adds specific preparation method, sauce, and cheese topping
+- **Creamy Baked Zucchini Casserole** → Zucchini  ×1 — attribute: Casserole form with cream adds dish structure not in simple zucchini.
+- **Zucchini Fritters (or Zucchini Cake)** → Zucchini  ×1 — child: Fritters/cake are distinct prepared forms, not zucchini vegetable itself.
+- **Baked Parmesan Zucchini** → Zucchini  ×1 — attribute: Baked and Parmesan are added attributes not in base zucchini dish name.
+- **Fried Zucchini** → Zucchini  ×1 — attribute: Frying is a specific cooking method not stated in base dish definition.
+- **Zucchini and Tomato Gratin** → Zucchini  ×1 — child: Gratin is a distinct prepared form with cheese/breadcrumb topping
+- **Baked Zucchini** → Zucchini  ×1 — attribute: Baked specifies cooking method; catalog holds as distinct dish
+- **Grilled Zucchini** → Zucchini  ×1 — attribute: Grilled specifies cooking method not stated in base dish
+- **Sautéed Zucchini and Squash** → Zucchini  ×1 — sibling: Mixed vegetable dish distinct from single zucchini preparation
+- **Penne alla Vodka (or Rigatoni alla Vodka variant with sausage)** → alla Vodka  ×1 — sibling: Rigatoni alla Vodka is distinct pasta shape; sausage adds separate ingredient identity
+- **Vodka Sauce (Panna e Vodka)** → alla Vodka  ×1 — component: Sauce is the defining component of alla Vodka pasta dish
+- **Vodka Sauce** → alla Vodka  ×1 — component: Vodka Sauce is the sauce component of Penne alla Vodka
+
+## X — collisions / ambiguous / already aliases (79 aliases, 223 recipes)
+
+- **Eggplant Parmesan** → Eggplant Parmigiana  ×16 — : same alias string claims Eggplant Parmigiana / Parmigiana alla Napoletana
+- **Stuffed Shells** → Baked Stuffed Shells  ×12 — : same alias string claims Baked Stuffed Shells / Chicken With Peas and Prosciutto
+- **Baked Chicken Thighs** → Chicken Thighs - Bone In  ×12 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Spaghetti Bolognese** → Bolognese  ×11 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Chicken Souvlaki** → Chicken Kabobs  ×9 — : same alias string claims Chicken Kabobs / Souvlaki (Greece)
+- **Roasted Chicken Thighs** → Chicken Thighs - Bone In  ×9 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Baked Chicken Thighs** → Chicken Thighs - Boneless  ×8 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Chicken Enchiladas** → Enchiladas  ×8 — : same alias string claims Enchiladas / Enchiladas de Pollo
+- **Roasted Potatoes** → Roast Potatoes  ×8 — : same alias string claims Baked Potato / Roast Potatoes
+- **Chicken Souvlaki** → Souvlaki (Greece)  ×8 — : same alias string claims Chicken Kabobs / Souvlaki (Greece)
+- **Spaghetti Bolognese** → Spaghetti and Meat Sauce  ×7 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Roasted Chicken Breast** → Chicken Breast - Bone-In  ×6 — : same alias string claims Baked Chicken Breast / Chicken Breast - Bone-In
+- **Pizza** → Pizza Dough  ×6 — : same alias string claims Cranberry Sauce / Greek Pizza / Pizza Dough
+- **Blueberry Crisp** → Blueberry Crumble  ×5 — : same alias string claims Berry Crisp / Blueberry Crumble
+- **Baked Beans** → Boston Baked Beans  ×4 — : same alias string claims Boston Baked Beans / Cowboy Beans / Pork and Beans
+- **Seafood Paella** → Paella de Mariscos (Seafood Paella)  ×4 — : same alias string claims Arroz de Marisco / Paella de Mariscos (Seafood Paella)
+- **Linguine alle Vongole** → Pasta Vongole  ×4 — : same alias string claims Pasta Vongole / Scoglio
+- **Baked Beans** → Pork and Beans  ×4 — : same alias string claims Boston Baked Beans / Cowboy Beans / Pork and Beans
+- **Chickpea Soup** → Revithia  ×4 — : same alias string claims Greek Chickpea Soup (Ρεβιθόσουπα) / Revithia
+- **Roasted Chicken** → Roast Chicken  ×4 — : same alias string claims Chicken Breast - Bone-In / Roast Chicken
+- **Chicken Enchiladas** → Enchiladas de Pollo  ×3 — : same alias string claims Enchiladas / Enchiladas de Pollo
+- **Seafood Paella** → Arroz de Marisco  ×2 — : same alias string claims Arroz de Marisco / Paella de Mariscos (Seafood Paella)
+- **Baked Chicken Breasts** → Baked Chicken Breast  ×2 — : same alias string claims Baked Chicken Breast / Chicken Breast - Bone-In
+- **Roasted Potatoes** → Baked Potato  ×2 — : same alias string claims Baked Potato / Roast Potatoes
+- **Ragù Bolognese** → Bolognese  ×2 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Cajun Seasoning Blend** → Cajun Seasoning  ×2 — : same alias string claims Cajun / Cajun Seasoning
+- **Baked Chicken Breasts** → Chicken Breast - Bone-In  ×2 — : same alias string claims Baked Chicken Breast / Chicken Breast - Bone-In
+- **Roasted Chicken Thighs** → Chicken Thighs - Boneless  ×2 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Chickpea Soup** → Greek Chickpea Soup (Ρεβιθόσουπα)  ×2 — : same alias string claims Greek Chickpea Soup (Ρεβιθόσουπα) / Revithia
+- **Katsu Curry** → Japanese Chicken Katsu Curry  ×2 — : same alias string claims Japanese Chicken Katsu Curry / Tonkotsu Curry
+- **Moules à la Crème (Mussels in Cream Sauce)** → Mussels & Moules  ×2 — : same alias string claims Moules en Cassolette / Mussels & Moules
+- **Meat Sauce (Ragù)** → Ragù  ×2 — : same alias string claims Ragù / Spaghetti and Meat Sauce
+- **Ragu Bolognese** → Ragù  ×2 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Lamb Souvlaki** → Souvlaki (Greece)  ×2 — : same alias string claims Lamb Kabobs / Souvlaki (Greece)
+- **Apple Cobbler** → Apple Crumble  ×1 — : same alias string claims Apple Crumble / Cobbler
+- **Roasted Chicken Breast** → Baked Chicken Breast  ×1 — : same alias string claims Baked Chicken Breast / Chicken Breast - Bone-In
+- **Blueberry Crisp** → Berry Crisp  ×1 — : same alias string claims Berry Crisp / Blueberry Crumble
+- **Bulgogi Bowl** → Bulgogi  ×1 — : same alias string claims Bulgogi / Pork Bulgogi Rice Bowl
+- **Texas Sheet Cake** → Bundt Cake  ×1 — : same alias string claims Bundt Cake / Chocolate Cake
+- **Cajun Seasoning Blend** → Cajun  ×1 — : same alias string claims Cajun / Cajun Seasoning
+- **Roasted Chicken** → Chicken Breast - Bone-In  ×1 — : same alias string claims Chicken Breast - Bone-In / Roast Chicken
+- **Lemon Chicken** → Chicken Breast - Boneless  ×1 — : same alias string claims Chicken Breast - Boneless / Chicken Piccata
+- **Lemon Chicken** → Chicken Piccata  ×1 — : same alias string claims Chicken Breast - Boneless / Chicken Piccata
+- **Skillet Chicken Thighs** → Chicken Thighs - Bone In  ×1 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Skillet Chicken Thighs** → Chicken Thighs - Boneless  ×1 — : same alias string claims Chicken Thighs - Bone In / Chicken Thighs - Boneless
+- **Stuffed Shells** → Chicken With Peas and Prosciutto  ×1 — : same alias string claims Baked Stuffed Shells / Chicken With Peas and Prosciutto
+- **Texas Sheet Cake** → Chocolate Cake  ×1 — : same alias string claims Bundt Cake / Chocolate Cake
+- **Chocolate Mousse Pie** → Chocolate Cream Pie  ×1 — : same alias string claims Chocolate Cream Pie / Chocolate Mousse
+- **Chocolate Mousse Pie** → Chocolate Mousse  ×1 — : same alias string claims Chocolate Cream Pie / Chocolate Mousse
+- **Apple Cobbler** → Cobbler  ×1 — : same alias string claims Apple Crumble / Cobbler
+- **Baked Beans** → Cowboy Beans  ×1 — : same alias string claims Boston Baked Beans / Cowboy Beans / Pork and Beans
+- **Pizza** → Cranberry Sauce  ×1 — : same alias string claims Cranberry Sauce / Greek Pizza / Pizza Dough
+- **Thai Chicken Curry** → Curry  ×1 — : same alias string claims Curry / Thai Red Curry
+- **Pizza** → Greek Pizza  ×1 — : same alias string claims Cranberry Sauce / Greek Pizza / Pizza Dough
+- **Glazed Chicken Thighs** → Hoisin Sauce  ×1 — : same alias string claims Hoisin Sauce / Hot Honey Chicken Thighs
+- **Glazed Chicken Thighs** → Hot Honey Chicken Thighs  ×1 — : same alias string claims Hoisin Sauce / Hot Honey Chicken Thighs
+- **Japanese Curry Rice** → Japanese Beef Curry  ×1 — : same alias string claims Japanese Beef Curry / Tonkotsu Curry
+- **Lamb Souvlaki** → Lamb Kabobs  ×1 — : same alias string claims Lamb Kabobs / Souvlaki (Greece)
+- **Moules à la Crème** → Moules en Cassolette  ×1 — : same alias string claims Moules en Cassolette / Mussels & Moules
+- **Moules à la Crème (Mussels in Cream Sauce)** → Moules en Cassolette  ×1 — : same alias string claims Moules en Cassolette / Mussels & Moules
+- **Moules à la Crème** → Mussels & Moules  ×1 — : same alias string claims Moules en Cassolette / Mussels & Moules
+- **Eggplant Parmesan** → Parmigiana alla Napoletana  ×1 — : same alias string claims Eggplant Parmigiana / Parmigiana alla Napoletana
+- **Baked Pasta with Sausage and Béchamel** → Pasta al Forno  ×1 — : same alias string claims Pasta al Forno / Trofie
+- **Rigatoni alla Gricia** → Pasta alla Gricia  ×1 — : same alias string claims Pasta alla Gricia / Rigatoni alla Silana
+- **Bulgogi Bowl** → Pork Bulgogi Rice Bowl  ×1 — : same alias string claims Bulgogi / Pork Bulgogi Rice Bowl
+- **Pulled Pork Sandwich** → Pork Shoulder  ×1 — : same alias string claims Pork Shoulder / Pulled Pork
+- **Pulled Pork Sandwich** → Pulled Pork  ×1 — : same alias string claims Pork Shoulder / Pulled Pork
+- **Spaghetti Bolognese** → Ragù  ×1 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Rigatoni alla Gricia** → Rigatoni alla Silana  ×1 — : same alias string claims Pasta alla Gricia / Rigatoni alla Silana
+- **Beef Shawarma** → Schwarma  ×1 — : dish not in catalog
+- **Linguine alle Vongole** → Scoglio  ×1 — : same alias string claims Pasta Vongole / Scoglio
+- **Red Lentil Soup (Shorbet Adas)** → Shorabet Adas  ×1 — : same alias string claims Shorabet Adas / Shorabet Adas (Lentil Soup)
+- **Red Lentil Soup (Shorbet Adas)** → Shorabet Adas (Lentil Soup)  ×1 — : same alias string claims Shorabet Adas / Shorabet Adas (Lentil Soup)
+- **Ragù Bolognese** → Spaghetti and Meat Sauce  ×1 — : same alias string claims Bolognese / Ragù / Spaghetti and Meat Sauce
+- **Meat Sauce (Ragù)** → Spaghetti and Meat Sauce  ×1 — : same alias string claims Ragù / Spaghetti and Meat Sauce
+- **Thai Chicken Curry** → Thai Red Curry  ×1 — : same alias string claims Curry / Thai Red Curry
+- **Katsu Curry** → Tonkotsu Curry  ×1 — : same alias string claims Japanese Chicken Katsu Curry / Tonkotsu Curry
+- **Japanese Curry Rice** → Tonkotsu Curry  ×1 — : same alias string claims Japanese Beef Curry / Tonkotsu Curry
+- **Baked Pasta with Sausage and Béchamel** → Trofie  ×1 — : same alias string claims Pasta al Forno / Trofie

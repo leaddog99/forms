@@ -12758,3 +12758,64 @@ a scheduled job is added, name folding changes.
     rows with a disagreeing card), mail moves + suggested dishes; apply moves only on
     curator approval (or auto-apply when the pick is a qualifier-child of the stored
     dish). Not built; the curator decides.
+
+### 2026-11-19 (late) — how dish match works vs how DPI's leaf match works; alias pre-generation vetted; curator rule: alias before new dish
+
+* **Walk-through delivered** (identity card → composed embed text, title excluded → one
+  vector → KNN k=3 over dishes_vec → absolute bar 0.6 → name-exact override → qualifier
+  siblings → chapter fence → `_match` stamp; rematch 6-hourly). Curator: "the idea of
+  getting the nearest dish is specious… useful ONLY if it was really a synonym (souvlaki
+  and kabob) but not banana cake and banana bread." Agreed and measured: agree-rows and
+  wrong-rows share the same distance distribution, so the bar is a similarity test
+  standing in for an identity test. Note the Chicken Kabobs dish card is literally a
+  Greek souvlaki card (lemon, oregano, garlic) — a catalog defect the distance reports.
+* **DPI's leaf match (read on BAILEY: `dpi/src/dpi/services/match.py`, prompts
+  `match_describe.md` / `match_judge.md`) — the shape to port.** Each leaf carries THREE
+  vectors (identity text, capability text, name+aliases); a title read embeds the words
+  as they are and scores a leaf as the MEAN of the three similarities. Decision is by
+  MARGIN, not an absolute bar: a clear lead over the runner-up (`decisive_margin` above
+  `decisive_floor`) is the answer with no model; a best score under `none_below` is
+  "none" with no model; otherwise the JUDGE is shown every leaf within CLOSE=0.03 of the
+  leader (≥3), the leader's siblings within 0.06, and any leaf the title NAMES outright
+  (name/alias ≥2 words all in the title, most specific only), each with its definition
+  and substitution notes, and picks one or "none" — "a wrong leaf is worse than no
+  leaf". A named leaf never auto-assigns; it goes to the judge, told. Exclusion lines
+  route a form the tree excludes to another tree's home. Every read is kept
+  (`product_reads`) and every verdict is a dated row (leaf or none, score, how decided).
+  **Applied to dishes:** (1) decide by margin to the runner-up, not by 0.6 — the
+  near-tie IS the banana-cake/banana-bread signal and is exactly when the judge is
+  worth a call; (2) the judge sees the dish's definition (description/identity card)
+  and aliases, picks or NONE, NONE records the suggested name (feeds the gap report and
+  the alias check); (3) a card name that EQUALS a catalog name/alias keeps our
+  name-exact fast lane (DPI's looser "names it" rule goes to the judge, which is how it
+  avoids the token-subset trap we measured and rejected on 08-23); (4) three dish-side
+  texts would need a dish `definition`/`capability` (what it is / what counts as a
+  variant) — the identity card is one of the three today; (5) keep verdicts as dated
+  rows with method. Where it lives is the curator's call: port the decide stage into
+  `dish_match.py` (SQLite/sqlite-vec; port the logic, not the code), or lift DPI's
+  decide stage into a house kit ("place an item in a tree of consideration sets") that
+  both apps import — DPI must stay independent of clients, so a kit is the house way.
+* **CURATOR RULE (noted in memory project_dish_aliases): "if a new dish appears with a
+  new name it needs to be determined whether it is an alias before it is declared a new
+  dish."** Every dish-creating door (gap-report +, judge NONE suggestions, Dishes page,
+  harvest) must offer "alias of X" first. DPI's analog: Merge into… + `resolve_leaf`
+  following merges + duplicate-leaf flags.
+* **Alias pre-generation — vetted list produced (NOT applied).** Source: the card's
+  likelyDish on settled rows (curated, or confirmed by today's verification pass) where
+  it differs from the catalog name and names no other dish: 1,819 candidate pairs.
+  Collision/ambiguous/already-alias rejected first (79). Tier A = mechanical variants of
+  the name (plural/spelling/diacritic/parenthetical/"Recipes" suffix): 118. The rest
+  judged by Haiku (`dish_alias_vet`, 1,622 calls, ~$0.70) with the strict rule — same
+  dish under another name (spelling, plural, translation, regional, accompaniment,
+  flavour variant of the same form) vs NOT (sibling, child, component, attribute):
+  **B (same, ≥2 recipes) 293 · C (same, 1 recipe) 692 · R (not the same) 637.**
+  Approved A+B+C = **1,103 aliases for 386 dishes, claiming 2,063 recipes** by name-exact
+  once applied. Judge kinds: variant 557, accompaniment 186, attribute 184, translation
+  137, sibling 131, regional 126, spelling 99, other 85, child 54, component 45.
+  Review file: docs/research/dish-alias-proposals-2026-11-19.md (+ the approved rows as
+  dish-alias-vetted-2026-11-19.json). Known judge over-strictness in R: "Bolognese Sauce
+  → Bolognese: component" (the catalog's Bolognese IS the sauce) — and B has arguable
+  regional picks (Buffalo Chicken Wings → Chicken Wings, Belgian Waffles → Waffles); the
+  curator's read decides. The R list doubles as the sibling/child problem list: 637
+  names filed under a dish the judge says they are not (Roasted Broccoli → Broccoli ×14,
+  Seafood Gumbo → Shrimp Gumbo ×7, Clam Chowder → New England Clam Chowder ×5).
