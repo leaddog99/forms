@@ -12706,3 +12706,55 @@ a scheduled job is added, name folding changes.
     ~0.05 of each other (the sibling band) — the retrieve-then-verify shape the equipment
     classifier and this experiment both used.
 * Tests: `test_dish_story_fill.py` ALL PASSED; `enrich/tests` 14 passed; ruff clean.
+
+### 2026-11-19 (evening) — restart verified; chocolate-cake trace; DISH VERIFICATION PASS on the disagreeing band
+
+* **BCC restart (curator approved the UAC prompt):** new process 17:11:53, HTTP 200,
+  `scheduled_jobs.dish_gap_report` seeded. Note: the window = since the last SUCCESSFUL
+  gap report, and the only one on record is a manual run on 2026-08-30, so the FIRST
+  nightly mail covers that whole backlog (digest caps at 40 rows, rest in the job log).
+* **Chocolate cake (NYT, Maida Heatter) — "equipment classes don't work":** three
+  attempts. The two 17:09 extracts ran on the PRE-restart process, which had lazily
+  loaded the NEW prompt (tools came back as class names: Stand Mixer, Fine Mesh
+  Strainer…) but still held the OLD `recipe_model.Tool` → `product_class` dropped at
+  validation; the 17:10 save has no keys (the shop endpoint still resolves 7/10 by
+  exact name, products attached). The 17:12 extract on the new process carries the key
+  on 6/9 tools (llm_extract_cache row). The actual bug: "Shop the tools" on an unsaved
+  re-extract → 404 → "Try again" (the form mints recipe_id before save, so the empty-id
+  guard can't fire). Fixed: 404 → "Save the recipe first" (f644839, static file, live).
+* **"So half the recipes have no dish?" — no.** master_recipes 14,342: curated/run dish
+  6,766 (47%); nearest-only confident 2,531 (18%); nearest-only below the bar 5,045
+  (35%); no dish 0.
+* **VERIFICATION PASS (curator: "run the verification pass on the disagreeing band").**
+  Band = un-anchored master rows, match confident, likelyDish ≠ matched dish after
+  folding + alias resolution: **735** (not ~870 — the alias/fold made ~135 of them
+  agreements). Haiku, embedding's 8 nearest + title/likelyDish/cuisine/ingredients,
+  verify-or-NONE; 6 threads, 100 s, `dish_verify_band` operation, ≈$0.40.
+  Results (docs/research/dish-verify-band-2026-11-19.md has every row):
+  - **agree 512 (70%)** — the stored match stands; the "disagreement" is the card being
+    more specific or spelled differently.
+  - **move 36 (5%)** — another catalog dish fits better. Mostly specific-over-generic
+    (Enchiladas → Enchiladas de Pollo ×5, Chicken Kabobs → Souvlaki ×2, Key Lime
+    Cheesecake → Cheesecake, Lasagne alla Bolognese → Lasagna, Pulled Pork, Flourless →
+    Chocolate Cake with 3.5 oz flour). ~8 are arguable or wrong (Spaghetti Squash Salad →
+    Pasta Salad, Vasilopita → Tsoureki, Boneless → Bone-In thighs). NOT applied —
+    curator's list.
+  - **none 187 (25%)** — the recipe is a child/sibling the catalog lacks, filed
+    confidently under its parent: Dinner Rolls under Cinnamon Roll ×3, Croque Monsieur
+    under Croque Madame ×3, Roasted Butternut Squash under the SOUP ×3, Hong Shao Rou
+    under Pork Belly ×3, cupcakes under their cakes, Banana Cake under Banana Bread,
+    Cream Cheese Frosting under Buttercream. 15 suggested dishes have ≥2 rows (34 rows);
+    168 distinct suggestions in all. **The nightly gap report cannot see any of these**
+    — they are inside the bar; the distance distribution of agree and none overlap
+    (both peak at 0.5–0.6), so no threshold separates them. The verifier is the only
+    instrument that does.
+  - Catalog findings the pass surfaced: a DUPLICATE dish pair `Shorabet Adas` /
+    `Shorabet Adas (Lentil Soup)`; a STALE stored name `Pasta & Noodles - Agnolotti`
+    (renamed to `Agnolotti`, `_match.dish` not rewritten); `Steak Tips` exists but a
+    garlic-butter steak-bites recipe sits confidently under Beef Stew (card name differs,
+    so name-exact can't claim it).
+  - Recommendation: make this a scheduled job in the same shape as dish_gap_report —
+    verify only rows whose verdict changed since the last run (new/rematched confident
+    rows with a disagreeing card), mail moves + suggested dishes; apply moves only on
+    curator approval (or auto-apply when the pick is a qualifier-child of the stored
+    dish). Not built; the curator decides.

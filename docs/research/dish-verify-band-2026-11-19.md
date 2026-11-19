@@ -1,0 +1,250 @@
+<!-- Produced by the one-off verification pass (scratchpad verify_band.py), read-only on recipes.db. Verdicts after reclassifying 16 unparsed replies: agree 512 (70%), move 36 (5%), none 187 (25%). Operation dish_verify_band, claude-haiku-4-5, 735 calls. See bcc-state-code.md 2026-11-19 (evening). -->
+
+# Dish verification pass — disagreeing band — 2026-11-19
+
+Un-anchored master rows: 7576. Confident but likelyDish disagrees (alias-aware): **735**.
+Haiku given the embedding's 8 nearest + title / likelyDish / cuisine / ingredients, verify-or-NONE.
+
+| verdict | rows | share |
+|---|---|---|
+| agree with stored match | 501 | 68% |
+| move to another catalog dish | 36 | 5% |
+| none — the dish is not in the catalog | 182 | 25% |
+| unparsed | 16 | |
+
+## Proposed MOVES (stored → pick), by frequency
+
+- **Enchiladas → Enchiladas de Pollo** ×5 — e.g. #3964 'Easy Chicken Enchiladas' (d=0.457); #3977 'Chicken Enchiladas' (d=0.498); #5018 'White Chicken Enchiladas (+Video)' (d=0.59)
+- **Chicken Kabobs → Souvlaki (Greece)** ×2 — e.g. #14763 'Greek Chicken Souvlaki' (d=0.481); #16545 'Chicken Souvlaki With Tzatziki Sauce and Greek Sal' (d=0.256)
+- **Shorabet Adas → Shorabet Adas (Lentil Soup)** ×2 — e.g. #18034 'Egyptian Red Lentil Soup' (d=0.507); #18255 'Lebanese Lentil Soup' (d=0.432)
+- **Boston Baked Beans → Pork and Beans** ×1 — e.g. #1798 'The Best Baked Beans Ever' (d=0.586)
+- **Stuffed Cabbage Rolls → Lahanodolmades** ×1 — e.g. #2017 'Cabbage Rolls' (d=0.57)
+- **Vasilopita → Tsoureki** ×1 — e.g. #2114 'Vassilopita Tsoureki' (d=0.579)
+- **Sponge Cake → Chocolate Cake** ×1 — e.g. #5984 'Chocolate sponge cake' (d=0.553)
+- **Cinnamon Roll → Muffins** ×1 — e.g. #6365 'Cinnamon Roll Muffins' (d=0.558)
+- **Turkey Chili → White Chicken Chili** ×1 — e.g. #7024 'Turkey White Bean Pumpkin Chili' (d=0.583)
+- **White Chicken Chili → Chili** ×1 — e.g. #7601 'Chicken Chili with Sweet Potatoes' (d=0.563)
+- **Bundt Cake → Chocolate Cake** ×1 — e.g. #8906 'The Perfect Chocolate Bundt Cake' (d=0.548)
+- **French Bread → Sourdough Bread** ×1 — e.g. #9043 'Sourdough Baguette Recipe' (d=0.587)
+- **Strawberry Cake → Vanilla Cake** ×1 — e.g. #9373 'Vanilla Almond Cake with Strawberry Filling and Cr' (d=0.572)
+- **Chocolate Cream Pie → Cream Pie** ×1 — e.g. #9457 'Cinnamon Pie Recipe' (d=0.582)
+- **Roasted Brussels Sprouts → Brussels Sprouts** ×1 — e.g. #10599 'Smashed Brussels Sprouts with Parmesan' (d=0.572)
+- **Coq au Vin → Fricassée** ×1 — e.g. #10831 'Creamy tarragon chicken casserole' (d=0.468)
+- **Chocolate Pudding → Chocolate Cream Pie** ×1 — e.g. #10940 'All-Time Favorite Chocolate Pudding and Pie Fillin' (d=0.495)
+- **Pesto → Lasagna** ×1 — e.g. #11101 'Pesto lasagna' (d=0.541)
+- **Bolognese → Lasagna** ×1 — e.g. #11121 'Lasagne alla Bolognese' (d=0.539)
+- **Pizza Dough → Pizza Margherita** ×1 — e.g. #11611 'Easy Neapolitan Pizza Recipe' (d=0.541)
+- **Chicken Thighs - Boneless → Chicken Thighs - Bone In** ×1 — e.g. #12151 'Perfect Pan-Fried Chicken Thighs' (d=0.584)
+- **Pork Shoulder → Pulled Pork** ×1 — e.g. #13009 'Bbq Pulled Pork In The Slow Cooker' (d=0.5)
+- **Apple Pie → Apple Crumble** ×1 — e.g. #12953 'Apple Crumble Pie' (d=0.493)
+- **Flourless Chocolate Cake → Chocolate Cake** ×1 — e.g. #12872 'Grandmère’s Chocolate Cake' (d=0.586)
+- **Pasta & Noodles - Agnolotti → Agnolotti** ×1 — e.g. #13876 'Agnolotti del Plin Recipe' (d=0.527)
+- **Potato Gratin → Gratin Dauphinois** ×1 — e.g. #13902 'Potatoes Au Gratin' (d=0.438)
+- **Key Lime Pie → Cheesecake** ×1 — e.g. #13942 'Key Lime Cheesecake' (d=0.52)
+- **Galette → Pie Crust** ×1 — e.g. #15763 'Galette Dough' (d=0.491)
+- **Apple Crumble → Apple Pie** ×1 — e.g. #19989 'Gluten Free Apple Pie Recipe' (d=0.549)
+- **Spaghetti Squash → Pasta Salad** ×1 — e.g. #21400 'Spaghetti Squash Salad - low carb, gluten-free, AI' (d=0.546)
+
+## NONE — suggested dishes not in the catalog (≥2 rows first)
+
+- **Dinner Rolls** ×3 — e.g. #5580 'Easy Dinner Rolls - Extra Soft!' (stored 'Cinnamon Roll', d=0.597); #6349 'Perfect Soft and Fluffy Dinner Rolls' (stored 'Cinnamon Roll', d=0.582); #16371 'The BEST Dinner Rolls' (stored 'Cinnamon Roll', d=0.583)
+- **Croque Monsieur** ×3 — e.g. #5865 'Classic Croque Monsieur' (stored 'Croque Madame', d=0.482); #9578 'Croque monsieur' (stored 'Croque Madame', d=0.471); #9643 'Croque monsieur' (stored 'Croque Madame', d=0.478)
+- **Roasted Butternut Squash** ×3 — e.g. #7133 'Simple Roasted Butternut Squash' (stored 'Butternut Squash Soup', d=0.516); #11746 'Roasted Butternut Squash' (stored 'Butternut Squash Soup', d=0.527); #14474 'Honey Roasted Butternut Squash' (stored 'Butternut Squash Soup', d=0.537)
+- **Hong Shao Rou** ×3 — e.g. #7898 'Braised Pork Belly (Hong Shao Rou/红烧肉), an E' (stored 'Pork Belly', d=0.394); #15146 'Shanghai-Style Braised Pork Belly (Hong Shao' (stored 'Pork Belly', d=0.413); #20564 'Hong Shao Rou (Red Braised Pork, 红烧肉)' (stored 'Pork Belly', d=0.489)
+- **Spinach Dip** ×2 — e.g. #3533 'Easy Spinach Dip' (stored 'Spinach Artichoke Dip', d=0.58); #17318 'Classic Spinach Dip Recipe' (stored 'Spinach Artichoke Dip', d=0.553)
+- **Mashed Sweet Potatoes** ×2 — e.g. #5079 'Mashed Sweet Potatoes' (stored 'Mashed Potatoes', d=0.555); #10974 'Mashed Sweet Potatoes Recipe' (stored 'Mashed Potatoes', d=0.526)
+- **Dutch Apple Pie** ×2 — e.g. #5573 'Dutch Apple Pie' (stored 'Apple Pie', d=0.556); #9735 'Dutch Apple Pie Recipe' (stored 'Apple Pie', d=0.561)
+- **Chocolate Chip Cookie Bars** ×2 — e.g. #5910 'Chocolate Chip Cookie Bars' (stored 'Chocolate Chip Cookies', d=0.485); #9470 'Salted Caramel Chocolate Chip Cookie Bars' (stored 'Chocolate Chip Cookies', d=0.563)
+- **Strawberry Shortcake** ×2 — e.g. #6271 'Strawberry Shortcake Cake' (stored 'Strawberry Cake', d=0.477); #7717 'Strawberry Shortcake' (stored 'Strawberry Cake', d=0.553)
+- **Oatmeal Raisin Cookies** ×2 — e.g. #6487 'Thick, Chewy Oatmeal Raisin Cookies' (stored 'Oatmeal Cookies', d=0.384); #9617 'Chewy Oatmeal-Raisin Cookies' (stored 'Oatmeal Cookies', d=0.41)
+- **Chicken Soup** ×2 — e.g. #6614 'Easy 5-Ingredient Crockpot Paleo Chicken Sou' (stored 'Chicken Noodle Soup', d=0.597); #7158 'Homemade Chicken Soup' (stored 'Chicken Noodle Soup', d=0.56)
+- **Red Velvet Cupcakes** ×2 — e.g. #9742 'Red Velvet Cupcakes' (stored 'Red Velvet Cake', d=0.427); #18238 'Red Velvet Cupcakes with Cream Cheese Frosti' (stored 'Red Velvet Cake', d=0.436)
+- **Vanilla Cupcakes** ×2 — e.g. #9835 'Vanilla Cupcakes' (stored 'Vanilla Cake', d=0.574); #13789 'Perfect Vanilla Cupcakes' (stored 'Vanilla Cake', d=0.539)
+- **Chicken Katsu** ×2 — e.g. #14310 'Chicken Katsu' (stored 'Japanese Chicken Katsu Curry', d=0.513); #16765 'Chikenkatsu チキンカツ (Crumbed Chicken Cutlet)' (stored 'Japanese Chicken Katsu Curry', d=0.492)
+- **Cream Cheese Frosting** ×2 — e.g. #14743 'Less-Sweet Cream Cheese Frosting' (stored 'Buttercream Frosting', d=0.586); #17113 'Cream Cheese Frosting' (stored 'Buttercream Frosting', d=0.566)
+- **Banana Cake** ×2 — e.g. #17287 'Brown Butter & Labneh Banana Cake' (stored 'Banana Bread', d=0.515); #17637 'Banana Chocolate Chip Cake' (stored 'Banana Bread', d=0.48)
+- **Paella Mixta** ×1 — e.g. #38 'Chicken and Seafood Paella' (stored 'Paella de Mariscos (Seafood Paella)', d=0.586)
+- **Chocolate Banana Bread** ×1 — e.g. #7 'Chocolate Banana Bread' (stored 'Banana Bread', d=0.423)
+- **Fresh Strawberry Pie** ×1 — e.g. #1422 'Fresh Strawberry Pie' (stored 'Strawberry Rhubarb Pie', d=0.596)
+- **Spanakopita Dip** ×1 — e.g. #1870 'Spanakopita Dip' (stored 'Spanakopita', d=0.48)
+- **Keftedes (Greek Ground Beef Kebabs)** ×1 — e.g. #1880 'Greek Ground Beef Kebabs' (stored 'Keftedes (Greek Meatballs)', d=0.583)
+- **Giouvarláκια Avgolemono** ×1 — e.g. #1990 'Giouvarláκια Avgolemono' (stored 'Avgolemono Soup', d=0.599)
+- **Macerated Strawberries** ×1 — e.g. #2006 'Brandy-infused Macerated Strawberries' (stored 'Strawberries  (Fresh)', d=0.437)
+- **Greek Lemon Chicken with Potatoes** ×1 — e.g. #2037 'Greek Lemon Chicken With Potatoes' (stored 'Greek Lemon Roasted Potatoes', d=0.529)
+- **Tsoureki Bread Pudding** ×1 — e.g. #2117 'Ekmek Tsoureki' (stored 'Ekmek Kataifi', d=0.575)
+- **Butternut Squash Velouté Soup** ×1 — e.g. #2129 'Butternut Squash Velouté Soup' (stored 'Butternut Squash Soup', d=0.595)
+- **Fasolakia** ×1 — e.g. #2133 'Green Beans in Olive Oil' (stored 'Fasolada', d=0.589)
+- **Fasolakia Lathera** ×1 — e.g. #2221 'Greek Green Beans-Fasolakia Lathera' (stored 'Fasolada', d=0.581)
+- **Kolokithokeftedes** ×1 — e.g. #2230 'Greek Zucchini Patties with Feta and Herbs -' (stored 'Kolokithopita', d=0.598)
+- **Christmas Salad** ×1 — e.g. #2285 'Christmas Salad' (stored 'Greek Salad', d=0.599)
+- **Prawn Saganaki** ×1 — e.g. #2247 'Prawn Saganaki' (stored 'Shrimp with Tomatoes and Feta', d=0.518)
+- **Paella de Pollo** ×1 — e.g. #2608 'Spanish Paella' (stored 'Paella de Mariscos (Seafood Paella)', d=0.575)
+- **Seafood Chowder** ×1 — e.g. #2907 'Seafood Chowder' (stored 'New England Clam Chowder', d=0.579)
+- **Tuna Melt** ×1 — e.g. #2910 'Classic Tuna Melt' (stored 'Tuna Salad', d=0.529)
+- **Matzo Balls** ×1 — e.g. #2933 'No-Nonsense Matzo Balls' (stored 'Matzo Ball Soup', d=0.483)
+- **Apple Crumb Pie** ×1 — e.g. #2937 'Apple Crumb Pie' (stored 'Apple Pie', d=0.553)
+- **BBQ Brisket** ×1 — e.g. #3400 'Slow Cooker Beef Brisket with BBQ Sauce' (stored 'Braised Brisket', d=0.563)
+- **Beef Birria** ×1 — e.g. #3569 'Beef Birria Recipe (Birra de Res)' (stored 'Birria Tacos', d=0.598)
+- **Cranberry Juice** ×1 — e.g. #3614 'Homemade Cranberry Juice' (stored 'Cranberry Sauce', d=0.557)
+- **Chili con Carne** ×1 — e.g. #3616 'Chili con Carne' (stored 'Chili', d=0.525)
+- **Creole Gumbo** ×1 — e.g. #3995 'Good New Orleans Creole Gumbo' (stored 'Shrimp Gumbo', d=0.542)
+- **Thai Green Curry** ×1 — e.g. #4224 'Authentic Thai Green Curry Chicken' (stored 'Thai Red Curry', d=0.562)
+- **Victoria Sponge Cake** ×1 — e.g. #5071 'Victoria Sponge Cake' (stored 'Sponge Cake', d=0.55)
+- **Lobster and Corn Chowder** ×1 — e.g. #5074 'Recipe for lobster and corn chowder' (stored 'Shrimp and Corn Chowder', d=0.536)
+- **Apple Hand Pies** ×1 — e.g. #5576 'Apple Hand Pies' (stored 'Apple Pie', d=0.558)
+- **Vanilla Cream Pie** ×1 — e.g. #5579 'Vanilla Cream Pie' (stored 'Chocolate Cream Pie', d=0.499)
+- **Artichoke Dip** ×1 — e.g. #5884 'Creamy Artichoke Ranch Dip' (stored 'Spinach Artichoke Dip', d=0.564)
+- **Manhattan Clam Chowder** ×1 — e.g. #5896 'Manhattan Clam Chowder' (stored 'New England Clam Chowder', d=0.538)
+- **Vanilla Pudding** ×1 — e.g. #5917 'Classic Vanilla Pudding' (stored 'Chocolate Pudding', d=0.577)
+- **Tiramisu Cake** ×1 — e.g. #6027 'Tiramisu cake' (stored 'Tiramisu', d=0.472)
+- **Sautéed Zucchini and Summer Squash** ×1 — e.g. #6367 'Simple Skillet Zucchini and Yellow Squash' (stored 'Zucchini', d=0.545)
+- **Yellow Cake with Chocolate Frosting** ×1 — e.g. #6419 'Yellow Cake with Chocolate Frosting' (stored 'Chocolate Cake', d=0.514)
+- **Vegetable Pot Pie** ×1 — e.g. #6421 'Vegetable Pot Pie' (stored 'Chicken Pot Pie', d=0.457)
+- **Blueberry Crumb Bars** ×1 — e.g. #6475 'Blueberry Crumb Bars' (stored 'Blueberry Crumble', d=0.552)
+- **Chicken Corn Chowder** ×1 — e.g. #6507 'Easy Chicken Corn Chowder' (stored 'Corn Chowder', d=0.513)
+- **Mongolian Beef Udon Noodles** ×1 — e.g. #6521 "Mongolian Beef Udon Noodles recipe | Marion'" (stored 'Mongolian Beef', d=0.576)
+- **Sichuan Eggplant** ×1 — e.g. #6616 'Hot & Numbing Spicy Sichuan Eggplant | Mario' (stored 'Chinese Eggplant', d=0.472)
+- **Pumpkin Spice Cake** ×1 — e.g. #6731 'Pumpkin Spice Latte Cake' (stored 'Pumpkin Bread', d=0.56)
+- **Baked Pasta with Spinach and Feta** ×1 — e.g. #6747 'Baked Spanakopita Pasta with Greens and Feta' (stored 'Spanakopita', d=0.568)
+- **Coleslaw Dressing** ×1 — e.g. #7119 'Easy Coleslaw Dressing' (stored 'Coleslaw', d=0.5)
+- **Victoria Sponge** ×1 — e.g. #7202 'Classic Victoria sandwich recipe' (stored 'Sponge Cake', d=0.55)
+- **Fruit Crumble** ×1 — e.g. #7269 'Apple & blackberry crumble' (stored 'Apple Crumble', d=0.591)
+- **Brussels Sprouts with Bacon** ×1 — e.g. #7372 'Brussels Sprouts and Bacon Recipe' (stored 'Roasted Brussels Sprouts', d=0.536)
+- **Creamy Spinach and Artichoke Pasta** ×1 — e.g. #7595 'Spinach & Artichoke Dip Pasta' (stored 'Spinach Artichoke Dip', d=0.567)
+- **Butter and Sage Sauce** ×1 — e.g. #8097 'Butter and Sage Sauce' (stored 'Brown Butter and Sage Sauce', d=0.48)
+- **Chocolate Chip Oatmeal Cookies** ×1 — e.g. #8243 'Chocolate Chip Oatmeal Cookies' (stored 'Chocolate Chip Cookies', d=0.536)
+- **Chocolate Mousse Cake** ×1 — e.g. #8389 'Easy Chocolate Mousse Cake Recipe' (stored 'Chocolate Mousse', d=0.569)
+- **Red Velvet Cookies** ×1 — e.g. #8395 'CRUMBL COPYCAT RED VELVET COOKIES RECIPE' (stored 'Red Velvet Cake', d=0.5)
+- **Apple Pie Bars** ×1 — e.g. #8419 "Ina Garten's Apple Pie Bars" (stored 'Apple Pie', d=0.533)
+- **Red Velvet Cake Ice Cream** ×1 — e.g. #8426 'Red Velvet Cake Ice Cream' (stored 'Red Velvet Cake', d=0.537)
+- **Honey Pie** ×1 — e.g. #8422 'Salty Honey Pie' (stored 'Cream Pie', d=0.595)
+- **Fish Chowder** ×1 — e.g. #8432 'Fish Chowder' (stored 'New England Clam Chowder', d=0.577)
+- **Rhubarb Custard Pie** ×1 — e.g. #8507 'Quick and Easy Rhubarb Custard Pie' (stored 'Strawberry Rhubarb Pie', d=0.555)
+- **Vanilla Cupcake** ×1 — e.g. #8793 'Single Serve Vanilla Cupcake' (stored 'Vanilla Cake', d=0.553)
+- **Chicken Parmesan** ×1 — e.g. #9150 'Crispy Chicken Parmesan' (stored 'Chicken Parmigiana', d=0.437)
+- **Creamy Parmesan Chicken with Bacon** ×1 — e.g. #9159 'Creamy Parmesan Carbonara Chicken' (stored 'Chicken Piccata', d=0.43)
+- **Hamburger Stew** ×1 — e.g. #9225 'Slow Cooker Hamburger Stew' (stored 'Beef Stew', d=0.533)
+- **Roasted Brussels Sprouts with Bacon** ×1 — e.g. #9384 'Oven Roasted Brussels Sprouts with Bacon' (stored 'Roasted Brussels Sprouts', d=0.474)
+- **Roasted Corn on the Cob** ×1 — e.g. #9425 'Oven-Roasted Corn on the Cob' (stored 'Grilled Corn on the Cob', d=0.442)
+- **Chicken Potato Soup** ×1 — e.g. #9436 'Chicken Potato Soup (Crockpot)' (stored 'Potato Soup', d=0.543)
+- **Lemon Cookies** ×1 — e.g. #9483 'Lemon Bar Cookie Cups' (stored 'Lemon Bars', d=0.59)
+- **Chipotle Chicken** ×1 — e.g. #9701 'Copycat Chipotle Chicken Recipe' (stored 'Chicken Thighs - Boneless', d=0.592)
+- **Belgian Waffles** ×1 — e.g. #9798 'Belgian Waffles (Liege Waffles / Gaufre de L' (stored 'Waffles', d=0.429)
+- **Fruit Tart** ×1 — e.g. #9844 'Fruit Tart' (stored 'Plum Tart', d=0.579)
+- **Buttermilk Berry Muffins** ×1 — e.g. #9850 'Buttermilk Berry Muffins' (stored 'Blueberry Muffins', d=0.569)
+- **Carrot Cupcakes** ×1 — e.g. #9852 'Carrot Cupcakes' (stored 'Carrot Cake', d=0.572)
+- **Tiramisu Ice Cream Cake** ×1 — e.g. #9867 'Tiramisu Ice Cream Cake Recipe' (stored 'Tiramisu', d=0.516)
+- **Oatmeal Lace Cookies** ×1 — e.g. #9939 'Oatmeal Lace Cookies Recipe' (stored 'Oatmeal Cookies', d=0.476)
+- **Cherry Strudel** ×1 — e.g. #9890 'Sour Cherry Strudel' (stored 'Apple Strudel', d=0.597)
+- **Baked Beans** ×1 — e.g. #9951 'Southern Baked Beans Recipe' (stored 'Boston Baked Beans', d=0.531)
+- **Mashed Cauliflower** ×1 — e.g. #10481 'Cauliflower Mashed Potatoes' (stored 'Roasted Cauliflower', d=0.599)
+- **Chicken and Rice Soup** ×1 — e.g. #10701 'Easy Chicken and Rice Soup' (stored 'Chicken and Rice', d=0.577)
+- **Blackberry and Apple Crumble** ×1 — e.g. #10809 'Blackberry and apple crumble' (stored 'Apple Crumble', d=0.545)
+- **Whole Wheat Bread** ×1 — e.g. #10878 'Classic 100% Whole Wheat Bread' (stored 'White Bread', d=0.574)
+- **Ham and Beans** ×1 — e.g. #10956 'Old-Fashioned Ham and Beans' (stored 'Ham and Bean Soup', d=0.518)
+- **Pecan Pie Balls** ×1 — e.g. #10929 'Pecan Pie Balls' (stored 'Pecan Pie', d=0.557)
+- **Chicken and Corn Chowder** ×1 — e.g. #11405 'Slow Cooker Chicken and Corn Chowder' (stored 'Corn Chowder', d=0.564)
+- **French Toast Muffins** ×1 — e.g. #11537 'Baked French Toast Muffins' (stored 'French Toast', d=0.587)
+- **Chocolate Zucchini Bread** ×1 — e.g. #11540 'Chocolate Zucchini Bread' (stored 'Zucchini Bread', d=0.518)
+- **Salmon Puttanesca** ×1 — e.g. #11678 'Salmon puttanesca' (stored 'Puttanesca', d=0.593)
+- **Steak Tips** ×1 — ALREADY a catalog dish/alias → 'Steak Tips' (name-exact should claim it) — e.g. #11953 'Slow Cooker Garlic Butter Steak Bites (+Vide' (stored 'Beef Stew', d=0.56)
+- **Cupcakes** ×1 — e.g. #12368 'Cannoli Cupcake Recipe' (stored 'Cannoli', d=0.492)
+- **Ground Beef Bulgogi** ×1 — e.g. #13089 'Easy Korean Ground Beef Recipe' (stored 'Bulgogi', d=0.594)
+- **Texas Beef Brisket** ×1 — e.g. #13107 'Texas Beef Brisket' (stored 'Braised Brisket', d=0.587)
+- **Birria** ×1 — e.g. #13627 'Authentic Birria' (stored 'Birria Tacos', d=0.597)
+- **Pozole Verde** ×1 — e.g. #13630 'Pozole Verde' (stored 'Pozole', d=0.573)
+- **Yellow Cake** ×1 — e.g. #13684 'Yellow Cake' (stored 'Vanilla Cake', d=0.576)
+- **Zucchini Cake** ×1 — e.g. #13693 'Lemon Blueberry Zucchini Cake' (stored 'Zucchini Bread', d=0.595)
+- **Burrito** ×1 — e.g. #13842 'The Easiest Burrito Recipe' (stored 'Burrito Bowl', d=0.521)
+- **Tagliatelle alla Bolognese** ×1 — e.g. #13875 'Tagliatelle alla Bolognese Recipe' (stored 'Bolognese', d=0.564)
+- **Oatmeal Chocolate Chip Cookies** ×1 — e.g. #14192 'Oatmeal Chocolate Chip Cookies' (stored 'Oatmeal Cookies', d=0.494)
+- **Banana Chocolate Chip Muffins** ×1 — e.g. #14195 'Banana Chocolate Chip Muffins' (stored 'Banana Muffins', d=0.461)
+- **Coffee Cake** ×1 — e.g. #14208 'Coffee Cake Recipe' (stored 'Chocolate Cake', d=0.567)
+- **Fruit Crisp** ×1 — e.g. #14456 'Fruit Crisp' (stored 'Apple Crisp', d=0.592)
+- **Mediterranean Chicken Skillet** ×1 — e.g. #14484 'Mediterranean Chicken Skillet' (stored 'Chicken Piccata', d=0.518)
+- **Crispy Baked Chicken Cutlets** ×1 — e.g. #14477 'Crispy Baked Chicken Cutlets' (stored 'Chicken Parmigiana', d=0.521)
+- **Chicken Pot Pie Soup** ×1 — e.g. #14566 'Instant Pot Chicken Pot Pie Soup' (stored 'Chicken Pot Pie', d=0.586)
+- **Blueberry Banana Bread** ×1 — e.g. #14574 'Blueberry Banana Bread' (stored 'Banana Bread', d=0.582)
+- **Corn on the Cob** ×1 — e.g. #14643 'Microwave Corn on the Cob' (stored 'Grilled Corn on the Cob', d=0.586)
+- **White Bean Chili** ×1 — e.g. #14667 'Vegan White Bean Chili' (stored 'White Chicken Chili', d=0.584)
+- **Peanut Butter Oatmeal Cookies** ×1 — e.g. #14692 'Cinnamon Peanut Butter Oatmeal Raisin Cookie' (stored 'Oatmeal Cookies', d=0.547)
+- **Chicken Chili** ×1 — e.g. #14804 'Healthy Chicken Chili' (stored 'White Chicken Chili', d=0.546)
+- **Seafood Corn Chowder** ×1 — e.g. #14866 'Seafood Corn Chowder' (stored 'Shrimp and Corn Chowder', d=0.504)
+- **Lima Bean Soup** ×1 — e.g. #14894 'Baby Lima Bean Soup' (stored 'Minestrone Soup', d=0.407)
+- **Chow Mei Fun** ×1 — e.g. #15203 'Easy Chow Mei Fun' (stored 'Xiamen Chow Mei Fun', d=0.46)
+- **Char Siu Bao** ×1 — e.g. #15123 'Chinese BBQ Pork Buns (Baked Char Siu Bao)' (stored 'Chinese BBQ Pork', d=0.544)
+- **General Tso's Tofu** ×1 — e.g. #16228 "General Tso's Tofu Stir-Fry" (stored 'General Tso’s Chicken', d=0.589)
+- **Spaghetti Aglio Olio e Peperoncino** ×1 — e.g. #16263 'Spaghetti aglio olio e peperoncino' (stored 'Aglio e Olio', d=0.538)
+- **Potato-Leek Gratin** ×1 — e.g. #16453 'Potato-Leek Gratin' (stored 'Potato Gratin', d=0.472)
+- **Blackberry Muffins** ×1 — e.g. #16464 'Blackberry Muffins' (stored 'Blueberry Muffins', d=0.538)
+- **Cajun Corn on the Cob** ×1 — e.g. #16983 'Cajun Corn on the Cob' (stored 'Grilled Corn on the Cob', d=0.543)
+- **Honey Soy Chicken** ×1 — e.g. #17232 'Honey Soy Chicken' (stored 'Honey Garlic Chicken', d=0.558)
+- **Thai Shrimp Noodle Soup** ×1 — e.g. #17403 'Pad Thai Soup with Shrimps and Vegetables' (stored 'Pad Thai', d=0.591)
+- **Mushroom Bourguignon** ×1 — e.g. #17404 'Mushroom Bourguignon' (stored 'Beef Bourguignon', d=0.57)
+- **Creamy Parmesan Garlic Chicken** ×1 — e.g. #17435 'Creamy Parmesan Garlic Chicken' (stored 'Chicken Piccata', d=0.43)
+- **Corn and Poblano Chowder** ×1 — e.g. #17459 'Sweet Corn & Poblano Chowder with Old Bay To' (stored 'Corn Chowder', d=0.544)
+- **Chickpea Shawarma Sandwich** ×1 — e.g. #17592 'Chickpea Shawarma Stuffed Pita' (stored 'Chicken Shawarma', d=0.551)
+- **Clam Chowder (Rhode Island)** ×1 — e.g. #17716 'Clear Broth Clam Chowder' (stored 'New England Clam Chowder', d=0.468)
+- **Red Velvet Cake Donuts** ×1 — e.g. #18396 'Red Velvet Cake Donuts' (stored 'Red Velvet Cake', d=0.589)
+- **Creamy Spinach Dip** ×1 — e.g. #18393 'Creamy Spinach Dip' (stored 'Spinach Artichoke Dip', d=0.595)
+- **Oven-Baked Brisket** ×1 — e.g. #18427 'Oven-Baked Beef Brisket' (stored 'Braised Brisket', d=0.529)
+- **Chicken Alfredo** ×1 — e.g. #18457 'Chicken Alfredo' (stored 'Fettuccine Alfredo', d=0.564)
+- **Pumpkin Pie Bars** ×1 — e.g. #18482 'Pumpkin Pie Bars with Shortbread Crust' (stored 'Pumpkin Pie', d=0.5)
+- **Chicken Parmesan Pasta** ×1 — e.g. #18484 'One Pot Chicken Parmesan Pasta' (stored 'Chicken Parmigiana', d=0.561)
+- **Chicken Fettuccine Alfredo** ×1 — e.g. #18708 'Chicken Fettuccine Alfredo' (stored 'Fettuccine Alfredo', d=0.534)
+- **Brownie Pudding** ×1 — e.g. #18703 'Brownie Pudding' (stored 'Chocolate Pudding', d=0.559)
+- **Boiled Corn on the Cob** ×1 — e.g. #19941 'How To Boil Corn On The Cob (Quick & Easy!)' (stored 'Grilled Corn on the Cob', d=0.56)
+- **Hot Artichoke Dip** ×1 — e.g. #19966 'The Best Hot Artichoke Dip' (stored 'Spinach Artichoke Dip', d=0.542)
+- **Pumpkin Pie Cupcakes** ×1 — e.g. #19979 'Gluten-Free Crustless Pumpkin Pie Cupcakes (' (stored 'Pumpkin Pie', d=0.503)
+- **Seekh Kebabs** ×1 — e.g. #20124 'Seekh Kebabs' (stored 'Lamb Kabobs', d=0.568)
+- **Bread and Butter Pudding** ×1 — e.g. #20207 'Bread and butter pudding' (stored 'Bread Pudding', d=0.494)
+- **Candy Cookies** ×1 — e.g. #20289 'Leftover Halloween Candy Cookie Dough' (stored 'Sugar Cookies', d=0.558)
+- **Wontons** ×1 — e.g. #20533 "Dad's Wontons: The Chinese Restaurant Way" (stored 'Wonton Soup', d=0.535)
+- **Yu Xiang Eggplant** ×1 — e.g. #20553 'Yu Xiang Eggplant (鱼香茄子, Sichuan Eggplant St' (stored 'Chinese Eggplant', d=0.59)
+- **Chicken and Broccoli** ×1 — e.g. #20557 'Chicken and Broccoli (Chinese Takeout Style)' (stored 'Beef and Broccoli', d=0.569)
+- **Chinese Eggplants with Minced Pork** ×1 — e.g. #20599 'Chinese Eggplants with Minced Pork' (stored 'Chinese Eggplant', d=0.529)
+- **Carrot Cake Bars** ×1 — e.g. #20864 'Carrot Cake Bars' (stored 'Carrot Cake', d=0.554)
+- **Shrimp Fried Rice** ×1 — e.g. #20902 'Shrimp Fried Rice Recipe' (stored 'Fried Rice', d=0.568)
+- **Root Vegetable Gratin** ×1 — e.g. #20953 'Rutabaga, Celery Root, and Potato Gratin' (stored 'Gratin Dauphinois', d=0.474)
+- **Tonkotsu Ramen Broth** ×1 — e.g. #20999 'tonkotsu ramen broth at home' (stored 'Tonkotsu Ramen', d=0.42)
+- **Baked Spaghetti Alfredo** ×1 — e.g. #21425 'Spaghetti Alfredo Casserole' (stored 'Spaghetti and Meatballs', d=0.591)
+- **Vegetarian Pot Pie** ×1 — e.g. #21441 'Easy Vegetarian Chickpea Pot Pie Recipe' (stored 'Chicken Pot Pie', d=0.538)
+
+## All MOVE rows
+
+- #16545 'Chicken Souvlaki With Tzatziki Sauce and Greek Salad Recipe': 'Chicken Kabobs' → 'Souvlaki (Greece)' (d=0.256, d2=0.549; card says 'Chicken Souvlaki') — Recipe explicitly names souvlaki; includes tzatziki and Greek salad components
+- #18255 'Lebanese Lentil Soup': 'Shorabet Adas' → 'Shorabet Adas (Lentil Soup)' (d=0.432, d2=0.447; card says 'Shorbet Adas (Lebanese Lentil Soup)') — Recipe is authentic Lebanese lentil soup with turmeric, cumin, rice
+- #13902 'Potatoes Au Gratin': 'Potato Gratin' → 'Gratin Dauphinois' (d=0.438, d2=0.715; card says 'Potatoes Au Gratin') — Cream, garlic, potato layers, cheese topping
+- #3964 'Easy Chicken Enchiladas': 'Enchiladas' → 'Enchiladas de Pollo' (d=0.457, d2=0.51; card says 'Chicken Enchiladas') — Recipe is specifically chicken enchiladas, most specific match
+- #10831 'Creamy tarragon chicken casserole': 'Coq au Vin' → 'Fricassée' (d=0.468, d2=0.911; card says 'Coq au Vin (tarragon variant)') — Creamy sauce, tarragon, no red wine, white wine base
+- #14763 'Greek Chicken Souvlaki': 'Chicken Kabobs' → 'Souvlaki (Greece)' (d=0.481, d2=0.581; card says 'Greek Chicken Souvlaki') — Recipe explicitly named souvlaki; Greek marinade with lemon, oregano, garlic
+- #15763 'Galette Dough': 'Galette' → 'Pie Crust' (d=0.491, d2=0.876; card says 'Galette Dough') — This is dough, not finished galette dish
+- #12953 'Apple Crumble Pie': 'Apple Pie' → 'Apple Crumble' (d=0.493, d2=0.522; card says 'Apple Crumble Pie') — Has crumble topping with walnuts and butter
+- #10940 'All-Time Favorite Chocolate Pudding and Pie Filling': 'Chocolate Pudding' → 'Chocolate Cream Pie' (d=0.495, d2=0.579; card says 'Chocolate Pudding Pie') — Recipe explicitly includes pie crust; it's cream pie filling
+- #3977 'Chicken Enchiladas': 'Enchiladas' → 'Enchiladas de Pollo' (d=0.498, d2=0.56; card says 'Chicken Enchiladas') — Recipe specifies chicken with enchilada sauce, tortillas
+- #7030 'Chicken Enchilada Recipe': 'Enchiladas' → 'Enchiladas de Pollo' (d=0.5, d2=0.528; card says 'Chicken Enchiladas') — Chicken-specific enchilada with chipotle adobo sauce
+- #13009 'Bbq Pulled Pork In The Slow Cooker': 'Pork Shoulder' → 'Pulled Pork' (d=0.5, d2=0.508; card says 'BBQ Pulled Pork') — Recipe specifically makes pulled pork via slow cooker
+- #18034 'Egyptian Red Lentil Soup': 'Shorabet Adas' → 'Shorabet Adas (Lentil Soup)' (d=0.507, d2=0.56; card says 'Shorbat Adas (Egyptian Red Lentil Soup)') — Recipe is Egyptian red lentil soup, most specific candidate match
+- #13942 'Key Lime Cheesecake': 'Key Lime Pie' → 'Cheesecake' (d=0.52, d2=0.683; card says 'Key Lime Cheesecake') — Uses cream cheese base with eggs and vanilla, not key lime pie
+- #13876 'Agnolotti del Plin Recipe': 'Pasta & Noodles - Agnolotti' → 'Agnolotti' (d=0.527, d2=0.842; card says 'Agnolotti del Plin') — Recipe is agnolotti variant with pinched edges specialty
+- #11121 'Lasagne alla Bolognese': 'Bolognese' → 'Lasagna' (d=0.539, d2=0.572; card says 'Lasagne alla Bolognese') — Recipe makes fresh spinach pasta sheets for layering
+- #14448 'Chicken Enchiladas': 'Enchiladas' → 'Enchiladas de Pollo' (d=0.539, d2=0.59; card says 'Chicken Enchiladas') — Chicken-filled tortillas with cream sauce and cheese
+- #11101 'Pesto lasagna': 'Pesto' → 'Lasagna' (d=0.541, d2=0.749; card says 'Pesto Lasagna') — Recipe contains pasta sheets, béchamel, cheese layers, pesto
+- #11611 'Easy Neapolitan Pizza Recipe': 'Pizza Dough' → 'Pizza Margherita' (d=0.541, d2=0.612; card says 'Neapolitan Pizza') — Recipe is Neapolitan pizza with mozzarella, basil, tomato sauce
+- #21400 'Spaghetti Squash Salad - low carb, gluten-free, AIP': 'Spaghetti Squash' → 'Pasta Salad' (d=0.546, d2=0.825; card says 'Spaghetti Squash Salad') — Cold salad with vegetables, herbs, dressing prepared
+- #8906 'The Perfect Chocolate Bundt Cake': 'Bundt Cake' → 'Chocolate Cake' (d=0.548, d2=0.658; card says 'Chocolate Bundt Cake') — Chocolate-forward cake with cocoa, not plain Bundt
+- #19989 'Gluten Free Apple Pie Recipe': 'Apple Crumble' → 'Apple Pie' (d=0.549, d2=0.556; card says 'Apple Crumble Pie') — Recipe has pie crust, apples, filling; not crumble topping
+- #5984 'Chocolate sponge cake': 'Sponge Cake' → 'Chocolate Cake' (d=0.553, d2=0.756; card says 'Chocolate Sponge Cake') — Recipe is specifically chocolate sponge, not plain sponge cake
+- #6365 'Cinnamon Roll Muffins': 'Cinnamon Roll' → 'Muffins' (d=0.558, d2=0.69; card says 'Cinnamon Roll Muffins') — Baked in muffin cups with cinnamon-brown sugar swirl filling
+- #7601 'Chicken Chili with Sweet Potatoes': 'White Chicken Chili' → 'Chili' (d=0.563, d2=0.633; card says 'Chicken Chili') — Sweet potato and green bell pepper disqualify White Chili variant
+- #2017 'Cabbage Rolls': 'Stuffed Cabbage Rolls' → 'Lahanodolmades' (d=0.57, d2=0.784; card says 'Cabbage Rolls') — Greek cabbage rolls with beef, rice, herbs, traditional dish
+- #9373 'Vanilla Almond Cake with Strawberry Filling and Cream Cheese': 'Strawberry Cake' → 'Vanilla Cake' (d=0.572, d2=0.719; card says 'Vanilla Cake with Strawberry Filling and Cream Cheese Frosting') — Almond-vanilla cake base with strawberry filling primary
+- #10599 'Smashed Brussels Sprouts with Parmesan': 'Roasted Brussels Sprouts' → 'Brussels Sprouts' (d=0.572, d2=0.587; card says 'Smashed Brussels Sprouts') — Smashed preparation differs from roasted; general category fits
+- #2114 'Vassilopita Tsoureki': 'Vasilopita' → 'Tsoureki' (d=0.579, d2=0.874; card says "Vassilopita (Greek New Year's Bread)") — Sweet yeast bread with orange, mahleb, mastiha, cardamom
+- #9457 'Cinnamon Pie Recipe': 'Chocolate Cream Pie' → 'Cream Pie' (d=0.582, d2=0.598; card says 'Cinnamon Cream Pie') — Cinnamon cream pie variant; no chocolate present
+- #7024 'Turkey White Bean Pumpkin Chili': 'Turkey Chili' → 'White Chicken Chili' (d=0.583, d2=0.646; card says 'White Bean Chili') — White beans, pumpkin, green chile define this
+- #12151 'Perfect Pan-Fried Chicken Thighs': 'Chicken Thighs - Boneless' → 'Chicken Thighs - Bone In' (d=0.584, d2=0.602; card says 'Pan-Fried Chicken Thighs') — Recipe doesn't specify boneless; pan-frying suggests bone-in
+- #1798 'The Best Baked Beans Ever': 'Boston Baked Beans' → 'Pork and Beans' (d=0.586, d2=0.624; card says 'Baked Beans') — Uses canned pork and beans, not dried. Barbecue-style.
+- #12872 'Grandmère’s Chocolate Cake': 'Flourless Chocolate Cake' → 'Chocolate Cake' (d=0.586, d2=0.621; card says 'Chocolate Cake (French-style molten centre)') — Contains 3.5oz flour; not flourless cake
+- #9043 'Sourdough Baguette Recipe': 'French Bread' → 'Sourdough Bread' (d=0.587, d2=0.689; card says 'Sourdough Baguette') — Uses sourdough starter and levain; baguette shape variant
+- #5018 'White Chicken Enchiladas (+Video)': 'Enchiladas' → 'Enchiladas de Pollo' (d=0.59, d2=0.602; card says 'White Chicken Enchiladas') — White sauce, chicken filling, rolled tortillas explicitly
