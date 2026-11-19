@@ -2573,11 +2573,11 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         <section class="form-section">
           <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Equipment
             <button type="button" class="derive-btn" onclick="shopEquipment(this)"
-              title="Match each tool to a Williams-Sonoma product category and show shoppable picks"
+              title="Match each tool to one of our product classes and show the catalog picks in it"
               style="font-size:.72rem;font-weight:600;padding:4px 11px;border:1px solid var(--border,#e2dbd0);border-radius:999px;background:var(--accent-soft,#f4ece6);color:var(--accent,#b8602a);cursor:pointer">🛒 Shop the tools</button>
           </h3>
           <ul class="ingredient-list" id="equipmentList"></ul>
-          <!-- Equipment -> WS product_class matches (GET /recipes/{id}/equipment-products). -->
+          <!-- Equipment -> OUR product_classes (GET /recipes/{id}/equipment-products). -->
           <div id="equipmentShop" style="margin-top:10px"></div>
         </section>
 
@@ -6637,11 +6637,20 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           out.innerHTML = '<div style="color:var(--muted);font-size:.88em;padding:6px 8px">No close matches in our collection yet.</div>';
           return;
         }
+        // The dish is the SEARCH CRITERION — every row in a dish-anchored
+        // answer shares it, so printing it per row said the same thing six
+        // times and left out what differs: WHERE each recipe comes from.
+        // Per row: the source site (og:site_name, else the bare host), then
+        // grade and rank. The dish is shown only when the rows disagree on it
+        // (the vector fallback can mix dishes).
+        const dishes = new Set(rows.map(r => r.dish).filter(Boolean));
+        const showDish = dishes.size > 1;
         out.innerHTML = rows.map(r => {
           const thumb = r.preview_image
             ? `<img src="${esc(r.preview_image)}" alt="" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex:0 0 auto">`
             : `<span style="width:46px;height:46px;border-radius:8px;background:var(--bg);flex:0 0 auto"></span>`;
-          const meta = [r.dish, r.grade ? `grade ${r.grade}` : null, (r.rank_score != null ? `rank ${r.rank_score}` : null)]
+          const site = r.site_name || r.source_host || '';
+          const meta = [site, showDish ? r.dish : null, r.grade ? `grade ${r.grade}` : null, (r.rank_score != null ? `rank ${r.rank_score}` : null)]
             .filter(Boolean).join(' · ');
           return `<a href="${esc(r.bcc_url)}" target="_blank" rel="noopener"
               style="display:flex;align-items:center;gap:11px;padding:7px 8px;border-radius:9px;text-decoration:none;color:inherit">
@@ -7211,6 +7220,17 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       input.value = _eqName;
       const _eqSize = (value && typeof value === 'object' && value.size) ? value.size : null;
       if (_eqSize) li.dataset.eqSize = JSON.stringify(_eqSize);
+      // `product_class` = OUR taxonomy key, stamped at extract time (one step with the
+      // name). Stashed like size so it survives edit + save; dropped if the curator
+      // retypes the tool to something else — a key must not outlive the name it was
+      // given for. getEquipment reads it back.
+      const _eqClass = (value && typeof value === 'object' && value.product_class) ? value.product_class : null;
+      if (_eqClass) { li.dataset.eqClass = _eqClass; li.dataset.eqName = _eqName; }
+      input.addEventListener('input', () => {
+        if (li.dataset.eqClass && input.value.trim() !== (li.dataset.eqName || '')) {
+          delete li.dataset.eqClass; delete li.dataset.eqName;
+        }
+      });
       const insertBtn = li.querySelector('.insert');
       const deleteBtn = li.querySelector('.delete');
 
@@ -7394,9 +7414,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       }
     }
 
-    // 🛒 Shop the tools — match each equipment item to a Williams-Sonoma product category
-    // (GET /recipes/{id}/equipment-products; the ws_categories embeddings) and show the
-    // matched class + a few real product picks. Needs the recipe SAVED (matches by id).
+    // 🛒 Shop the tools — match each equipment item to one of OUR product classes
+    // (GET /recipes/{id}/equipment-products; the product_classes registry, family
+    // 'equipment' — curator 2026-11-19: our taxonomy, not the Williams-Sonoma paths)
+    // and show the class + the catalog picks in it. Needs the recipe SAVED (matches by id).
     async function shopEquipment(btn) {
       const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
       const rid = (document.getElementById('recipe_id')?.value || '').trim();
@@ -7416,11 +7437,14 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           out.innerHTML = '<div style="font-size:.82rem;color:var(--muted,#8a7f72)">No confident product matches yet.</div>';
         } else {
           out.innerHTML = rows.map(m => {
-            const samp = m.products_sample ? m.products_sample.split('; ').slice(0, 3).join(' · ') : '';
+            const picks = (m.catalog_products || []).slice(0, 3)
+              .map(p => [p.brand, p.name].filter(Boolean).join(' ').trim() || p.name).filter(Boolean);
+            const n = m.products_count || 0;
+            const count = n ? `${n} product${n === 1 ? '' : 's'} in class` : 'no products in this class yet';
             return `<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-soft,#efe9e1)">`
               + `<span style="flex:0 0 42%;font-weight:600">${_esc(m.equipment)}${m.size ? ` <span style="font-weight:400;color:var(--muted,#8a7f72)">(${_esc(m.size)})</span>` : ''}</span>`
-              + `<span style="flex:1">→ <strong>${_esc(m.ws_path)}</strong>`
-              + (samp ? `<div style="font-size:.78rem;color:var(--muted,#8a7f72);margin-top:2px">${_esc(samp)}</div>` : '')
+              + `<span style="flex:1">→ <strong>${_esc(m.class_name)}</strong> <span style="font-size:.76rem;color:var(--muted,#8a7f72)">${_esc(count)}</span>`
+              + (picks.length ? `<div style="font-size:.78rem;color:var(--muted,#8a7f72);margin-top:2px">${_esc(picks.join(' · '))}</div>` : '')
               + `</span></div>`;
           }).join('');
         }
@@ -7440,6 +7464,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         if (!name) return null;
         const item = { "@type": "HowToTool", name };
         if (li.dataset.eqSize) { try { item.size = JSON.parse(li.dataset.eqSize); } catch (e) {} }
+        if (li.dataset.eqClass) item.product_class = li.dataset.eqClass;   // our taxonomy key
         return item;   // carry the stashed size (product-commerce class grain) through save
       }).filter(Boolean);
     }

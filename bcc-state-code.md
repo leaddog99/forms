@@ -12607,3 +12607,102 @@ cache bump). The seed to the new Drive folder was still running at the time of w
   `/`, `/play` 200, unauth collections 401, no traceback. The WIP resumes with `git
   stash pop` — and must not be restarted into the service until 0049 is committed AND
   applied (`alembic upgrade head`) in the same step.
+
+## Session 2026-11-19 — equipment carries OUR taxonomy key (one step); "Shop the tools" on our classes; nightly below-the-bar notice with suggested dishes; the dish-match assessment
+
+Curator's agenda, in the order asked, all shipped in this session (service restart at the
+end). These are structural: the recipe record gains a field, two extraction prompts change,
+a scheduled job is added, name folding changes.
+
+* **"Top recipes like this" rows now show the SOURCE SITE, not the dish six times.**
+  `_master_result_row` adds `site_name` (og:site_name) and `source_host` (bare host);
+  the form prints site · grade · rank per row and the dish ONLY when the rows disagree on
+  it (the vector fallback can mix dishes; the dish-anchored answer never does).
+* **"Shop the tools" = OUR product classes, not Williams-Sonoma's paths.**
+  `/recipes/{id}/equipment-products` now classifies into `product_classes` (family
+  `equipment`, 127 classes) via `equipment_match.match_recipe_equipment_classes` — same
+  shape as the WS path (LLM into the list, one batched Haiku call per recipe, per-term
+  cache `tool_class_map`), but the cache carries a TAXONOMY SIGNATURE (count + latest
+  updated_at of the equipment classes) so a class the curator adds/renames re-asks every
+  cached term on the next click, no manual clear. Products attach directly
+  (`category_link.products_for_class`, `products.product_class = name`); the WS map and
+  `/ws-categories` stay for the taxonomy tester. How classes cascade to collections is a
+  later step (curator). Measured: 'whisk' → Whisk (3 picks), 'spatula' → Spatulas (0
+  products), 'medium bowl' → none; 'large skillet' first came back NONE, so the prompt now
+  says synonyms are one tool (skillet = Frying Pans, sheet tray = Sheet Pan).
+* **ONE STEP: equipment is named by the taxonomy AND carries the key at extraction**
+  (curator: "instead of two step make it one!!" — "the taxonomy key directly in the
+  recipe … the entry into DPI which returns the product selections at run time").
+  - `recipe_model.Tool.product_class: Optional[str]` — the registry key
+    (`product_classes.name`). The five edges: model ✔, both extraction prompts ✔, save
+    (RecipeModel round-trip verified keeps it) ✔, form (`addEquipment` stashes
+    `dataset.eqClass`, `getEquipment` writes it back; retyping the tool name DROPS the key
+    — a key must not outlive the name it was given for) ✔, shop panel ✔.
+  - `class_registry.equipment_vocabulary(db_path)` / `equipment_vocabulary_block()` — the
+    class list + the one rule, read from the DB at call time (no data in code; a new
+    class is in the next extract's prompt). ~2.5k chars / 127 names.
+  - `extract/markdown_to_recipe.py`: the static SYSTEM_PROMPT (cacheable prefix,
+    EXTRACT_PROMPT_VERSION flips once) now describes `product_class`; the vocabulary block
+    is appended at call time AFTER the static prompt and BEFORE the publisher notes.
+  - `enrich/equipment.py` (the JSON-LD lane's grounded derive): tool schema gains
+    `product_class`, same block appended; an unregistered key the model invents is DROPPED
+    (plain name stands, the shop classifier takes it from there).
+  - `equipment_match.match_recipe_equipment_classes`: a tool with a registered key →
+    method `key`; a name that IS a class name → `exact`; only legacy/free-text rows go to
+    the LLM. Measured on a Boxty recipe: Box Grater / Mixing Bowl / Whisk / Frying Pans
+    (9.5 in) came out keyed in the one derive call; 'ladle' plain, no class.
+  - NOT changed: the cook-rework mirror (`_recipe_equipment_from_cook`) and
+    `scripts/backfill_equipment.py` still build plain names — those rows resolve through
+    the classifier. Display consequence: class names are the registry's spelling (plural,
+    sized) — the curator owns those names.
+* **Nightly notice: recipes below the match bar + the dishes they say they are**
+  (curator: "notify us if a particular recipe does not meet a minimal threshold … and
+  suggest the dishes that might fit that aren't in the dish list").
+  - `dish_gaps.build_report(..., since=, tables=)` scans BOTH tables and adds `new_weak`:
+    un-anchored rows whose `_match.matched_at` falls in the window and whose nearest dish
+    is beyond the bar (the save path stamps matched_at on capture, the rematch only on a
+    changed verdict — so this is exactly "arrived or re-scored and found no home"). Each
+    hole now carries `new_count`. `dish_gaps.digest(rep)` → (subject, body): the new weak
+    rows (nearest guess, distance, what the identity card names it, '+' = not in the
+    catalog), the SUGGESTED DISHES (holes the new rows would fill), the ten largest
+    standing holes.
+  - `dish_gap_report` job: window = since the last SUCCESSFUL gap report (else 24 h);
+    emails via `alerts.alert_curator` ONLY when the window has new weak rows; result
+    carries `new_weak`, `suggested`. Added to `SCHEDULED_DEFAULTS` (24 h) — seeded on
+    startup, runs on the hourly tick after the dish pass. Until now the gap report EXISTED
+    but was never scheduled (0 runs in 14 days); `dish_rematch` runs ~6-hourly and its
+    digest only covers questionable MOVES.
+  - Dry run over the last 7 days: 69 new weak rows, 8 suggested dishes, 207 standing
+    holes (5,257 weak rows). It surfaced non-food rows harvested as recipes (an eye-makeup
+    remover, a laundry detergent — the identity card itself says "not a food dish") — the
+    is-recipe gate let them through; open item.
+  - `dish_match._fold_name` now drops apostrophes/quotes and folds punctuation runs to one
+    space (both sides of every lookup): a confident "Shepherd's Pie" card sat beside the
+    catalog's "Shepherds Pie" and name-exact never fired. name_index 567 entries after.
+* **ASSESSMENT — is the right recipe data fed to the embed for dish selection?** Measured
+  on recipes.db today. Un-anchored master rows 7,575: 2,652 confident, 4,923 (65%) below
+  the 0.6 bar; the distance mass sits at 0.7–1.0. Of the confident, 33% (869) have a
+  likelyDish that is not the matched dish. Experiment (60 rows, Haiku given the
+  embedding's 8 nearest + title/likelyDish/ingredients, pick-or-NONE+suggest):
+  - 40 unconfident: the LLM said NONE for 32 — these are CATALOG HOLES, not retrieval
+    misses (Snickerdoodles, Fried Wontons, Mince Pie, Cauliflower Cheese, Steamed Rice,
+    Mushroom Gravy, Pad Kee Mao, Molletes…). It picked a catalog dish for 8 (6 = the
+    embedding's own nearest; Pasta al Forno for a meatball bake; ONE wrong: Pad See Ew →
+    Pad Thai).
+  - 20 confident-but-disagreeing: the LLM agreed with the stored match in 16 — the
+    "disagreement" is the card being more specific or spelled differently (Dutch Apple Pie
+    / Apple Pie, Shepherd's / Shepherds, Pesto alla Trapanese / Pesto Trapanese). Real
+    errors: Croque Monsieur confidently filed under Croque Madame (d=0.48 — the catalog has
+    no Monsieur; a sibling the embedding cannot separate), Hong Shao Rou under Pork Belly.
+  - Conclusion: the embed INPUT (likelyDish-led identity card, title excluded, normalised
+    primaries, technique) is doing its job; the embedding is a good retriever and a fair
+    judge. The misses are (1) holes — the catalog (529) is far smaller than the corpus's
+    dish vocabulary; the new nightly notice is the loop that closes them; (2) sibling
+    collisions where a confident nearest is a near-twin (Monsieur/Madame, See Ew/Thai) —
+    the qualifier-family rule covers only "Base - Qualifier" names; (3) punctuation in
+    name-exact (fixed). NOT recommended: swapping the embed text or model first. Worth
+    doing next, cheap: an LLM verification pass ONLY on the confident-but-disagreeing band
+    (~870 rows, Haiku, ≈$0.50) and on confident matches whose top-2 candidates sit within
+    ~0.05 of each other (the sibling band) — the retrieve-then-verify shape the equipment
+    classifier and this experiment both used.
+* Tests: `test_dish_story_fill.py` ALL PASSED; `enrich/tests` 14 passed; ruff clean.

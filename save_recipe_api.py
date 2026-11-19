@@ -45,7 +45,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import traceback
 import threading   # deferred page-screenshot capture (see _attach_page_screenshot)
@@ -2274,7 +2274,22 @@ def _master_result_row(d: dict, rid: str, *, dish=None, rank_score=None, distanc
                          or (img[0] if isinstance(img, list) and img else None),
         "bcc_url": _bcc_link_permalink(rid),
         "source_url": src.get("originalUrl") or "",
+        # Where the recipe comes from, for the "top recipes like this" rows.
+        # og:site_name when the capture had one ("BBC Food"), else the bare
+        # host; the form prints this per row instead of repeating the dish.
+        "site_name": (src.get("siteName") or "").strip(),
+        "source_host": _source_host_of(src.get("originalUrl") or ""),
     }
+
+
+def _source_host_of(url: str) -> str:
+    """Bare host for display: scheme and leading www. dropped, lower-cased."""
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+    return host[4:] if host.startswith("www.") else host
 
 
 def _dish_cohort_ranked(conn, dish_name: str, want: int, exclude_recipe_id=None) -> list[dict]:
@@ -9563,12 +9578,33 @@ async def _handle_dish_gap_report_job(job: dict) -> dict:
 
     def _run():
         with _db() as conn:
-            return dish_gaps.build_report(conn, limit=limit,
-                                          min_group=min_group, max_dist=max_dist)
+            # The window: since the last report that ran to success (params.since
+            # overrides), else the last 24 h - so nothing matched between two
+            # reports is missed and nothing is reported twice.
+            since = (p.get("since") or "").strip()
+            if not since:
+                row = conn.execute(
+                    "SELECT MAX(COALESCE(finished_at, started_at, created_at)) FROM jobs "
+                    "WHERE type = 'dish_gap_report' AND status = 'success' AND id <> ?",
+                    (job.get("id"),)).fetchone()
+                since = (row[0] if row and row[0] else
+                         (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat())
+            return dish_gaps.build_report(conn, limit=limit, min_group=min_group,
+                                          max_dist=max_dist, since=since)
     rep = await asyncio.to_thread(_run)
     dish_gaps.print_report(rep)
+    # The notice (curator 2026-11-19): recipes matched in the window that no dish
+    # came close enough to, and the dishes they say they are that the catalog
+    # lacks. One email, only when the window has such rows; the banner lands in
+    # the log either way through alert_curator.
+    if rep.get("new_weak"):
+        from input.pipeline import alerts
+        _subj, _body = dish_gaps.digest(rep)
+        alerts.alert_curator(_subj, _body)
     return {"weak_total": rep["weak_total"], "holes": len(rep["holes"]),
-            "unmatched": rep["unmatched"],
+            "unmatched": rep["unmatched"], "since": rep.get("since"),
+            "new_weak": len(rep.get("new_weak") or []),
+            "suggested": [h["likely_dish"] for h in rep["holes"] if h.get("new_count")][:25],
             "top_holes": [{k: h[k] for k in ("likely_dish", "count", "avg_distance")}
                           for h in rep["holes"][:15]]}
 
@@ -11240,11 +11276,13 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
 
 @app.get("/recipes/{recipe_id}/equipment-products")
 def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
-    """Map each of the recipe's `equipment` items to a Williams-Sonoma product category
-    (the `product_class`) via the `ws_categories` embeddings — the commerce bridge from a
-    recipe's tools to purchasable products. Cosine over ~186 WS categories (built by
-    scripts/build_ws_taxonomy.py); returns per-item best category + score + sample products.
-    See intake/products/equipment_match + docs/equipment-product-linking.md."""
+    """Map each of the recipe's `equipment` items to one of OUR product classes (the
+    `product_classes` registry, family 'equipment') — the commerce bridge from a recipe's
+    tools to purchasable products. Curator 2026-11-19: the form's "Shop the tools" shows
+    our taxonomy, not the Williams-Sonoma paths (those stay behind /ws-categories for the
+    taxonomy tester; how classes cascade to collections is a later step). Per-item: the
+    class picked by the LLM (cached per term), its family, and the catalog products in
+    that class. See intake/products/equipment_match + docs/equipment-product-linking.md."""
     table = _recipes_table_for(user_id)
     with _db() as conn:
         row = conn.execute(
@@ -11254,13 +11292,13 @@ def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
             raise HTTPException(status_code=404, detail="Recipe not found.")
         recipe = json.loads(row[0])
         try:
-            from intake.products.equipment_match import match_recipe_equipment
-            from intake.products.category_link import products_for_ws_category
-            matches = match_recipe_equipment(recipe, conn)
-            # Attach catalog products per matched category (equipment → category → products).
+            from intake.products.equipment_match import match_recipe_equipment_classes
+            from intake.products.category_link import products_for_class
+            matches = match_recipe_equipment_classes(recipe, conn)
+            # Attach catalog products per matched class (equipment → class → products).
             for m in matches:
-                if m.get("matched") and m.get("ws_category_id"):
-                    m["catalog_products"] = products_for_ws_category(conn, m["ws_category_id"], limit=6)
+                if m.get("matched") and m.get("class_name"):
+                    m["catalog_products"] = products_for_class(conn, m["class_name"], limit=6)
         except Exception as e:
             print(f"[ERROR] /recipes/{recipe_id}/equipment-products: {e}")
             raise HTTPException(status_code=503, detail="Equipment matching is unavailable right now.") from e

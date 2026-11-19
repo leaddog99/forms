@@ -221,3 +221,188 @@ def match_recipe_equipment(recipe: dict, conn: sqlite3.Connection) -> list:
              if isinstance(e, dict) and (e.get("name") or "").strip()]
     resolved = _resolve_terms([n.lower() for n, _ in items], conn, cats)
     return [_row_from_classify(n, sz, resolved[n.lower()], cats) for n, sz in items]
+
+
+# --------------------------------------------------------------------------- #
+# OUR taxonomy: equipment term → product_classes row (family 'equipment')
+# --------------------------------------------------------------------------- #
+# Curator 2026-11-19: "Shop the tools" shows OUR classes, not Williams-Sonoma's
+# paths. Same shape as the WS path above — LLM classification into the list,
+# one batched call per recipe, cached per term — but the list is the
+# product_classes registry (class_registry.py) and the hop to products is
+# direct (products.product_class = name). The WS code above stays for the
+# taxonomy tester and as the embedding fallback's model.
+#
+# The cache carries a TAXONOMY SIGNATURE (row count + latest updated_at of the
+# equipment classes): when the curator adds / renames / deletes a class the
+# signature moves and every cached answer is re-asked, so a new class takes
+# effect on the next click without a manual cache clear.
+
+_CLASSIFY_CLASS_SYSTEM = (
+    "You map a recipe's kitchen EQUIPMENT term to the single best PRODUCT CLASS for BUYING "
+    "that tool, from the class list you are given (names like 'Dutch Ovens (5-6 qt)', "
+    "'Chef Knife', 'Sheet Pan'). Reply with ONLY the exact class name, copied verbatim from "
+    "the list — no other text. Reason about what the tool actually is: 'oven' is the kitchen "
+    "appliance, not a Dutch oven; a compound like 'wooden spoon or spatula' picks the class of "
+    "the primary tool; a sized class is fine for an unsized term when it is the only class for "
+    "that tool. Synonyms are ONE tool: a skillet is a frying pan, a sheet tray is a sheet pan, "
+    "a stockpot is a pasta pot, a silicone spatula is a spatula. Reply exactly 'NONE' when no "
+    "listed class reasonably fits — a generic 'bowl', 'oven' or 'fork' with no class is NONE, "
+    "never a stretch."
+)
+
+
+def ensure_class_term_cache(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tool_class_map (
+            term          TEXT PRIMARY KEY,   -- lowercased equipment term
+            class_name    TEXT,               -- NULL = NONE (no class fits)
+            method        TEXT,               -- 'llm' | 'embed:0.xx' | 'none'
+            taxonomy_sig  TEXT,               -- registry signature the answer was given against
+            updated_at    TEXT
+        )""")
+    conn.commit()
+
+
+def load_equipment_classes(conn: sqlite3.Connection) -> list:
+    """[(name, family, products_count, vector)] for every embedded equipment-family class."""
+    from intake.products.class_registry import ensure_registry
+    ensure_registry(conn)
+    rows = conn.execute(
+        "SELECT c.name, c.family, c.embedding, "
+        "       (SELECT COUNT(*) FROM products p WHERE p.product_class = c.name) "
+        "FROM product_classes c "
+        "WHERE c.family = 'equipment' AND c.embedding IS NOT NULL ORDER BY c.name").fetchall()
+    out = []
+    for name, fam, emb, n in rows:
+        v = bytes_to_vec(emb)
+        if v is not None:
+            out.append((name, fam, int(n or 0), v))
+    return out
+
+
+def _class_taxonomy_sig(conn: sqlite3.Connection) -> str:
+    n, latest = conn.execute(
+        "SELECT COUNT(*), MAX(updated_at) FROM product_classes WHERE family = 'equipment'"
+    ).fetchone()
+    return f"{n}:{latest or ''}"
+
+
+def _class_row(name, size, cls, *, method, matched=True) -> dict:
+    cname, fam, n, _ = cls
+    return {"equipment": name, "size": size, "class_name": cname, "family": fam,
+            "products_count": n, "method": method, "matched": matched}
+
+
+def _class_none_row(name, size, method) -> dict:
+    return {"equipment": name, "size": size, "class_name": None, "family": None,
+            "products_count": 0, "method": method, "matched": False}
+
+
+def classify_terms_llm_classes(terms: list, names: list) -> dict:
+    """ONE LLM call, MANY terms → {term: '<class name>'|'NONE'}; the class list rides in a
+    cached system block exactly like the WS classifier."""
+    import llm
+    system = [
+        {"type": "text", "text": _CLASSIFY_CLASS_SYSTEM},
+        {"type": "text", "text": "CLASSES:\n" + "\n".join(names),
+         "cache_control": {"type": "ephemeral"}},
+    ]
+    numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(terms))
+    user = ("Classify EACH equipment term to its single best class name (copied verbatim "
+            "from the list) or NONE. Reply with one line per term as `N. <class or NONE>` and "
+            "nothing else.\n\n" + numbered)
+    r = llm.create(operation="tool_classify_class", model=_CLASSIFY_MODEL,
+                   max_tokens=min(4000, 40 * len(terms) + 100), system=system,
+                   messages=[{"role": "user", "content": user}])
+    text = "".join(b.text for b in r.content if getattr(b, "type", None) == "text")
+    out = {}
+    for line in text.splitlines():
+        m = _re.match(r"\s*(\d+)[.)]\s*(.+?)\s*$", line)
+        if m and 0 <= int(m.group(1)) - 1 < len(terms):
+            out[terms[int(m.group(1)) - 1]] = m.group(2).strip()
+    return out
+
+
+def _resolve_terms_classes(term_keys: list, conn: sqlite3.Connection, classes: list) -> dict:
+    """{key: {class_name, method}} — cache hits whose taxonomy signature still matches come
+    free; everything else goes through one batched LLM call with per-term embedding fallback
+    (same floor as the WS path; the registry embeds '<name>. product class.' so the query
+    does too, keeping the distance symmetric)."""
+    ensure_class_term_cache(conn)
+    sig = _class_taxonomy_sig(conn)
+    by_name = {c[0]: c for c in classes}
+    resolved, misses = {}, []
+    for key in dict.fromkeys(term_keys):
+        row = conn.execute(
+            "SELECT class_name, method, taxonomy_sig FROM tool_class_map WHERE term = ?",
+            (key,)).fetchone()
+        if row is not None and row[2] == sig and (row[0] is None or row[0] in by_name):
+            resolved[key] = {"class_name": row[0], "method": row[1] or "cache"}
+        else:
+            misses.append(key)
+
+    for i in range(0, len(misses), _BATCH):
+        chunk = misses[i:i + _BATCH]
+        picks = {}
+        try:
+            picks = classify_terms_llm_classes(chunk, [c[0] for c in classes])
+        except Exception as e:
+            print(f"[tool-classify-class] batch LLM failed ({type(e).__name__}: {e}); embedding fallback")
+        for key in chunk:
+            ans = (picks.get(key) or "").strip()
+            if ans and ans != "NONE" and ans in by_name:
+                res = {"class_name": ans, "method": "llm"}
+            elif ans == "NONE":
+                res = {"class_name": None, "method": "none"}
+            else:
+                q = embed_text(f"{key}. product class.")
+                best = max(((cosine(q, c[3]), c) for c in classes), key=lambda x: x[0],
+                           default=None)
+                if best and best[0] >= MATCH_MIN_COSINE:
+                    res = {"class_name": best[1][0], "method": f"embed:{best[0]:.2f}"}
+                else:
+                    res = {"class_name": None, "method": "none"}
+            resolved[key] = res
+            conn.execute(
+                "INSERT OR REPLACE INTO tool_class_map (term, class_name, method, taxonomy_sig, "
+                "updated_at) VALUES (?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                (key, res["class_name"], res["method"], sig))
+        conn.commit()
+    return resolved
+
+
+def match_recipe_equipment_classes(recipe: dict, conn: sqlite3.Connection) -> list:
+    """Each equipment item → its best class in OUR registry. Uncached terms are classified
+    in ONE batched LLM call, then cached against the taxonomy signature. Preserves order; a
+    repeated tool is classified once."""
+    classes = load_equipment_classes(conn)
+    if not classes:
+        return []
+    by_name = {c[0]: c for c in classes}
+    by_fold = {c[0].strip().lower(): c for c in classes}
+    items = [((e.get("name") or "").strip(), e.get("size"), (e.get("product_class") or "").strip())
+             for e in (recipe.get("equipment") or [])
+             if isinstance(e, dict) and (e.get("name") or "").strip()]
+    # ONE STEP (2026-11-19): a tool extracted with our key, or named exactly as a
+    # class, is answered from the registry outright. Only legacy / free-text rows
+    # still go through the classifier.
+    direct = {}
+    for n, _sz, key in items:
+        if key in by_name:
+            direct[n.lower()] = (by_name[key], "key")
+        elif n.lower() in by_fold:
+            direct[n.lower()] = (by_fold[n.lower()], "exact")
+    pending = [n.lower() for n, _sz, _k in items if n.lower() not in direct]
+    resolved = _resolve_terms_classes(pending, conn, classes) if pending else {}
+    out = []
+    for n, sz, _key in items:
+        if n.lower() in direct:
+            cls, method = direct[n.lower()]
+            out.append(_class_row(n, sz, cls, method=method))
+            continue
+        r = resolved[n.lower()]
+        cls = by_name.get(r.get("class_name") or "")
+        out.append(_class_row(n, sz, cls, method=r.get("method", "llm")) if cls
+                   else _class_none_row(n, sz, r.get("method", "none")))
+    return out

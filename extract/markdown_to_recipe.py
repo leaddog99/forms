@@ -54,7 +54,8 @@ EQUIPMENT (ALWAYS derive — do NOT wait for the source to list it):
 - Include tools implied by a prep or cook verb: grate -> grater, whisk -> whisk, zest -> zester, sift -> sieve, fry -> skillet, blend -> blender, bake -> the stated pan/dish, simmer -> saucepan/pot, roast -> roasting pan/sheet.
 - ORDER equipment by first appearance in the instructions; dedupe so each tool appears once (name it plainly and singular: "large skillet", "9x13 baking dish", "box grater").
 - Give a `size` ONLY when the recipe states or clearly implies one (a 12-inch skillet -> "12 in", a 9x13 dish -> "9x13 in", a 3-quart saucepan -> "3 qt"). Omit `size` when unstated — NEVER invent a size.
-- Do NOT list ingredients or pantry staples as equipment. Each item is `{{"@type": "HowToTool", "name": "...", "size": "..."?}}` (braces doubled here only because this prompt is an f-string).
+- Do NOT list ingredients or pantry staples as equipment. Each item is `{{"@type": "HowToTool", "name": "...", "size": "..."?, "product_class": "..."|null}}` (braces doubled here only because this prompt is an f-string).
+- `product_class` is OUR taxonomy key for the tool. When a TOOL CLASSES section follows this prompt, pick the one class the tool is (verbatim) and name the tool by it; otherwise null. Never invent a class name.
 
 PROVENANCE AND CLASSIFICATION ARE HANDLED ELSEWHERE. Leave the `provenance` and `classification` blocks at their schema defaults (empty strings, empty lists, null where applicable). A separate enrichment step (`enrich_recipe`) fills those fields on demand — your job here is the structured recipe data only. Spending tokens on provenance/classification reasoning here just makes you slower.
 
@@ -126,6 +127,15 @@ def markdown_to_recipe(
     # stay one stable block (they are the cacheable prefix) and the per-publisher
     # part is clearly delimited and clearly subordinate.
     system_prompt = SYSTEM_PROMPT
+    # TOOL CLASSES (2026-11-19): the equipment vocabulary, read from the
+    # product_classes registry at call time so a class the curator adds is in
+    # the next extract's prompt. Appended AFTER the static prompt (the cacheable
+    # prefix stays intact) and BEFORE the publisher notes.
+    try:
+        from intake.products.class_registry import equipment_vocabulary_block
+        system_prompt = SYSTEM_PROMPT + equipment_vocabulary_block()
+    except Exception as e:
+        print(f"     [EXTRACT] tool classes skipped ({type(e).__name__}: {e})")
     try:
         from input.pipeline.domains_lib import extract_hint_for_url
         _hint = extract_hint_for_url(source_url) if source_url else ""
@@ -147,7 +157,7 @@ def markdown_to_recipe(
             _hint = (_shape + ("\n\n" + _hint if _hint else ""))
             print(f"     [EXTRACT] capture-source note applied")
         if _hint:
-            system_prompt = SYSTEM_PROMPT + (
+            system_prompt = system_prompt + (
                 "\n\nPUBLISHER NOTES — written by our curator about THIS site "
                 "specifically. Treat as guidance about where this publisher puts "
                 "things and what its pages are like. It never overrides the rules "

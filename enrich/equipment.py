@@ -66,6 +66,10 @@ _TOOL = {
                                  "description": "ONLY when the recipe states or clearly implies one: "
                                                 "a 12-inch skillet -> '12 in', a 9x13 dish -> '9x13 in', "
                                                 "a 3-quart saucepan -> '3 qt'. Omit when unstated — never invent."},
+                        "product_class": {"type": ["string", "null"],
+                                          "description": "OUR taxonomy key: the one TOOL CLASSES entry "
+                                                         "this tool is, copied verbatim (and used as the "
+                                                         "name too); null when no class fits."},
                     },
                     "required": ["name"],
                 },
@@ -102,9 +106,19 @@ def derive_equipment(recipe: dict, *, operation: str = "enrich_equipment") -> li
     `[]` when nothing is derivable. Raises on a hard API failure (caller maps to 503).
     Usage journals under `operation` (wrap the call in `llm.context(recipe_id,user_id)`)."""
     user = "Here is the recipe:\n\n" + _recipe_text(recipe) + "\n\nList the equipment."
+    # TOOL CLASSES (2026-11-19): the same vocabulary block the markdown extractor
+    # appends, so BOTH producers name the tool and stamp the key in one call.
+    vocab = set()
+    system = _SYSTEM
+    try:
+        from intake.products.class_registry import equipment_vocabulary, equipment_vocabulary_block
+        vocab = set(equipment_vocabulary())
+        system = _SYSTEM + equipment_vocabulary_block()
+    except Exception as e:
+        print(f"[enrich] tool classes skipped ({type(e).__name__}: {e})")
     resp = llm.create(
         operation=operation, model=MODEL, max_tokens=_MAX_TOKENS,
-        system=_SYSTEM, tools=[_TOOL],
+        system=system, tools=[_TOOL],
         tool_choice={"type": "tool", "name": "equipment_list"},
         messages=[{"role": "user", "content": user}],
     )
@@ -121,10 +135,11 @@ def derive_equipment(recipe: dict, *, operation: str = "enrich_equipment") -> li
         # The model usually returns {name, size?} objects, but occasionally a bare
         # string — accept both.
         if isinstance(it, str):
-            name, size = it.strip(), None
+            name, size, pclass = it.strip(), None, None
         elif isinstance(it, dict):
             name = str(it.get("name") or "").strip()
             size = it.get("size")
+            pclass = it.get("product_class")
         else:
             continue
         if not name or name.lower() in seen:
@@ -134,5 +149,10 @@ def derive_equipment(recipe: dict, *, operation: str = "enrich_equipment") -> li
         size = size.strip() if isinstance(size, str) else size
         if size:
             tool["size"] = size
+        # The key must be a REGISTERED class, verbatim — an invented one is dropped,
+        # the plain name stands, and the shop panel's classifier takes it from there.
+        pclass = pclass.strip() if isinstance(pclass, str) else None
+        if pclass and pclass in vocab:
+            tool["product_class"] = pclass
         out.append(tool)
     return out

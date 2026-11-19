@@ -24,6 +24,17 @@ from typing import Any, Optional
 # (new rows only INSERT if absent, so a curator's edits are never clobbered).
 SCHEDULED_DEFAULTS: list[dict] = [
     {
+        "name": "dish_gap_report",
+        "job_type": "dish_gap_report",
+        "purpose": "Nightly notice to the curator: recipes matched since the last "
+                   "report that no catalog dish came within the confidence bar of, "
+                   "and the dishes they name that the catalog lacks (the holes to "
+                   "create). Emails only when there is something to say.",
+        "interval_hours": 24,
+        "params": {},
+        "enabled": 1,
+    },
+    {
         "name": "chapter_rollups",
         "job_type": "chapter_rollups",
         "purpose": "Recompute each dish's competitiveness percentile within its "

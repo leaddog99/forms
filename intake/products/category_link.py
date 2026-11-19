@@ -97,6 +97,35 @@ def set_manual_map(conn: sqlite3.Connection, product_class: str, ws_category_id:
     return {"product_class": product_class, "ws_category_id": ws_category_id, "ws_path": row[0]}
 
 
+def products_for_class(conn: sqlite3.Connection, class_name: str, *, limit: int = 12) -> list:
+    """Catalog products IN one of our product classes (the registry grain), best first by
+    rank_score. The direct hop for the class taxonomy; no WS map in between."""
+    rows = conn.execute(
+        """
+        SELECT product_id, name, brand, product_class, rank_score, data
+        FROM products
+        WHERE product_class = ?
+        ORDER BY rank_score IS NULL, rank_score DESC, name
+        LIMIT ?
+        """, (class_name, limit)).fetchall()
+    return [_product_summary(*r) for r in rows]
+
+
+def _product_summary(pid, name, brand, pc, rank, data) -> dict:
+    offer = None
+    try:
+        import json
+        d = json.loads(data) if data else {}
+        offers = d.get("retailer_offers") or []
+        if offers:
+            o = offers[0]
+            offer = {"retailer": o.get("retailer"), "url": o.get("url"), "price": o.get("price")}
+    except Exception:
+        pass
+    return {"product_id": pid, "name": name, "brand": brand,
+            "product_class": pc, "rank_score": rank, "offer": offer}
+
+
 def products_for_ws_category(conn: sqlite3.Connection, ws_category_id: int, *, limit: int = 12) -> list:
     """Catalog products linked to a ws_category (via product_class_ws_map), best first.
     Ranked by the product's rank_score (verdict tier from review ingestion)."""

@@ -67,9 +67,15 @@ def max_distance(conn_db_path: Optional[str] = None) -> float:
 
 def _fold_name(t: str) -> str:
     """Accent-fold + lowercase, the same treatment the coverage page uses —
-    Tiramisù and Tiramisu are one name."""
+    Tiramisù and Tiramisu are one name. Apostrophes and quotes are dropped and
+    any other punctuation run becomes one space (2026-11-19, measured: a
+    confident "Shepherd's Pie" card sat beside the catalog's "Shepherds Pie"
+    and the name-exact rule never fired). Applied to BOTH sides of every
+    lookup, so it can only join spellings, never split them."""
     d = unicodedata.normalize("NFD", t or "")
-    return "".join(ch for ch in d if not unicodedata.combining(ch)).strip().lower()
+    s = "".join(ch for ch in d if not unicodedata.combining(ch)).lower()
+    s = re.sub(r"[\u2019'\"`]", "", s)
+    return re.sub(r"[^\w]+", " ", s).strip()
 
 
 def name_index(conn: sqlite3.Connection) -> dict:

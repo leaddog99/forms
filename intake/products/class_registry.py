@@ -156,5 +156,44 @@ def snap(conn: sqlite3.Connection, candidate: str, *, max_dist: float = 0.60) ->
             "distance": round(best_d, 4), "snapped": snapped}
 
 
+def equipment_vocabulary(db_path: str = "recipes.db") -> list:
+    """Registered equipment class names, the KEYS a recipe's tools carry
+    (Tool.product_class). Read through its own connection so the extract layer
+    can call it without importing the app (same literal default as
+    save_recipe_api.DB_PATH, same reason as domains_lib)."""
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            ensure_registry(conn)
+            return [r[0] for r in conn.execute(
+                "SELECT name FROM product_classes WHERE family = 'equipment' "
+                "AND name IS NOT NULL AND name <> '' ORDER BY name")]
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001 — a missing registry must never stop an extract
+        print(f"[CLASSES] equipment vocabulary unavailable ({type(e).__name__}: {e})")
+        return []
+
+
+def equipment_vocabulary_block(db_path: str = "recipes.db") -> str:
+    """The prompt block both equipment producers append: the class list and the
+    one rule for using it. '' when the registry is empty, so the prompt simply
+    has no TOOL CLASSES section and `product_class` stays null."""
+    names = equipment_vocabulary(db_path)
+    if not names:
+        return ""
+    return (
+        "\n\nTOOL CLASSES — our product taxonomy for kitchen equipment. For EVERY "
+        "equipment item set `product_class` to the ONE class name below that the tool IS, "
+        "copied verbatim, and use that class name as the item's `name` as well; set "
+        "`product_class` to null (and keep a plain name) when no class fits. Synonyms are "
+        "one tool (a skillet is a Frying Pan, a sheet tray a Sheet Pan, a stockpot a Pasta "
+        "Pot). A class that carries a size in parentheses fits only when the recipe's size "
+        "is compatible or unstated; the recipe's own stated size still goes in `size`. "
+        "Never stretch: a generic bowl, oven, fork or lid with no class is null.\n"
+        "<tool_classes>\n" + "\n".join(names) + "\n</tool_classes>"
+    )
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()

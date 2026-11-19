@@ -326,10 +326,23 @@ class Tool(BaseModel):
     # recipe states/implies one — never invented. Without this field the model
     # would silently DROP size on every RecipeModel round-trip (extraction, save).
     size: Optional[str] = None
+    # OUR product-class KEY (product_classes.name, family 'equipment'), stamped
+    # at extract time in the SAME call that names the tool (curator 2026-11-19:
+    # "one step, not two") — the recipe then carries the taxonomy key directly,
+    # and that key is the entry DPI takes at run time to return the products.
+    # None when no registered class fits (a generic bowl, an oven). Without
+    # this field the model would silently DROP the key on every round-trip.
+    product_class: Optional[str] = None
 
     @field_validator('name', mode='before')
     @classmethod
     def _v_text(cls, v): return _as_str(v)
+
+    @field_validator('product_class', mode='before')
+    @classmethod
+    def _v_class(cls, v):
+        s = _as_str(v)
+        return s.strip() or None if isinstance(s, str) else None
 
 class VideoObject(BaseModel):
     type: str = Field(default="VideoObject", alias="@type")
