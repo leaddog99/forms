@@ -12819,3 +12819,21 @@ a scheduled job is added, name folding changes.
   curator's read decides. The R list doubles as the sibling/child problem list: 637
   names filed under a dish the judge says they are not (Roasted Broccoli → Broccoli ×14,
   Seafood Gumbo → Shrimp Gumbo ×7, Clam Chowder → New England Clam Chowder ×5).
+
+### 2026-11-19 (night) — DECISION: DPI charter change (categorization service, taxonomy instances); plan for the Soups & Stews dish-taxonomy pilot
+
+* Curator: the dish catalog IS a DPI-shaped taxonomy (leaf = consideration set of recipes a cook
+  accepts as the same dish). DECISIONS: (1) DPI becomes a categorization service with substitutable
+  taxonomy instances — products one instance, dishes/recipes the second; RealRank/stores stay on the
+  product instance; the independence principle stays. (2) The dish tree is generated from the model's
+  culinary knowledge directly (as the spice/pantry trees were); the current dishes are REFERENCES the
+  tree must account for, the corpus is evidence. (3) Alias before new leaf, at every creating door.
+  (4) Who decides a leaf: generator under the rule with a visible rationale + rejected-candidates list,
+  critic, curator, then the data (near ties, recurring none names, demand).
+* Plan written: docs/dish-taxonomy-pilot-soups-stews.md — the chapter measured (50 dishes, 950 anchored/
+  confident recipes, 330 weak leaners, 279 hole names, 4 dishes with aliases, 107 vetted aliases, 37
+  judge rejections), the BCC read-only export, DPI steps 0-7 (instance partials; the ALIAS GATE which is
+  NOT in DPI today — the generator emits aliases from knowledge but nothing checks a new name against
+  the tree or pre-generates from evidence; explode from knowledge; the 50-dish MAPPING TABLE as the main
+  deliverable; classify ~1,280 recipes and compare; the curator's 100-row grade), success criteria,
+  risks, cost. DPI-side work needs plan approval in a DPI session on BAILEY.
