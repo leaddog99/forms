@@ -7430,6 +7430,9 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = '⏳ Matching…'; out.innerHTML = '';
       try {
         const r = await fetch(`/recipes/${encodeURIComponent(rid)}/equipment-products?user_id=${user_id}`);
+        // 404 = the id is a fresh extract's id, not a saved row yet (the form mints
+        // recipe_id before save, so an empty-id check alone can't tell).
+        if (r.status === 404) { btn.textContent = '🛒 Save the recipe first'; return; }
         if (!r.ok) throw new Error('match ' + r.status);
         const d = await r.json();
         const rows = (d.equipment_matches || []).filter(m => m.matched);
