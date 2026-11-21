@@ -173,6 +173,26 @@ def _row_texts(data_json: str) -> tuple[list, list]:
     return [x for x in ings if x], [x for x in eq if x]
 
 
+def cohort_key(conn: sqlite3.Connection, dish_name: str) -> tuple[int, str]:
+    """(member count, fingerprint of WHICH recipes are members).
+
+    The stamp used to be trusted whenever its `cohort_n` equalled the live row
+    count. A refresh that swaps ten winners for ten others leaves the count
+    alone: Licurdia's signals still read licorice / alcohol / licorice powder on
+    2026-11-21, thirteen days after the run that produced them and hours after a
+    rerun had replaced every one of those recipes with onion soup - and the
+    story was being written from them. The fingerprint is over the members'
+    PAGE urls, so any change of membership shows, whatever the count does. Not
+    over row ids: a refresh deletes its old winners and inserts the new ones,
+    and SQLite hands a freed id straight back out. The same page re-extracted
+    keeps its url and does not re-stamp: that is an edit of one member, not a
+    different cohort."""
+    keys = sorted((r[1] or f"#{r[0]}") for r in conn.execute(
+        "SELECT id, url_normalized FROM master_recipes WHERE dish_effective = ?", (dish_name,)))
+    import hashlib
+    return len(keys), hashlib.sha1("|".join(keys).encode()).hexdigest()[:16]
+
+
 def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
                     min_df: int = 3, max_ingredients: int = 25,
                     max_equipment: int = 15, max_examples: int = 4) -> dict:
@@ -183,6 +203,7 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
     cn = len(cohort)
     if not cn:
         return {"method": METHOD, "computed_at": _now(), "cohort_n": 0}
+    _ckey = cohort_key(conn, dish_name)[1]
 
     fold = _corpus_fold(conn)
 
@@ -301,6 +322,7 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
         "method": METHOD,
         "computed_at": _now(),
         "cohort_n": cn,
+        "cohort_key": _ckey,        # which recipes, not just how many (see cohort_key)
         "corpus_n": gn,
         "min_df": min_df,
         "authority": authority,

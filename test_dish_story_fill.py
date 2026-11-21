@@ -38,7 +38,7 @@ def db():
         origin_region TEXT, origin_region_source TEXT, cook_notes TEXT, cook_notes_source TEXT,
         cohort_signals TEXT, editorial_enriched_at TEXT, updated_at TEXT)""")
     c.execute("CREATE TABLE master_recipes (id INTEGER PRIMARY KEY, dish_effective TEXT, "
-              "dish_effective_source TEXT)")
+              "dish_effective_source TEXT, url_normalized TEXT)")
     return c
 
 
@@ -47,8 +47,10 @@ def seed(c, name, rows, signals=None, nearest=0, **fields):
     cols = ["name", "cohort_signals"] + list(fields)
     vals = [name, json.dumps(signals) if signals is not None else None] + list(fields.values())
     c.execute(f"INSERT INTO dishes ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
-    c.executemany("INSERT INTO master_recipes (dish_effective, dish_effective_source) VALUES (?, ?)",
-                  [(name, "matched")] * rows + [(name, "nearest")] * nearest)
+    c.executemany("INSERT INTO master_recipes (dish_effective, dish_effective_source, url_normalized) "
+                  "VALUES (?, ?, ?)",
+                  [(name, "matched", f"https://a.example/{name}/{i}") for i in range(rows)]
+                  + [(name, "nearest", f"https://a.example/{name}/guess/{i}") for i in range(nearest)])
 
 
 # --- stubs: get_dish reads the real schema, stamp_signals scans the corpus, draft bills ---
@@ -66,8 +68,8 @@ STAMPED, DRAFTED = [], []
 
 
 def _stamp(conn, name, **kw):
-    n = conn.execute("SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ?", (name,)).fetchone()[0]
-    sig = {"cohort_n": n, "ingredients": []}
+    n, key = dish_signals.cohort_key(conn, name)
+    sig = {"cohort_n": n, "cohort_key": key, "ingredients": []}
     conn.execute("UPDATE dishes SET cohort_signals = ? WHERE name = ?", (json.dumps(sig), name))
     STAMPED.append(name)
     return sig
@@ -86,13 +88,32 @@ dish_story.draft = _draft
 # 1 + 2: the stale stamp
 c = db()
 seed(c, "Baked Chicken Breast", 61, signals={"cohort_n": 0, "computed_at": "2026-08-31"})
-seed(c, "Buttercream Frosting", 58, signals={"cohort_n": 58})
+seed(c, "Buttercream Frosting", 58)
+c.execute("UPDATE dishes SET cohort_signals = ? WHERE name = 'Buttercream Frosting'",
+          (json.dumps({"cohort_n": 58, "cohort_key": dish_signals.cohort_key(c, "Buttercream Frosting")[1]}),))
 check("stale stamp (0 vs 61 live) is re-stamped", dish_story._ensure_signals(c, "Baked Chicken Breast"), 61)
 check("  ...and stamp_signals ran for it", STAMPED, ["Baked Chicken Breast"])
 check("matching stamp is trusted", dish_story._ensure_signals(c, "Buttercream Frosting"), 58)
 check("  ...with no scan", STAMPED, ["Baked Chicken Breast"])
 seed(c, "Empty Dish", 0)
 check("no rows -> 0, no scan", (dish_story._ensure_signals(c, "Empty Dish"), len(STAMPED)), (0, 1))
+
+# 2b: SAME COUNT, DIFFERENT RECIPES - the Licurdia case (ten licorice liqueurs
+# replaced by ten onion soups; the count never moved and the stamp was trusted).
+seed(c, "Licurdia", 10)
+dish_story._ensure_signals(c, "Licurdia")                       # stamped for the first ten
+before = len(STAMPED)
+check("unchanged membership is trusted", (dish_story._ensure_signals(c, "Licurdia"), len(STAMPED)), (10, before))
+c.execute("DELETE FROM master_recipes WHERE dish_effective = 'Licurdia'")
+# (the ten new rows get the SAME ids the deleted ten had - which is why the
+# fingerprint is over the page urls)
+c.executemany("INSERT INTO master_recipes (dish_effective, dish_effective_source, url_normalized) VALUES (?, ?, ?)",
+              [("Licurdia", "matched", f"https://b.example/onion-soup/{i}") for i in range(10)])
+check("ten swapped for ten others is re-stamped", (dish_story._ensure_signals(c, "Licurdia"), len(STAMPED)),
+      (10, before + 1))
+seed(c, "Old Stamp", 4, signals={"cohort_n": 4})                # written before the fingerprint existed
+check("a stamp with no fingerprint is re-stamped once", (dish_story._ensure_signals(c, "Old Stamp"), STAMPED[-1]),
+      (4, "Old Stamp"))
 
 # 3: blank_fields
 c = db()

@@ -252,21 +252,27 @@ def _ensure_signals(conn: sqlite3.Connection, name: str) -> Optional[int]:
     61 rows. The stored 0 made every later fill (the 10-17 sweep included)
     return "no cohort" without a word, and the dish stayed story-less for seven
     weeks while 61 recipes sat under it. A stale stamp also grounds the prose in
-    LAST refresh's cohort, so a changed count re-stamps before the model reads."""
-    n = conn.execute("SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ?",
-                     (name,)).fetchone()[0]
+    LAST refresh's cohort, so a changed count re-stamps before the model reads.
+
+    And the count alone is not the cohort (2026-11-21): a refresh that replaces
+    ten winners with ten others leaves it unchanged. The stamp also carries a
+    fingerprint of WHICH recipes it measured (dish_signals.cohort_key); a stamp
+    whose fingerprint differs from the live one - or that predates the
+    fingerprint - is re-stamped."""
+    from input.pipeline import dish_signals
+    n, key = dish_signals.cohort_key(conn, name)
     if not n:
         return 0
     row = conn.execute("SELECT cohort_signals FROM dishes WHERE name = ?", (name,)).fetchone()
-    stored = None
+    stored_n = stored_key = None
     if row and row[0]:
         try:
-            stored = json.loads(row[0]).get("cohort_n")
+            _s = json.loads(row[0])
+            stored_n, stored_key = _s.get("cohort_n"), _s.get("cohort_key")
         except Exception:
-            stored = None
-    if stored == n:
+            stored_n = stored_key = None
+    if stored_n == n and stored_key == key:
         return n
-    from input.pipeline import dish_signals
     sig = dish_signals.stamp_signals(conn, name)
     return sig.get("cohort_n")
 
