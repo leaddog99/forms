@@ -12837,3 +12837,82 @@ a scheduled job is added, name folding changes.
   the tree or pre-generates from evidence; explode from knowledge; the 50-dish MAPPING TABLE as the main
   deliverable; classify ~1,280 recipes and compare; the curator's 100-row grade), success criteria,
   risks, cost. DPI-side work needs plan approval in a DPI session on BAILEY.
+
+## Session 2026-11-20 → 11-21 — Soups & Stews tree written from culinary knowledge and the corpus filed against it; four dish-search fixes from the Kalogeros jobs; paid-first domain mark; cooks.com disallowed
+
+### The Soups & Stews knowledge tree (BCC-side, not the DPI factory)
+
+* Curator's complaint: the chapter taxonomy only covered dishes already in the dishes data, nothing from
+  culinary knowledge, and no PDF existed anywhere (this machine or BAILEY; DPI has no soups work, last
+  commit 11-17). Built here as a research artifact so the curator can read it; the DPI pilot (plan steps
+  0-7) is still unbuilt.
+* docs/research/soups-stews-knowledge-tree-2026-11-20.json: 18 groups, **241 leaves** (name, aka,
+  origin, what), written blind from knowledge under the leaf rule, then reconciled. `catalog_map`
+  accounts for all 50 catalog dishes (same 34 · renamed 7 · merged 4 · split 3 · alias 1 · out 1 [Thai
+  Red Curry → a Curries tree]); `hole_map` places the 30 repeated hole names; `excluded` lists what the
+  chapter does not hold (curries/dals, stocks, porridges, plated braises, rice pots, vegetable sides).
+  Leaf status: 51 in catalog, 62 named by corpus recipes, 128 new.
+* scripts/build_dish_tree_pdf.py renders it (HTML → headless Edge → PDF, 32 pages with the evaluation);
+  it refuses to build if either map is incomplete against the export.
+* RECOMMENDATION, not yet applied to the plan: step 2 of docs/dish-taxonomy-pilot-soups-stews.md feeds
+  the 50 catalog names to the generator. Generate blind, reconcile after; otherwise the tree inherits
+  the catalog's shape, which is the complaint that started this.
+
+### The corpus filed against the tree (scripts/classify_chapter_against_tree.py)
+
+* Retrieve-then-judge over the 1,280 exported recipes: text-embedding-3-small, ten nearest leaves plus
+  the name-exact leaf, Haiku picks one or says none. Verdicts cached per recipe id. NOT human-graded;
+  nothing re-filed in the DB. Rows: docs/research/soups-stews-tree-corpus-eval-2026-11-20.{json,md}.
+* Curated/run-assigned 650: same dish **590 (91%)**, different 23, none 37. Confident nearest match
+  300: same **251 (84%)**, different 22, none 27. Weak leaners 330: **201 placed (61%)**, none 129.
+  Overall 1,087 of 1,280 placed (85%); 182 land on leaves the catalog lacks; 129 of 241 leaves received
+  a recipe, 112 empty (dishes we have not collected).
+* Moves: 45 recipes in 32 pairs; the only large one is Portuguese Kale Soup → Caldo Verde ×10. None:
+  193, of which 30 are not soups or stews at all (Ramen Noodle Salad, Roasted Butternut Squash,
+  Fasolakia); Thai Red Curry ~12 and American Goulash 6 are there because the tree put them out of the
+  chapter; the long tail of single names (Cream of Celery Soup, Italian Beef Stew) is gaps in the tree.
+  37 rows where the card's own name matched a leaf and the judge picked another were not examined.
+* Open for the curator: the seven calls in Part 6 of the PDF; the eval pages of the PDF were not
+  checked by eye.
+
+### Kalogeros dish refresh (#3041 cancelled, #3042 zero candidates) — four fixes
+
+* Diagnosis: a bare-name query returned surname/genealogy/beach pages; "Kalogeros Recipe" on US Google
+  returns generic Greek-recipe pages; the off-topic guard ALSO rejected "Kalogeros Naxos recipe", whose
+  results are real dish pages with Greek-script titles; Google Greece returned
+  tasty-guide.gr/banners/recipeoftheday?ts=… 17 of 20 times, each one a paid fetch; the error blamed a
+  provider outage.
+* input/pipeline/serp_search.py `_off_topic_page`: a page whose result titles are mostly non-Latin
+  script is not judged by Latin query words. `_collect_page`: `_SAME_PATH_KEEP = 2` — links to the same
+  host+path that differ only in the query string are capped at two per search line and the drop is
+  logged (a cap, not a merge: `?recipeId=42` can be the page identity).
+* save_recipe_api.py: the zero-candidates error now names both causes (search lines do not find the
+  dish, or the provider failed) and where to look.
+* DATA: dishes.queries for Kalogeros → "Kalogeros Naxos recipe" + "καλόγερος Νάξου συνταγή" (gl=gr).
+* Verified live (3 pages per line): the English line keeps pages 1-2, ranks 1-8 real dish pages. The
+  Greek line returns nothing about the dish (two banners, then Naxos civic pages), so its three reserved
+  seats will stay empty. The refresh was NOT re-run. The dish row's "monastic vegetable stew"
+  description looks wrong (the Naxos dish is beef baked with eggplant, tomato and cheese) — curator to
+  check.
+* The Google /goto delayed-resolution logic (82c3db8) is in use in the dish-refresh search stage; a
+  single-recipe URL extract never touches Google.
+
+### Paid-first domain mark; cooks.com
+
+* Curator: several dish refreshes hung on cooks.com 429 pauses (60s, doubling to 480s per URL).
+* NEW `domains.paid_first` (curated, default 0; `_RENDER_COLUMNS`, editable field, cached
+  `get_paid_first_hosts()`). In `_fetch_with_full_fallback_uncached` a marked domain skips the direct
+  rung, goes to the paid unblocker, then Wayback, and never returns to direct; ledger rows carry
+  notes="paid-first". Inert without unblocker credentials. Everything else stays direct-first (the
+  stale "goes STRAIGHT to the unblocker" docstring was corrected). Domain editor: "Paid fetch first"
+  checkbox beside "Human capture only".
+* MEASURED, and the reason the mark does not rescue cooks.com: ledger since 10-01 — direct 205 tries,
+  0 ok (all 429); unblocker 68 tries, 0 ok; Wayback 6 of 67. Live test with the mark: straight to the
+  unblocker, origin 550 through the proxy, no snapshot, failed in 66s (versus 3-8 minutes of pauses
+  first).
+* DATA: cooks.com `paid_first = 1`; **cooks.com added to system_config `disallowed_domains`**, so
+  harvests drop it before any fetch (cost: the occasional Wayback hit).
+* NOT DONE: BCC on MARLEY was not restarted (bcc_restart.bat) — the editor checkbox will not save
+  until it is; jobs already running keep the old code. A transport error from the unblocker does not
+  count toward the per-host circuit breaker, so an unmarked always-failing host still pays the full
+  timeout on every URL.

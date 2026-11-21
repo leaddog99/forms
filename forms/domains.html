@@ -680,6 +680,11 @@
             <span class="opt-t">Human capture only <span style="font-weight:400;color:var(--muted)">(true paywall)</span></span>
           </label>
           <p class="opt-h">The server can <i>never</i> read this publisher's recipe bodies. Discover, score and rank as usual, but pay for no page fetch and refuse <b>⚙ Process selected</b>. Ingest from the cohort with <b>📋 Queue (manual)</b>, where your browser is signed in.</p>
+          <label class="opt">
+            <input type="checkbox" id="f_paid_first" ${Number(d.paid_first) === 1 ? 'checked' : ''}>
+            <span class="opt-t">Paid fetch first <span style="font-weight:400;color:var(--muted)">(skip the free try)</span></span>
+          </label>
+          <p class="opt-h">For a site that answers every free fetch with "too many requests". Skips the free fetch and its minutes of waiting, goes straight to the paid fetch, then the web archive. Every page costs a paid fetch, so tick it only when the free fetch never works.</p>
           </div>
           </div>
 
@@ -1726,6 +1731,7 @@
         url_prefilter: $('#f_url_prefilter')?.checked ? 1 : 0,           // pre-fetch slug skip (learned vocabulary)
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         human_capture_only: $('#f_human_capture_only')?.checked ? 1 : 0,   // R4 (Gated mode)
+        paid_first: $('#f_paid_first')?.checked ? 1 : 0,                   // skip direct, paid unblocker first
         aggregator: $('#f_aggregator')?.checked ? 1 : 0,                   // thin-wrapper index — shut down
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),

@@ -8883,10 +8883,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # nothing must not destroy what a working refresh found before it.
     if not entries and not _absent_pool:
         raise RuntimeError(
-            f"dish refresh for {canonical_name!r} found ZERO candidates — "
-            f"likely a SERP-provider outage (check the [scaleserp] lines "
-            f"above). Prior winners left untouched; retry when the provider "
-            f"recovers.")
+            f"dish refresh for {canonical_name!r} found ZERO candidates. Either "
+            f"the search lines do not find this dish (results dropped as "
+            f"off-topic, or none passed the recipe gate: see the [scaleserp] "
+            f"and DROP lines above; fix the dish's search lines) or the SERP "
+            f"provider failed (timeouts or errors in the [scaleserp] lines; "
+            f"retry later). Prior winners left untouched.")
 
     # Persist the (URL, DA, PA) cohort the dish fit saw — used by the
     # chapter-level aggregate fit to grade niche dishes whose own

@@ -733,6 +733,18 @@ def _fetch_direct_paced(url: str, timeout: int, *, on_429=None):
             time.sleep(wait)
 
 
+def _paid_first_host(url: str) -> bool:
+    """Is this URL's domain marked paid_first (domains master, curated)? Falls
+    CLOSED (False = the normal direct-first ladder) on any lookup problem."""
+    try:
+        from input.pipeline import domains_lib
+        hosts = domains_lib.get_paid_first_hosts()
+        h = _circuit_host(url)
+        return bool(h) and (h in hosts or any(h.endswith("." + x) for x in hosts))
+    except Exception:
+        return False
+
+
 def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
@@ -775,11 +787,10 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     """Tiered fetch: direct UA chain → [paid unblocker, opt-in] → Wayback.
 
     Returns (response, meta) where meta["source"] is "direct" | "unblocker" |
-    "wayback". `unblocker=True` (set by the caller when the domain's
-    fetch_strategy='unblocker') means the domain is KNOWN to block direct fetches, so we
-    go STRAIGHT to the PAID web-unblocker — skipping the wasted direct probe that would
-    only return a 200 challenge stub. Direct + Wayback remain as backstops if the
-    unblocker no-ops (no BYOK key) or fails. 404/410 stay terminal.
+    "wayback". `unblocker=True` only ENABLES the paid tier as an escalation: the
+    free direct fetch is still tried first. The one exception is a domain the
+    curator marked `paid_first` in the domains master, which skips direct and
+    goes paid unblocker → Wayback. 404/410 stay terminal.
     render=False: the unblocker still solves the challenge (residential IP + session) but
     skips the slow real-browser JS render — recipe content/JSON-LD is in the static HTML,
     so it's ~3x faster (~5s vs ~17-30s) AND ~3x cheaper. (A JS-only recipe site would need
@@ -795,6 +806,40 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         ms = int((now - _t0) * 1000)
         _t0 = now
         return ms
+
+    def _wayback_rung(lost: str):
+        nonlocal _rung
+        _rung += 1
+        wb = fetch_via_wayback(url, timeout=timeout)
+        if wb is None:
+            _acq_record(url, "wayback", ok=False, rung=_rung, reason="no wayback snapshot", ms=_ms())
+            raise requests.HTTPError(
+                f"{lost} and no Wayback snapshot available for {url}"
+            )
+        resp, ts = wb
+        _acq_record(url, "wayback", ok=not bool(blocked_reason(resp)), rung=_rung, resp=resp,
+                    reason=blocked_reason(resp) or "", ms=_ms(), notes=f"snapshot {ts}")
+        return resp, {"source": "wayback", "timestamp": ts}
+
+    # PAID-FIRST domains (domains.paid_first, curated): the direct rung is skipped
+    # outright and never revisited. For a host whose direct answer is always a 429
+    # the pause-and-retry ladder below costs 3-8 minutes per URL to learn nothing
+    # (cooks.com, 2026-11-21: 205 of 205 direct fetches were 429). Paid unblocker,
+    # then Wayback. Without unblocker credentials the mark is inert.
+    if _paid_first_host(url) and unblocker_available():
+        _tech = "unblocker_render" if render else "unblocker"
+        print(f"[unblocker] paid-first domain ({_circuit_host(url)}) - skipping the direct fetch")
+        _rung += 1
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=render)
+        _why = "unblocker returned nothing" if ub is None else (blocked_reason(ub[0]) or "")
+        _acq_record(url, _tech, ok=not _why, rung=_rung, resp=ub[0] if ub is not None else None,
+                    reason=_why, ms=_ms(), notes="paid-first")
+        if not _why:
+            return ub
+        if not try_wayback:
+            raise requests.HTTPError(f"Paid-first fetch failed for {url} ({_why})")
+        print(f"[unblocker] paid-first fetch lost ({_why}) - trying Wayback, not direct")
+        return _wayback_rung("Paid-first fetch failed")
     # Render-ELIGIBLE domains (render_required / unblocker strategy): the direct
     # fetch is still probed FIRST — it is free. 2026-08-28: the old render-FIRST
     # skip ("the static fetch is known-doomed") trusted the flag blindly and paid
@@ -901,17 +946,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
 
     if not try_wayback:
         raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
-    _rung += 1
-    wb = fetch_via_wayback(url, timeout=timeout)
-    if wb is None:
-        _acq_record(url, "wayback", ok=False, rung=_rung, reason="no wayback snapshot", ms=_ms())
-        raise requests.HTTPError(
-            f"Direct fetch failed and no Wayback snapshot available for {url}"
-        )
-    resp, ts = wb
-    _acq_record(url, "wayback", ok=not bool(blocked_reason(resp)), rung=_rung, resp=resp,
-                reason=blocked_reason(resp) or "", ms=_ms(), notes=f"snapshot {ts}")
-    return resp, {"source": "wayback", "timestamp": ts}
+    return _wayback_rung("Direct fetch failed")
 
 
 def fetch_html(url: str, *, timeout: int = DEFAULT_TIMEOUT_SECONDS,

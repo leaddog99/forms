@@ -82,6 +82,13 @@ EDITABLE_FIELDS = (
     # per-run choice is one someone has to remember every time — and forgetting it
     # costs a render per URL to rediscover a paywall we already measured.
     "human_capture_only",
+    # PAID FIRST (2026-11-21). 1 = skip the free direct fetch for this domain and
+    # go straight to the paid unblocker; if that loses, Wayback - never back to
+    # direct. For a host whose direct answer is ALWAYS a 429 (cooks.com: 205 of
+    # 205), where the 429 pause-and-retry ladder only burns 3-8 minutes per URL.
+    # CURATED: the default ladder stays direct-first because a wrong flag is pure
+    # spend (see _fetch_with_full_fallback_uncached).
+    "paid_first",
     # Deep-enrich outputs the create path and scripts/deep_enrich_borrowed.py
     # write through update_domain(). Both were silently DROPPED until 2026-09-11
     # because they were never registered here — every deep-enriched row carried
@@ -295,6 +302,8 @@ _RENDER_COLUMNS = {
     # fetch_strategy=unblocker), so without persisting it the Curate choice was lost
     # on save. Editable via the harvest-mode picker; the form's Save now stores it.
     "score_only": "INTEGER NOT NULL DEFAULT 0",
+    # CURATED: skip the direct fetch, paid unblocker first, then Wayback.
+    "paid_first": "INTEGER NOT NULL DEFAULT 0",
 }
 
 # Editorial provenance the curator can set (optional). cuisine_focus already lives in
@@ -1579,10 +1588,13 @@ _BLOCKED_CACHE: Optional[set] = None
 _RENDER_CACHE: Optional[set] = None
 _POOR_CACHE: Optional[set] = None
 _TRUST_CACHE: Optional[set] = None
+_PAID_FIRST_CACHE: Optional[set] = None
 
 
 def invalidate_cache() -> None:
     global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE, _POOR_CACHE, _TRUST_CACHE
+    global _PAID_FIRST_CACHE
+    _PAID_FIRST_CACHE = None
     _DISPLAY_CACHE = None
     _BLOCKED_CACHE = None
     _RENDER_CACHE = None
@@ -1669,6 +1681,29 @@ def get_render_eligible_hosts(db_path: str = _DEFAULT_DB) -> set:
             pass
         _RENDER_CACHE = hosts
     return _RENDER_CACHE
+
+
+def get_paid_first_hosts(db_path: str = _DEFAULT_DB) -> set:
+    """Cached set of hosts+roots the curator marked ``paid_first = 1``: the fetch
+    ladder skips the direct rung for these and starts at the paid unblocker.
+    CRUD writers invalidate it; a job process reads it once per run."""
+    global _PAID_FIRST_CACHE
+    if _PAID_FIRST_CACHE is None:
+        hosts: set = set()
+        try:
+            with _connect(db_path) as conn:
+                ensure_domains_table(conn)
+                for dom, root in conn.execute(
+                    "SELECT domain, root_domain FROM domains WHERE paid_first = 1"
+                ):
+                    if dom:
+                        hosts.add(dom.lower())
+                    if root:
+                        hosts.add(root.lower())
+        except Exception:
+            pass
+        _PAID_FIRST_CACHE = hosts
+    return _PAID_FIRST_CACHE
 
 
 def get_poor_publisher_hosts(db_path: str = _DEFAULT_DB) -> set:

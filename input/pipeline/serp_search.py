@@ -102,6 +102,17 @@ def _off_topic_page(query: str, org: list) -> bool:
              if w not in _GENERIC_Q]
     if not words or not query.isascii() or len(org) < 4:
         return False
+    # A Latin-script query answered in ANOTHER script cannot be judged by its
+    # words either: "Kalogeros Naxos recipe" (gl=us, 2026-11-20) returned
+    # «Καλόγερος Νάξου», «Συνταγή για παραδοσιακό καλόγερο Νάξου» - 6 of 8 the
+    # dish itself, none spelling it in Latin letters - and the page was dropped
+    # as off-topic three times running (job #3042 ended with zero candidates).
+    # When most titles are mostly non-Latin letters, the page stands.
+    def _foreign(title: str) -> bool:
+        letters = [ch for ch in title if ch.isalpha()]
+        return bool(letters) and sum(not ch.isascii() for ch in letters) * 2 > len(letters)
+    if sum(_foreign(str(it.get("title") or "")) for it in org) * 2 > len(org):
+        return False
     # On-topic = a result carrying MOST of the distinctive words, not just one:
     # the strangers served for "Best Chicken Kiev" were chicken parmesan, chicken
     # adobo and chicken salad - every one says "chicken", none says "kiev".
@@ -384,12 +395,24 @@ def _unwrap_page(org: list[dict], should_cancel, label: str, page
     return out, n_wrapped, n_unresolved, waited, n_inter
 
 
+# The same host + path under different query strings, within ONE search line.
+# Google Greece answered 'συνταγή καλόγερος' (2026-11-20, job #3042) with
+# tasty-guide.gr/banners/recipeoftheday?ts=bnr<random> seventeen times in twenty
+# results: one ad page, a fresh nonce per crawl, each fetched through the paid
+# unblocker and dropped. A query string can also BE the page (?recipeId=42 - see
+# url_utils._TRACKING_PARAMS), and nothing in the URL tells a nonce from an id,
+# so this is a cap, not a merge: the first two stand, the rest of that line's
+# links to the same path are dropped and said so in the page line.
+_SAME_PATH_KEEP = 2
+
+
 def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[str],
                   *, label: str, page: int, should_cancel=None) -> int:
     """Append one page's organic results to `out` (deduped, ranked in arrival order),
     flagging `skip`-host results `blocked`. Returns the number of USABLE results in
     `out` so far. Prints the page's usable/blocked split when anything was blocked,
     and the wrapper split when Google wrapped any link (see _GOOGLE_WRAPPER)."""
+    from urllib.parse import urlsplit
     from input.pipeline.url_utils import root_domain
     n_blocked, hosts = 0, {}
     links, n_wrapped, n_unresolved, waited, n_inter = _unwrap_page(org, should_cancel, label, page)
@@ -399,10 +422,27 @@ def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[st
               + (f", {n_unresolved} Google would not resolve (dropped)" if n_unresolved else "")
               + (f"; waited {waited:.0f}s on {n_inter} verification page{'s' if n_inter != 1 else ''}"
                  if n_inter else ""))
+    # One page under many query strings (see _SAME_PATH_KEEP). Counted over the
+    # whole line so far, so a flood that starts on page 1 is still capped on page 3.
+    def _path_key(u: str):
+        sp = urlsplit(u)
+        return (sp.netloc.lower(), sp.path) if sp.query else None
+    path_n: dict = {}
+    for r in out:
+        k = _path_key(r["link"])
+        if k:
+            path_n[k] = path_n.get(k, 0) + 1
+    flood: dict = {}
     for it, link in zip(org, links):
         if not link or link in seen:
             continue
         seen.add(link)
+        pk = _path_key(link)
+        if pk:
+            if path_n.get(pk, 0) >= _SAME_PATH_KEEP:
+                flood[pk] = flood.get(pk, 0) + 1
+                continue
+            path_n[pk] = path_n.get(pk, 0) + 1
         row = {"link": link, "title": it.get("title") or "", "rank": len(out) + 1}
         host = root_domain(link) if skip else ""
         if host and host.lower() in skip:
@@ -411,6 +451,9 @@ def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[st
             hosts[host] = hosts.get(host, 0) + 1
         out.append(row)
     usable = sum(1 for r in out if not r.get("blocked"))
+    for (fh, fp), n in flood.items():
+        print(f"  [{label}] page {page}: {n} more link{'s' if n != 1 else ''} to {fh}{fp} differing only "
+              f"in the query string - dropped (first {_SAME_PATH_KEEP} kept)")
     if n_blocked:
         top = ", ".join(f"{h} x{n}" for h, n in sorted(hosts.items(), key=lambda kv: -kv[1])[:3])
         print(f"  [{label}] page {page}: {len(org)} organic, {n_blocked} on blocked hosts "
