@@ -321,7 +321,20 @@ SYSTEM_DEFAULTS: list[dict] = [
         "category": "Limits",
         "label": "Rate-limit direct retries",
         "description": "How many paused direct retries a URL gets after a 429 before the "
-                       "ladder escalates to the unblocker / Wayback.",
+                       "ladder escalates to the unblocker / Wayback. Paid once per host per "
+                       "run: after one URL waits them all out and is still refused, later "
+                       "URLs on that host do not pause again.",
+    },
+    {
+        "key": "host_giveup_after",
+        "value": 3,
+        "type": "int",
+        "category": "Limits",
+        "label": "Give up on a host after N lost URLs in a row",
+        "description": "Within one run, after this many URLs in a row from the same host lose "
+                       "every live fetch (free and paid), the run stops trying that host live "
+                       "and sends its remaining URLs straight to the web archive. Any live "
+                       "success resets the count. 0 disables.",
     },
     {
         "key": "domain_keep_band_lo",

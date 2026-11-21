@@ -329,6 +329,9 @@ _UNBLOCKER_PROXY_PROVIDERS = {
 # pool, so they're pure wasted latency. A single non-block response (2xx or a real 404)
 # proves the pool works again for that host and resets the counter.
 _UNBLOCKER_HOST_BLOCKS: dict = {}
+# url -> the last non-2xx ORIGIN status a proxy unblocker relayed for it. Lets the
+# host give-up count tell a missing page (404/410) from a host that is shut.
+_UNBLOCKER_ORIGIN_STATUS: dict = {}
 
 
 def _unblocker_cfg() -> dict:
@@ -448,6 +451,7 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
         # rather than hammering an Oxylabs-side 429. seriouseats/People Inc. serve 402 here,
         # which read like "account unpaid" under the old "{provider} returned" wording.
         origin_echo = resp.headers.get("x-oxylabs-content-status-code")
+        _UNBLOCKER_ORIGIN_STATUS[url] = resp.status_code
         is_origin_block = resp.status_code in _BLOCK and (
             origin_echo is None or origin_echo == str(resp.status_code))
         if is_origin_block and attempt < retries:
@@ -685,6 +689,50 @@ def _acq_record(url: str, technique: str, *, ok: bool, rung: int, resp=None,
 # So a 429 on the direct rung now PAUSES (Retry-After if sent, else the setting,
 # doubling per further 429 in this run) and retries direct before any paid rung.
 _RATELIMIT_PAUSES: dict = {}     # host -> number of pauses taken this run (drives doubling)
+# Hosts that answered 429 through EVERY paused retry of one URL this run. The
+# pauses proved nothing would change, so later URLs on that host do not wait
+# again (cooks.com, 2026-11-21: 60s, 120s, 240s, 480s per URL across a run, 205
+# of 205 direct fetches 429). One clean direct fetch takes the host back out.
+_RATELIMIT_SPENT: set = set()
+
+# --- give up on a host the run cannot break -----------------------------------
+# host -> consecutive URLs this run where every LIVE rung lost (direct, and the
+# paid unblocker where it applies). At `host_giveup_after` the ladder stops
+# trying live fetches for that host for the rest of the run and goes straight to
+# Wayback (free, a few seconds, and the only route that has ever worked on some
+# hosts). Any live success resets the count. Per PROCESS, so per job.
+_HOST_LIVE_LOST: dict = {}
+
+
+def _host_giveup_after() -> int:
+    try:
+        from input.pipeline import system_config
+        return int(system_config.get_setting("host_giveup_after", 3) or 0)
+    except Exception:
+        return 3
+
+
+def _host_live_result(url: str, ok: bool) -> None:
+    host = _circuit_host(url)
+    _gone = _UNBLOCKER_ORIGIN_STATUS.pop(url, None) in (404, 410)
+    if not host:
+        return
+    if ok:
+        _HOST_LIVE_LOST.pop(host, None)
+        return
+    if _gone:          # the page is missing; that says nothing about the host
+        return
+    n = _HOST_LIVE_LOST.get(host, 0) + 1
+    _HOST_LIVE_LOST[host] = n
+    trip = _host_giveup_after()
+    if trip and n == trip:
+        print(f"[fetch] GIVING UP on {host} for the rest of this run: {n} URLs in a row lost "
+              f"every live fetch - further URLs go straight to Wayback")
+
+
+def _host_given_up(url: str) -> bool:
+    trip = _host_giveup_after()
+    return bool(trip and trip > 0 and _HOST_LIVE_LOST.get(_circuit_host(url), 0) >= trip)
 
 
 def _ratelimit_cfg() -> tuple[int, int]:
@@ -713,10 +761,18 @@ def _fetch_direct_paced(url: str, timeout: int, *, on_429=None):
     attempt = 0
     while True:
         try:
-            return fetch_with_ua_fallback(url, timeout=timeout)
+            got = fetch_with_ua_fallback(url, timeout=timeout)
+            _RATELIMIT_SPENT.discard(host)
+            return got
         except requests.HTTPError as e:
             status = getattr(e.response, "status_code", None) if e.response is not None else None
+            if status == 429 and pause_s > 0 and attempt >= retries and retries > 0:
+                _RATELIMIT_SPENT.add(host)     # waited the full ladder and still 429
             if status != 429 or pause_s <= 0 or attempt >= retries:
+                raise
+            if host in _RATELIMIT_SPENT:
+                print(f"[direct] 429 from {host} - already waited out the retries on this host "
+                      f"this run and it stayed 429: not pausing again")
                 raise
             n = _RATELIMIT_PAUSES.get(host, 0)
             wait = _retry_after_s(e.response) or pause_s * (2 ** min(n, 3))
@@ -821,6 +877,14 @@ def _fetch_with_full_fallback_uncached(url: str, *,
                     reason=blocked_reason(resp) or "", ms=_ms(), notes=f"snapshot {ts}")
         return resp, {"source": "wayback", "timestamp": ts}
 
+    # GIVEN-UP host: earlier URLs this run lost every live rung in a row. Do not
+    # pay the same minutes (and paid fetches) again per URL - Wayback or nothing.
+    if _host_given_up(url):
+        _lost = f"Gave up on live fetches from {_circuit_host(url)} this run"
+        if not try_wayback:
+            raise requests.HTTPError(f"{_lost}: {url}")
+        return _wayback_rung(_lost)
+
     # PAID-FIRST domains (domains.paid_first, curated): the direct rung is skipped
     # outright and never revisited. For a host whose direct answer is always a 429
     # the pause-and-retry ladder below costs 3-8 minutes per URL to learn nothing
@@ -834,6 +898,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         _why = "unblocker returned nothing" if ub is None else (blocked_reason(ub[0]) or "")
         _acq_record(url, _tech, ok=not _why, rung=_rung, resp=ub[0] if ub is not None else None,
                     reason=_why, ms=_ms(), notes="paid-first")
+        _host_live_result(url, not _why)
         if not _why:
             return ub
         if not try_wayback:
@@ -859,6 +924,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
             low = (resp.text or "").lower()
             if not blocked_reason(resp) and ("ld+json" in low or "<article" in low):
                 _acq_record(url, "direct", ok=True, rung=_rung, resp=resp, ms=_ms(), notes="probe")
+                _host_live_result(url, True)
                 return resp, {"source": "direct", "ua_used": ua_used}
             probe_why = blocked_reason(resp) or "no ld+json / <article> — looks like a JS shell"
         except Exception as e:
@@ -871,6 +937,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         if ub is not None:
             _acq_record(url, "unblocker_render", ok=not bool(blocked_reason(ub[0])), rung=_rung,
                         resp=ub[0], reason=blocked_reason(ub[0]) or "", ms=_ms())
+            _host_live_result(url, not bool(blocked_reason(ub[0])))
             return ub
         _acq_record(url, "unblocker_render", ok=False, rung=_rung, reason="unblocker returned nothing", ms=_ms())
     # PLAIN FIRST (credit-conscious): try the free direct fetch; only escalate to the PAID
@@ -912,6 +979,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
             err = requests.HTTPError(f"Soft-block challenge for {url} ({_blocked}) — no unblocker; trying Wayback")
         else:
             _acq_record(url, "direct", ok=True, rung=_rung, resp=resp, ms=_ms())
+            _host_live_result(url, True)
             return resp, {"source": "direct", "ua_used": ua_used}
         if not _parked:
             _acq_record(url, "direct", ok=False, rung=_rung, resp=resp, reason=_blocked, ms=_ms())
@@ -941,9 +1009,13 @@ def _fetch_with_full_fallback_uncached(url: str, *,
             _ub_block = blocked_reason(ub[0])
             _acq_record(url, "unblocker", ok=not bool(_ub_block), rung=_rung, resp=ub[0],
                         reason=_ub_block or "", ms=_ms())
+            _host_live_result(url, not bool(_ub_block))
             return ub
         _acq_record(url, "unblocker", ok=False, rung=_rung, reason="unblocker returned nothing", ms=_ms())
 
+    # Every live rung lost for this URL (a 404/410 never gets here: it is the
+    # page that is gone, not the host that is shut).
+    _host_live_result(url, False)
     if not try_wayback:
         raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
     return _wayback_rung("Direct fetch failed")
