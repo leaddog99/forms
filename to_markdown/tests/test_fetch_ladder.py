@@ -83,13 +83,14 @@ class Sim:
     def run(self, steps) -> list:
         from input.pipeline import acquisition, domains_lib, system_config
         saved = (requests.get, acquisition.record, system_config.get_setting,
-                 domains_lib.get_paid_first_hosts, F.time.sleep, F.random.uniform, dict(os.environ))
+                 domains_lib.fetch_policy, F.time.sleep, F.random.uniform, dict(os.environ))
         requests.get = self.get
         acquisition.record = lambda url, technique, **kw: self.ledger.append(
             f"{kw.get('rung')}:{technique}:{'ok' if kw.get('ok') else 'lost'}"
             + (f":{kw['notes']}" if kw.get("notes") else ""))
         system_config.get_setting = lambda key, default=None, **kw: default
-        domains_lib.get_paid_first_hosts = lambda *a, **kw: self.paid_first
+        domains_lib.fetch_policy = lambda host, **kw: domains_lib.FetchPolicy(
+            paid_first=host in self.paid_first)
         F.time.sleep = lambda s: self.sleeps.append(round(s))
         F.random.uniform = lambda a, b: 0
         for k in ("UNBLOCKER_PROXY_USER", "UNBLOCKER_PROXY_PASS", "UNBLOCKER_API_KEY"):
@@ -113,7 +114,7 @@ class Sim:
                             "ledger": self.ledger, "slept": self.sleeps})
         finally:
             (requests.get, acquisition.record, system_config.get_setting,
-             domains_lib.get_paid_first_hosts, F.time.sleep, F.random.uniform) = saved[:6]
+             domains_lib.fetch_policy, F.time.sleep, F.random.uniform) = saved[:6]
             os.environ.clear()
             os.environ.update(saved[6])
             F.reset_run_state()

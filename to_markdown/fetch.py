@@ -23,8 +23,9 @@ many of its URLs in a row lost every live rung. Nothing here persists; the
 durable record is the acquisition ledger (input/pipeline/acquisition.py), one
 row per rung tried.
 
-Curated, per-domain inputs come from the domains master (`paid_first`) and
-from the caller (`unblocker`, `render`). Tunable numbers are system_config
+The per-domain answer to "how may we fetch this?" is ONE function,
+`domains_lib.fetch_policy(url, run=...)`. Callers pass its `unblocker` and
+`render` in; the ladder reads its `paid_first` itself. Tunable numbers are system_config
 settings read through `_setting`. Tests: to_markdown/tests/test_fetch_ladder.py
 replays the scenarios against a golden record with no network.
 """
@@ -858,8 +859,7 @@ def _paid_first_host(host: str) -> bool:
     CLOSED (False = the normal direct-first ladder) on any lookup problem."""
     try:
         from input.pipeline import domains_lib
-        hosts = domains_lib.get_paid_first_hosts()
-        return bool(host) and (host in hosts or any(host.endswith("." + x) for x in hosts))
+        return bool(host) and domains_lib.fetch_policy(host).paid_first
     except Exception:
         return False
 

@@ -38,6 +38,7 @@ see [[live-is-recipe-warn]] for the open warn-and-continue work.
 from __future__ import annotations
 
 import argparse
+import contextvars
 import json
 import os
 import random
@@ -948,8 +949,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         for j in range(k, min(len(plan), k + _lookahead)):
             if j not in _futs:
                 _pi, _pe, _prn = plan[j]
-                _futs[j] = _pool.submit(_fetch_for_filter, _pe["url"],
-                                        unblocker=unblocker, render=_prn)
+                # A pool thread starts with an EMPTY context, so without the copy
+                # these fetches lose the job's acquisition context (their ledger
+                # rows carried no job id: 613 of 949 rows on 2026-11-20/21) and
+                # the page-cache switch. One copy per task — a context cannot be
+                # entered by two threads at once.
+                _futs[j] = _pool.submit(contextvars.copy_context().run, _fetch_for_filter,
+                                        _pe["url"], unblocker=unblocker, render=_prn)
 
     def _stop_prefetch() -> None:
         if _pool is None:
@@ -1875,18 +1881,10 @@ def build_batch(
     # filter may rescue a JS-rendered recipe (e.g. a Boston Globe result for "coq au
     # vin"). Bounded — escalation still fires only on a would-be drop. Best-effort.
     try:
-        from input.pipeline.domains_lib import get_render_eligible_hosts
-        from input.pipeline.url_utils import root_domain as _root_domain
-        _render_hosts = get_render_eligible_hosts()
-        if _render_hosts:
-            for _e in entries:
-                _u = (_e.get("url") or "").lower()
-                try:
-                    _host = _u.split("//", 1)[1].split("/", 1)[0] if "//" in _u else ""
-                except Exception:
-                    _host = ""
-                if _host in _render_hosts or (_root_domain(_e.get("url") or "") or "").lower() in _render_hosts:
-                    _e["_allow_render"] = True
+        from input.pipeline.domains_lib import fetch_policy as _fetch_policy
+        for _e in entries:
+            if _fetch_policy(_e.get("url") or "").render_eligible:
+                _e["_allow_render"] = True
     except Exception:
         pass
     # The dish's own name (and the words of its queries) are food words FOR THIS RUN,
@@ -1906,12 +1904,8 @@ def build_batch(
     # so the canonical chain runs direct -> unblocker (tier 1) -> wayback (tier 2).
     # The chain only spends unblocker credit on pages the FREE direct fetch already
     # lost. Config-gated: dish_unblocker_fallback (default on), 0/false disables.
-    try:
-        from input.pipeline.system_config import get_setting as _gs_ub
-        _dish_unblocker = bool(_gs_ub("dish_unblocker_fallback", True))
-    except Exception:
-        _dish_unblocker = True
-    _dish_unblocker = _dish_unblocker and unblocker_available()
+    from input.pipeline.domains_lib import unblocker_fallback as _unblocker_fallback
+    _dish_unblocker = _unblocker_fallback("dish") and unblocker_available()
     print(f"[FETCH] dish-batch fallback tiers: direct -> "
           f"{'unblocker -> wayback (dish_unblocker_fallback=on)' if _dish_unblocker else 'wayback (unblocker ' + ('disabled by config' if unblocker_available() else 'unavailable — no key') + ')'}")
     entries, dropped_not_recipe = _is_recipe_filter(

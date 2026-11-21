@@ -12972,3 +12972,35 @@ a scheduled job is added, name folding changes.
   breaker numbers are constants in code, not settings; (c) build_query_batch.py still has eight unused
   imports (left: one module reads env at import time); (d) nothing carries a dead host between jobs —
   the nightly `content_obtainable` policy is the place for it.
+
+### 2026-11-21 (night) — ONE fetch policy; dish form regrouped around the run; pool fetches lost their job id
+
+* FETCH POLICY, one resolver: `domains_lib.fetch_policy(url_or_host, run=None|'extract'|'publisher'|'dish')`
+  returns `FetchPolicy(strategy, unblocker, render, paid_first)` (+ `never_fetch`, `render_eligible`).
+  Rule: an 'unblocker' strategy enables the paid tier, a never-fetch strategy (skip, bookmarklet_only)
+  never pays, anything else follows that run's `<run>_unblocker_fallback` setting; run=None counts only
+  the domain's own opt-in. One cached read of the non-default rows (re-read after 60s, because a job
+  process can learn `render_required` that the long-lived API process must see). Replaced five copies:
+  save_recipe_api `_pub_unblocker` and the single-recipe extract, the dish batch (`_allow_render`,
+  `unblocker_fallback('dish')`), domain_enrich, screenshot_pipeline; the ladder reads `paid_first`
+  through it. `get_render_eligible_hosts` and `get_paid_first_hosts` are gone.
+  One widening to know about: a host with no row of its own now inherits the policy of a sibling
+  that shares its root (www.nytimes.com from cooking.nytimes.com). The harvest always did this; the
+  single-recipe extract only looked for a row at the root itself.
+* BUG FOUND AND FIXED: the harvest's is-recipe fetch pool (ThreadPoolExecutor) started its threads with
+  an empty context, so those fetches wrote ledger rows with no job id or run kind — 613 of 949 rows on
+  11-20/21 — and lost the page-cache switch. Each task now runs in `contextvars.copy_context()`.
+  Runs before this fix show only their winner-extract phase in any per-job view.
+* NEW `acquisition.run_summary(conn, job_id)` and `GET /jobs/{id}/fetch-summary`: attempts and pages
+  got per route, paid units, seconds waited on 429s, and the hosts where no route got a page (with
+  the commonest failure class, whether the run gave up on them, and disallowed / paid-first flags).
+* DISH FORM (forms/dishes_v2.html) regrouped in workflow order with a jump bar: Dish (names, notes) ·
+  Search · Run · Results (top recipes, Editor's Choice, scored cohort, rejects, considered) · Analysis
+  (OU fit, cohort scores, signals) · Commerce and editorial (product classes, story, metadata). Each
+  group says what the Save button covers. The Refresh/Cancel buttons, the live log and the last-run
+  facts were in three places and are now ONE Run panel, which also shows the last job's error text
+  (it used to be readable only in the log) and "How the pages were fetched". Every element id kept.
+  Checked by a headless render of Kalogeros against the live server; the fetch panel itself was NOT
+  seen rendered, because the running server predates the endpoint (it hides on a 404).
+* NEEDS a restart of BCC on MARLEY (bcc_restart.bat) to take effect in the service: the fetch-summary
+  endpoint, the policy resolver in the extract path, and the paid-first checkbox save.

@@ -124,18 +124,9 @@ def _homepage_snippet(host: str, max_chars: int = 1500) -> str:
     try:
         from to_markdown.fetch import fetch_with_full_fallback
         from input.pipeline import domains_lib
-        import sqlite3
-        from input.pipeline.db import connect as db_connect
-        unblock = render = False
-        try:
-            with db_connect("recipes.db", timeout=10) as c:
-                row = domains_lib.get_domain(c, host) or {}
-            unblock = (row.get("fetch_strategy") or "") == "unblocker"
-            render = bool(row.get("render_required"))
-        except Exception:
-            pass
-        res = fetch_with_full_fallback("https://" + host + "/", unblocker=unblock,
-                                       render=render, try_wayback=False)
+        policy = domains_lib.fetch_policy(host)      # the domain's own opt-in only
+        res = fetch_with_full_fallback("https://" + host + "/", unblocker=policy.unblocker,
+                                       render=policy.render, try_wayback=False)
         resp = res[0] if isinstance(res, tuple) else res
         html = getattr(resp, "text", "") or ""
         if not html:

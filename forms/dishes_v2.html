@@ -30,6 +30,25 @@
     /* Search-line query box: grows with its content (autosized), never scrolls it
        out of sight. One visual line when short; wraps when long. */
     .qr-q{ resize:none; overflow:hidden; line-height:1.45; }
+    /* Section groups: the page follows the work — dish, search, run, results,
+       analysis, editorial — and each group names what Save does there. */
+    .d-jump{ display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px; }
+    .d-jump button{ font:inherit; font-size:.8em; cursor:pointer; padding:5px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--ed-key); }
+    .d-jump button:hover{ border-color:var(--accent); color:var(--accent-dark); }
+    .d-group{ margin:38px 0 0; padding:0 0 12px; scroll-margin-top:14px; }
+    .d-group h2{ margin:0; font-size:1.18rem; font-weight:500; color:var(--ink); }
+    .d-group p{ margin:3px 0 0; font-size:.84em; color:var(--muted); }
+    .d-runbar{ display:flex; gap:10px; align-items:center; margin:0 0 12px; flex-wrap:wrap; }
+    .d-runfacts{ margin:4px 0 6px; row-gap:9px; }
+    .d-fetch{ margin-top:18px; }
+    .d-fetch table{ border-collapse:collapse; font-size:.88em; font-variant-numeric:tabular-nums; }
+    .d-fetch th{ text-align:left; font-weight:600; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ed-key); padding:0 22px 6px 0; }
+    .d-fetch td{ padding:5px 22px 5px 0; border-top:1px solid var(--ed-hairline-soft); }
+    .d-fetch td.n, .d-fetch th.n{ text-align:right; }
+    .d-fetch .d-lost{ margin:14px 0 0; padding:0; list-style:none; font-size:.88em; }
+    .d-fetch .d-lost li{ padding:6px 0; border-top:1px solid var(--ed-hairline-soft); display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+    .d-fetch .d-lost .h{ font-weight:500; }
+    .d-fetch .d-lost .w{ color:var(--muted); }
     /* Sortable stat header over the winners/cohort lists */
     .t10-sorthead{ display:flex; align-items:baseline; padding:2px 11px 6px; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
     .t10-sorthead-legend{ font-size:.72rem; letter-spacing:0; text-transform:none; }
@@ -339,20 +358,35 @@
           <span class="ed-pill"><i class="d"></i>top ${d.top_n_final} · TTL ${ttlLabel}</span>
           ${d.chapter ? `<span class="ed-pill"><i class="d"></i>${escapeHtml(d.chapter)}</span>` : ''}
         </div>
-        <p class="ed-submeta">${d.last_run_count ?? 0} kept · last run ${fmtDate(d.last_refreshed)}${d.last_run_bottom_ou != null ? ' · bottom OU ' + num(d.last_run_bottom_ou,2) : ''}</p>
+        <nav class="d-jump" id="dJump" aria-label="Sections">
+          ${[['dish','Dish'],['search','Search'],['run','Run'],['results','Results'],['analysis','Analysis'],['editorial','Commerce and editorial']]
+            .map(([k, t]) => `<button type="button" data-jump="g_${k}">${t}</button>`).join('')}
+        </nav>
 
-        <div class="ed-field full" style="margin:8px 0 18px">
+        <header class="d-group" id="g_dish"><h2>Dish</h2><p>What it is called and what you know about it. Saved with the Save button.</p></header>
+        <section class="ed-block d-first">
+          <h3 class="ed-block-label">Names</h3>
+        <div class="ed-field full" style="margin:0 0 16px">
           <label for="f_display">Display name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(cosmetic — what's shown everywhere; the join key “${escapeHtml(d.name)}” never changes). Blank = use the key.</span></label>
           <input id="f_display" type="text" value="${escapeHtml(d.display_name_set ? d.display_name : '')}" placeholder="${escapeHtml(d.name)}">
         </div>
 
-        <div class="ed-field full" style="margin:8px 0 18px">
+        <div class="ed-field full" style="margin:0 0 16px">
           <label for="f_aliases">Aliases <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(other names this dish answers to, comma-separated — a recipe whose identity card names an alias exactly is claimed as strongly as by the dish name itself; use for spellings, translations, and merged-dish names)</span></label>
           <input id="f_aliases" type="text" value="${escapeHtml((d.aliases || []).join(', '))}" placeholder="e.g. Spaghetti alla Nerano, Pasta alla Nerano">
         </div>
 
+        </section>
+
         <section class="ed-block">
-          <h3 class="ed-block-label">Search config</h3>
+          <h3 class="ed-block-label">Curator notes</h3>
+          <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
+          ${d.description ? `<p class="ed-notes-help" style="margin-top:10px">Auto description: ${escapeHtml(d.description)}</p>` : ''}
+        </section>
+
+        <header class="d-group" id="g_search"><h2>Search</h2><p>Where a run looks for this dish. Saved with the Save button.</p></header>
+        <section class="ed-block">
+          <h3 class="ed-block-label">Search lines and sizes</h3>
           <div class="ed-field full" style="margin-bottom:16px">
             <label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to Google verbatim)</span></label>
             ${queryRowsBlockHtml('qrows_edit')}
@@ -370,28 +404,36 @@
           </div>
         </section>
 
+        <header class="d-group" id="g_run"><h2>Run</h2><p>Search, fetch, verify, score and keep the winners.</p></header>
         <section class="ed-block">
-          <h3 class="ed-block-label">Curator notes</h3>
-          <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
-          ${d.description ? `<p class="ed-notes-help" style="margin-top:10px">Auto description: ${escapeHtml(d.description)}</p>` : ''}
-        </section>
-
-        ${fitBlock(d)}
-
-        <section class="ed-block">
-          <h3 class="ed-block-label">Top recipes <span class="ed-count" id="topcount"></span></h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">The curated winners kept from the last refresh, ranked by the OU/power blend.</p>
-          <!-- Run controls live WITH the data they produce (same placement +
-               language as the domains form's publisher refresh). Cancel is
-               hidden when idle (no-surprise rule) — setCancel(true) reveals it
-               for the life of a run, including the attach-to-running path. -->
-          <div class="ed-actions" style="margin:0 0 10px">
+          <!-- ONE place for a run: start it, watch it, read how it ended. Cancel is
+               hidden when idle (no-surprise rule) — setCancel(true) reveals it for
+               the life of a run, including the attach-to-running path. -->
+          <div class="d-runbar">
             <button type="button" class="ed-btn" id="refreshBtn" title="Run the dish query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
             <button type="button" class="ed-btn danger" id="cancelRefreshBtn" hidden
                     title="Stop the running refresh — aborts after the current search page or candidate">✋ Cancel</button>
             <span class="ed-save-hint" id="dishTopHint"></span>
           </div>
           <pre id="dishLog" style="display:none;max-height:340px;overflow:auto;margin:0 0 10px;padding:12px 14px;background:#1c1813;color:#e9e1d4;border-radius:10px;font-size:.76rem;line-height:1.45;white-space:pre-wrap;word-break:break-word"></pre>
+          <div class="ed-kv d-runfacts">
+            <div class="k">Last run</div><div class="v">${neverRun(d) ? 'never run' : escapeHtml(d.last_run_status || '—') + ' <span class="sub">· ' + fmtDate(d.last_refreshed) + '</span>'}</div>
+            <div class="k">Recipes kept</div><div class="v">${d.last_run_count ?? '—'}${d.last_run_bottom_ou != null ? ' <span class="sub">· cutoff OU ' + num(d.last_run_bottom_ou,2) + '</span>' : ''}</div>
+            <div class="k">Next run</div><div class="v">${nextRunValue}</div>
+            <div class="k">Log</div><div class="v">${d.last_run_log_url ? `<a class="d-loglink" href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener">view log</a>` : '—'}</div>
+          </div>
+          <div id="runWhy"></div>
+          <details class="ed-accordion d-fetch" id="fetchAcc" hidden>
+            <summary>How the pages were fetched <span class="ed-pill" id="fetchPill" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Every page this run went to get, by the route that was tried.<button type="button" class="info-dot" data-info-title="How the pages were fetched" data-info="A page is tried <b>direct</b> first, which is free. If the site blocks that, the <b>paid fetch</b> is tried, then the <b>web archive</b>. A site that answers <i>too many requests</i> is waited on once per run, not once per page.<br><br><b>Could not be reached</b> lists the sites where no route produced a single page. After three lost pages in a row the run <b>gives up</b> on a site and only checks the web archive for the rest. A site that never works belongs on the disallowed list (System &rarr; Harvest), which drops it before any fetch.">i</button></p>
+            <div id="fetchBody"></div>
+          </details>
+        </section>
+
+        <header class="d-group" id="g_results"><h2>Results</h2><p>What the last run kept, what it scored, and what it dropped.</p></header>
+        <section class="ed-block">
+          <h3 class="ed-block-label">Top recipes <span class="ed-count" id="topcount"></span></h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">The curated winners kept from the last refresh, ranked by the OU/power blend.</p>
           <ol class="ed-t10" id="toplist"><li class="ed-empty-fit">Loading…</li></ol>
         </section>
 
@@ -423,19 +465,6 @@
         </section>
 
         <section class="ed-block">
-          <h3 class="ed-block-label">Last run</h3>
-          <div class="ed-kv">
-            <div class="k">Status</div><div class="v">${escapeHtml(d.last_run_status || '—')}</div>
-            <div class="k">Recipes kept</div><div class="v">${d.last_run_count ?? '—'}</div>
-            <div class="k">Bottom OU (cutoff)</div><div class="v">${num(d.last_run_bottom_ou,2)}</div>
-            <div class="k">Last refreshed</div><div class="v">${fmtDate(d.last_refreshed)}</div>
-            <div class="k">Next run</div><div class="v">${nextRunValue}</div>
-            <div class="k">Log</div><div class="v">${d.last_run_log_url ? `<a class="d-loglink" href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener">view log</a>` : '—'}</div>
-          </div>
-
-        </section>
-
-        <section class="ed-block">
           <details class="ed-accordion" id="rejectsAcc">
             <summary>Rejects <span class="ed-pill" id="rejCount" style="margin-left:6px"></span></summary>
             <p class="ed-notes-help" style="margin:10px 0 12px">URLs that ranked but were dropped (extract/save, or an anti-bot <b>fetch-fail</b>). <b>“would’ve qualified”</b> = its OU beats the cut bar, so it's worth recovering manually — open the link, run the bookmarklet, save normally.</p>
@@ -452,6 +481,9 @@
             <ol class="ed-t10" id="candlist"><li class="ed-empty-fit">Loading…</li></ol>
           </details>
         </section>
+
+        <header class="d-group" id="g_analysis"><h2>Analysis</h2><p>How this dish’s recipes score and what they have in common.</p></header>
+        ${fitBlock(d)}
 
         <section class="ed-block">
           <details class="ed-accordion" open id="scoresAcc">
@@ -473,6 +505,7 @@
           </details>
         </section>
 
+        <header class="d-group" id="g_editorial"><h2>Commerce and editorial</h2><p>Product classes save as you click; the story saves with the Save button.</p></header>
         <section class="ed-block">
           <details class="ed-accordion" id="dpcAcc">
             <summary>Product classes <span class="ed-pill" id="dpcPill" style="margin-left:6px"></span></summary>
@@ -582,6 +615,11 @@
         btn.disabled = false;
       });
       attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
+      loadLastRun(d.name);
+      $('#dJump').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-jump]'); if (!b) return;
+        document.getElementById(b.getAttribute('data-jump'))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
       $('#eclist').addEventListener('click', (e) => {
@@ -1289,6 +1327,53 @@
       } catch (_){ /* visibility is a nicety; never break the detail render */ }
     }
 
+    // The Run panel's account of the LAST finished refresh: why it failed (the
+    // job's own error text, which used to be readable only in the log) and how
+    // its pages were fetched (the acquisition ledger, by job). Both are extras:
+    // any failure here leaves the panel as it was.
+    const ROUTE_LBL = { cache: 'Page cache', direct: 'Direct', unblocker: 'Paid fetch',
+                        unblocker_render: 'Paid fetch, in a browser', wayback: 'Web archive',
+                        walker: 'Signed-in capture', human: 'By hand' };
+    const WHY_LBL = { 'block:hard': 'blocked', 'block:soft': 'blocked', 'block:captcha': 'asked for a captcha',
+                      'block:ratelimit': 'too many requests', 'shell:js': 'page needs a browser',
+                      'net:error': 'no answer', 'net:timeout': 'timed out', 'gone:404': 'page not found',
+                      'gone:no-snapshot': 'not in the web archive', 'dead:parked': 'site is gone',
+                      'vendor:402': 'refused the paid fetch' };
+    async function loadLastRun(dishName){
+      try {
+        const r = await fetch(`/jobs?entity_ref=${encodeURIComponent('dish:' + dishName)}&type=dish_refresh&limit=8`);
+        if (!r.ok) return;
+        const jobs = await r.json().catch(() => []);
+        const last = (Array.isArray(jobs) ? jobs : []).find(j => j.status !== 'running' && j.status !== 'queued');
+        if (!last || selected !== dishName) return;
+        const why = $('#runWhy');
+        if (why && last.error_detail && last.status !== 'success')
+          why.innerHTML = `<div class="ed-callout warn"><span class="mark">!</span><span><b>Run #${last.id} ended ${escapeHtml(last.status)}.</b> ${escapeHtml(last.error_detail)}</span></div>`;
+        const fr = await fetch(`/jobs/${last.id}/fetch-summary`);
+        if (!fr.ok) return;                       // older server: no summary, no panel
+        const f = await fr.json();
+        if (selected !== dishName || !f.urls || !f.urls.tried) return;
+        const acc = $('#fetchAcc'); if (!acc) return;
+        const lost = f.unreachable || [];
+        $('#fetchPill').textContent = `${f.urls.got} of ${f.urls.tried} pages` + (lost.length ? ` · ${lost.length} site${lost.length === 1 ? '' : 's'} unreachable` : '');
+        $('#fetchPill').classList.toggle('warn', lost.length > 0);
+        const facts = [`Run #${f.job_id}`,
+          f.paid_units ? `${f.paid_units} paid fetch${f.paid_units === 1 ? '' : 'es'}` : 'nothing paid for',
+          f.rate_wait_s ? `${f.rate_wait_s}s waiting on “too many requests”` : ''].filter(Boolean).join(' · ');
+        const tag = (t, cls) => `<span class="ed-pill ${cls || ''}">${t}</span>`;
+        $('#fetchBody').innerHTML = `
+          <table><thead><tr><th>Route</th><th class="n">Tried</th><th class="n">Got the page</th></tr></thead><tbody>
+            ${(f.routes || []).map(x => `<tr><td>${escapeHtml(ROUTE_LBL[x.technique] || x.technique)}</td><td class="n">${x.attempts}</td><td class="n">${x.got}</td></tr>`).join('')}
+          </tbody></table>
+          <p class="ed-notes-help" style="margin:10px 0 0">${escapeHtml(facts)}</p>
+          ${lost.length ? `<h4 style="margin:18px 0 0;font-size:.85em">Could not be reached</h4>
+          <ul class="d-lost">${lost.map(h => `<li><span class="h">${escapeHtml(h.host)}</span>
+            <span class="w">${h.urls} page${h.urls === 1 ? '' : 's'} · ${escapeHtml(WHY_LBL[h.reason] || h.reason || 'failed')}</span>
+            ${h.gave_up ? tag('run gave up on it') : ''}${h.paid_first ? tag('paid fetch first') : ''}${h.disallowed ? tag('now disallowed', 'good') : ''}</li>`).join('')}</ul>` : ''}`;
+        acc.hidden = false;
+      } catch (_){ /* the summary is a nicety; never break the detail render */ }
+    }
+
     async function doRefresh(d){
       const btn = $('#refreshBtn');
       btn.disabled = true; btn.textContent = 'Queuing…';
@@ -1405,7 +1490,7 @@
         if (_stream && _stream.es === es) _stream = null;
         setCancel(false);
         setRefreshBusy(false);
-        add('⚠ Log stream disconnected (server restart?) — the job runs in its OWN process and is likely still going or already finished. Reopen this dish to re-attach, or see “view log” under Last run.');
+        add('⚠ Log stream disconnected (server restart?) — the job runs in its OWN process and is likely still going or already finished. Reopen this dish to re-attach, or see “view log” under Run.');
       });
     }
 

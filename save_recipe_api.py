@@ -6761,23 +6761,15 @@ def list_domains_endpoint():
 
 def _pub_unblocker(payload: dict, row: dict) -> bool:
     """Resolve a publisher run's unblocker flag. Explicit payload value wins
-    (the form's visible checkbox); otherwise fetch_strategy='unblocker' opts in,
-    and for ordinary strategies the config default (publisher_unblocker_fallback,
-    ON) makes the paid tier a FALLBACK — the chain still fetches direct first,
-    so credit is only spent on pages the free fetch lost. 'skip' and
-    'bookmarklet_only' never fetch server-side, so never escalate."""
+    (the form's visible checkbox); otherwise the domain's fetch policy for a
+    publisher run decides (domains_lib.fetch_policy: an 'unblocker' strategy
+    opts in, a never-fetch strategy never pays, anything else follows
+    publisher_unblocker_fallback). The paid tier is a FALLBACK either way — the
+    ladder still fetches direct first."""
     if "unblocker" in (payload or {}):
         return bool(payload["unblocker"])
-    strat = (row.get("fetch_strategy") or "").strip()
-    if strat == "unblocker":
-        return True
-    if strat in ("skip", "bookmarklet_only"):
-        return False
-    try:
-        from input.pipeline.system_config import get_setting
-        return bool(get_setting("publisher_unblocker_fallback", True))
-    except Exception:
-        return True
+    from input.pipeline import domains_lib
+    return domains_lib.fetch_policy(row.get("domain") or "", run="publisher").unblocker
 
 
 @app.post("/domains")
@@ -11598,6 +11590,22 @@ def list_jobs_endpoint(type: Optional[str] = None,
         )
 
 
+@app.get("/jobs/{job_id}/fetch-summary")
+def job_fetch_summary_endpoint(job_id: int):
+    """How one job got its pages (acquisition ledger, by job): attempts and
+    pages got per route, paid units, time spent waiting on rate limits, and
+    the hosts it could not reach at all — each flagged when it is on the
+    disallowed list or marked paid-first. Read by the dish form's Run panel."""
+    from input.pipeline import acquisition as acq, domains_lib
+    with _db() as conn:
+        out = acq.run_summary(conn, job_id)
+    blocked = domains_lib.get_blocked_root_domains()
+    for h in out["unreachable"]:
+        h["disallowed"] = h["host"] in blocked
+        h["paid_first"] = domains_lib.fetch_policy(h["host"]).paid_first
+    return out
+
+
 @app.get("/jobs/{job_id}")
 def get_job_endpoint(job_id: int):
     """Single-job status. Polled by UIs that don't use the SSE stream."""
@@ -14569,37 +14577,16 @@ def extract_recipe_from_url(
     except Exception as e:
         print(f"[WARN] Content-Type probe failed (assuming HTML): {e}")
 
-    # Resolve THIS domain's fetch policy so the extract uses the same unblocker/
-    # render tiers as the harvest filter — otherwise a JS-rendered / anti-bot
-    # publisher (Boston Globe) extracts only the static nav shell. Flags default
-    # off, so normal domains are byte-for-byte unchanged. Best-effort, one DB read.
-    _fetch_unblocker = False
-    _fetch_render = False
-    try:
-        from urllib.parse import urlparse as _urlparse
-        from input.pipeline import domains_lib
-        from input.pipeline.url_utils import root_domain as _rootd
-        _host = (_urlparse(url).hostname or "").lower()
-        with _db() as _dc:
-            _drow = domains_lib.get_domain(_dc, _host) or domains_lib.get_domain(_dc, _rootd(url) or "")
-        if _drow:
-            _fetch_unblocker = (_drow.get("fetch_strategy") or "") == "unblocker"
-            _fetch_render = bool(_drow.get("render_required"))
-        # TIER-1 FALLBACK DEFAULT (curator 2026-08-26): same posture as dish +
-        # publisher harvests — the chain fetches DIRECT first and only spends
-        # unblocker credit on pages the free fetch lost, so defaulting ON costs
-        # nothing on healthy domains. Without this, the extract phase read a
-        # stale 'plain' row (a pre-checkbox form tab kept re-PATCHing it) and
-        # 38 of 40 giallozafferano.com winners fell to Wayback while the
-        # filter phase fetched the SAME pages live via the unblocker.
-        if not _fetch_unblocker and (_drow or {}).get("fetch_strategy") not in ("skip", "bookmarklet_only"):
-            try:
-                from input.pipeline.system_config import get_setting as _gs_ex
-                _fetch_unblocker = bool(_gs_ex("extract_unblocker_fallback", True))
-            except Exception:
-                _fetch_unblocker = True
-    except Exception as e:
-        print(f"[WARN] domain fetch-policy lookup failed (using plain): {e}")
+    # THIS domain's fetch policy, so the extract uses the same unblocker/render
+    # tiers as the harvest filter — otherwise a JS-rendered / anti-bot publisher
+    # (Boston Globe) extracts only the static nav shell. The paid tier is ON by
+    # default as a fallback (extract_unblocker_fallback, curator 2026-08-26: 38
+    # of 40 giallozafferano.com winners fell to Wayback while the filter phase
+    # fetched the SAME pages live); the ladder fetches direct first, so that
+    # costs nothing on healthy domains.
+    from input.pipeline import domains_lib
+    _policy = domains_lib.fetch_policy(url, run="extract")
+    _fetch_unblocker, _fetch_render = _policy.unblocker, _policy.render
     # Caller override (render-retry-on-thin): force a full-browser render — and the
     # unblocker it rides on — regardless of the domain's stored policy.
     if fetch_render is not None:

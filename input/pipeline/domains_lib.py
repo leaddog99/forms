@@ -32,9 +32,11 @@ import json
 import os
 import re
 import sqlite3
+import time
 from input.pipeline.db import connect as db_connect
 from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from typing import Optional
 
 from input.pipeline.url_utils import root_domain
@@ -1584,19 +1586,18 @@ def recipes_for_domain(conn: sqlite3.Connection, domain: str) -> dict:
 
 _DISPLAY_CACHE: Optional[dict] = None
 _BLOCKED_CACHE: Optional[set] = None
-_RENDER_CACHE: Optional[set] = None
+_POLICY_CACHE: Optional[dict] = None     # host/root -> (strategy, render_required, paid_first)
+_POLICY_CACHE_AT = 0.0                   # time.monotonic() of the last load
+_POLICY_CACHE_TTL_S = 60.0
 _POOR_CACHE: Optional[set] = None
 _TRUST_CACHE: Optional[set] = None
-_PAID_FIRST_CACHE: Optional[set] = None
 
 
 def invalidate_cache() -> None:
-    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE, _POOR_CACHE, _TRUST_CACHE
-    global _PAID_FIRST_CACHE
-    _PAID_FIRST_CACHE = None
+    global _DISPLAY_CACHE, _BLOCKED_CACHE, _POLICY_CACHE, _POOR_CACHE, _TRUST_CACHE
+    _POLICY_CACHE = None
     _DISPLAY_CACHE = None
     _BLOCKED_CACHE = None
-    _RENDER_CACHE = None
     _POOR_CACHE = None
     _TRUST_CACHE = None
 
@@ -1655,54 +1656,112 @@ def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:
     return domains, terms
 
 
-def get_render_eligible_hosts(db_path: str = _DEFAULT_DB) -> set:
-    """Set of hosts+roots whose pages may use the full-browser render escalation:
-    domains flagged ``render_required = 1`` (learned/curated JS-rendered sites) OR
-    carrying an unblocker fetch_strategy. Used by the DISH batch to mark per-result
-    entries `_allow_render`, so a multi-domain batch escalates only these (a publisher
-    refresh of a single flagged domain escalates the whole run without this). Cached;
-    CRUD writers + mark_render_required invalidate it."""
-    global _RENDER_CACHE
-    if _RENDER_CACHE is None:
-        hosts: set = set()
+# --- FETCH POLICY: how may we go and get a page from this domain? ---------------
+# ONE answer, read by every caller that fetches (the single-recipe extract, the
+# publisher refresh, the dish batch, domain enrichment, screenshots) and by the
+# fetch ladder itself. Until 2026-11-21 each of those re-derived it from the
+# domain row with its own copy of the rules, and they had drifted: the extract
+# and the screenshot honoured 'skip', the dish batch did not look at the
+# strategy at all, and `paid_first` was known only to the ladder.
+
+# Strategies under which the SERVER never fetches, so nothing is ever paid for.
+NEVER_FETCH_STRATEGIES = ("skip", "bookmarklet_only")
+
+# The kinds of run that have a "use the paid fetch as a fallback" setting
+# (system_config `<run>_unblocker_fallback`, all default ON: the ladder tries
+# the free direct fetch first, so the paid tier only costs on pages that lost).
+FALLBACK_RUNS = ("extract", "publisher", "dish")
+
+
+@dataclass(frozen=True)
+class FetchPolicy:
+    """How a page from one domain may be fetched.
+
+    strategy    the curated `fetch_strategy` ('plain' when the domain has no row)
+    unblocker   the paid unblocker may be used when the free fetch loses
+    render      the page needs a real browser (`render_required`, learned or curated)
+    paid_first  skip the free fetch and start at the paid one (`paid_first`, curated)
+    """
+    strategy: str = "plain"
+    unblocker: bool = False
+    render: bool = False
+    paid_first: bool = False
+
+    @property
+    def never_fetch(self) -> bool:
+        return self.strategy in NEVER_FETCH_STRATEGIES
+
+    @property
+    def render_eligible(self) -> bool:
+        """May a harvest spend a rendered fetch to rescue a would-be drop?"""
+        return self.render or self.strategy == "unblocker"
+
+
+def _policy_rows(db_path: str = _DEFAULT_DB) -> dict:
+    """host -> (strategy, render_required, paid_first) for every domain whose
+    policy is not the default, keyed by both its host and its root. Cached;
+    CRUD writers and mark_render_required invalidate it. A job process reads it
+    once per run. Also re-read after a minute: a job process can LEARN a
+    policy (mark_render_required) that the long-lived API process, which
+    extracts single recipes, would otherwise not see until its next restart."""
+    global _POLICY_CACHE, _POLICY_CACHE_AT
+    if _POLICY_CACHE is None or time.monotonic() - _POLICY_CACHE_AT > _POLICY_CACHE_TTL_S:
+        rows: dict = {}
         try:
             with _connect(db_path) as conn:
                 ensure_domains_table(conn)
-                for dom, root in conn.execute(
-                    "SELECT domain, root_domain FROM domains "
-                    "WHERE render_required = 1 OR fetch_strategy = 'unblocker'"
+                for dom, root, strat, rend, paid in conn.execute(
+                    "SELECT domain, root_domain, fetch_strategy, render_required, paid_first "
+                    "FROM domains WHERE fetch_strategy <> 'plain' OR render_required = 1 "
+                    "OR paid_first = 1"
                 ):
-                    if dom:
-                        hosts.add(dom.lower())
+                    val = ((strat or "plain").strip() or "plain", bool(rend), bool(paid))
+                    # The host's own row wins over a sibling's claim on the shared root.
                     if root:
-                        hosts.add(root.lower())
+                        rows.setdefault(root.lower(), val)
+                    if dom:
+                        rows[dom.lower()] = val
         except Exception:
-            pass
-        _RENDER_CACHE = hosts
-    return _RENDER_CACHE
+            # A locked DB must not pin an empty policy: serve the last good one.
+            return _POLICY_CACHE or {}
+        _POLICY_CACHE, _POLICY_CACHE_AT = rows, time.monotonic()
+    return _POLICY_CACHE
 
 
-def get_paid_first_hosts(db_path: str = _DEFAULT_DB) -> set:
-    """Cached set of hosts+roots the curator marked ``paid_first = 1``: the fetch
-    ladder skips the direct rung for these and starts at the paid unblocker.
-    CRUD writers invalidate it; a job process reads it once per run."""
-    global _PAID_FIRST_CACHE
-    if _PAID_FIRST_CACHE is None:
-        hosts: set = set()
-        try:
-            with _connect(db_path) as conn:
-                ensure_domains_table(conn)
-                for dom, root in conn.execute(
-                    "SELECT domain, root_domain FROM domains WHERE paid_first = 1"
-                ):
-                    if dom:
-                        hosts.add(dom.lower())
-                    if root:
-                        hosts.add(root.lower())
-        except Exception:
-            pass
-        _PAID_FIRST_CACHE = hosts
-    return _PAID_FIRST_CACHE
+def unblocker_fallback(run: Optional[str], db_path: str = _DEFAULT_DB) -> bool:
+    """Is the paid fetch a default fallback for this kind of run?"""
+    if run not in FALLBACK_RUNS:
+        return False
+    try:
+        from input.pipeline.system_config import get_setting
+        return bool(get_setting(f"{run}_unblocker_fallback", True, db_path=db_path))
+    except Exception:
+        return True
+
+
+def fetch_policy(url_or_host: str, *, run: Optional[str] = None,
+                 db_path: str = _DEFAULT_DB) -> FetchPolicy:
+    """THE fetch policy for a URL (or bare host).
+
+    `run` names the kind of run asking ('extract' | 'publisher' | 'dish'), which
+    decides whether the paid fetch is on by default for a domain that has not
+    opted in: an 'unblocker' strategy always enables it, a never-fetch strategy
+    never does, anything else follows that run's fallback setting. With
+    run=None only the domain's own opt-in counts.
+
+    Falls back to the plain default policy on any lookup problem — a fetch must
+    not fail because the policy could not be read."""
+    host = _canon_host(url_or_host)
+    try:
+        rows = _policy_rows(db_path)
+        hit = rows.get(host) or rows.get((root_domain(host) or "").lower())
+    except Exception:
+        hit = None
+    strategy, render, paid_first = hit or ("plain", False, False)
+    unblocker = strategy == "unblocker" or (
+        strategy not in NEVER_FETCH_STRATEGIES and unblocker_fallback(run, db_path))
+    return FetchPolicy(strategy=strategy, unblocker=unblocker, render=render,
+                       paid_first=paid_first)
 
 
 def get_poor_publisher_hosts(db_path: str = _DEFAULT_DB) -> set:

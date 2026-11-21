@@ -143,30 +143,17 @@ def _unblocker_html(url: str) -> Optional[str]:
     serves headless Chromium a block page (williams-sonoma.com, 2026-09-24:
     72 of 72 captures were "unable to display the requested page"). Reuses the
     extract path's rung as is - credits, circuit breaker - under the SAME
-    per-domain rule the extract uses: a domain whose fetch_strategy is
-    'unblocker', or any domain not marked skip/bookmarklet_only when the
-    `extract_unblocker_fallback` setting is on (the rule that got the 70
-    Williams Sonoma extracts through). A screenshot never spends where an
-    extract would not."""
+    per-domain rule the extract uses (`domains_lib.fetch_policy`, run
+    "extract": the rule that got the 70 Williams Sonoma extracts through).
+    A screenshot never spends where an extract would not."""
     try:
-        import sqlite3 as _sq
-        from urllib.parse import urlparse
         from input.pipeline import domains_lib
-        from input.pipeline.system_config import get_setting
         from to_markdown.fetch import fetch_via_unblocker, unblocker_available
         if not unblocker_available():
             return None
-        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
-        root = ".".join(host.split(".")[-2:]) if host.count(".") > 1 else host
         db = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__)))), "recipes.db")
-        with _sq.connect(db, timeout=30) as conn:
-            row = domains_lib.get_domain(conn, host) or domains_lib.get_domain(conn, root) or {}
-        strategy = (row.get("fetch_strategy") or "")
-        allowed = strategy == "unblocker" or (
-            strategy not in ("skip", "bookmarklet_only")
-            and bool(get_setting("extract_unblocker_fallback", True, db_path=db)))
-        if not allowed:
+        if not domains_lib.fetch_policy(url, run="extract", db_path=db).unblocker:
             return None
         got = fetch_via_unblocker(url, render=True)
         if not got:

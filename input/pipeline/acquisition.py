@@ -450,6 +450,50 @@ def report(conn: sqlite3.Connection, *, days: int = 90, domain: Optional[str] = 
             "failure_classes": [{"technique": t, "reason": r, "n": n} for t, r, n in reasons]}
 
 
+def run_summary(conn: sqlite3.Connection, job_id: int, *, max_hosts: int = 12) -> dict:
+    """How ONE job got its pages — the run-level view of the ledger that the
+    dish form shows under Run.
+
+    routes        per technique: attempts, pages got, paid units
+    urls          distinct URLs tried / got by any route
+    unreachable   hosts where no URL was got by any route, worst first, with the
+                  commonest failure class and whether the run gave up on them
+    rate_wait_s   seconds spent paused on 429s before any paid fetch
+    """
+    ensure_tables(conn)
+    routes = [
+        {"technique": t, "attempts": n, "got": int(ok or 0), "paid_units": float(cost or 0)}
+        for t, n, ok, cost in conn.execute(
+            "SELECT technique, COUNT(*), SUM(ok), SUM(cost_units) FROM acquisition_attempts "
+            "WHERE job_id = ? GROUP BY technique", (job_id,))]
+    order = {t: i for i, t in enumerate(TECHNIQUES)}
+    routes.sort(key=lambda r: order.get(r["technique"], 99))
+    tried, got = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(won), 0) FROM (SELECT MAX(ok) won FROM acquisition_attempts "
+        "WHERE job_id = ? GROUP BY url_normalized)", (job_id,)).fetchone()
+    wait_ms = conn.execute(
+        "SELECT COALESCE(SUM(ms), 0) FROM acquisition_attempts WHERE job_id = ? "
+        "AND detail LIKE '429 rate-limited%'", (job_id,)).fetchone()[0]
+    unreachable = []
+    for host, urls, attempts in conn.execute(
+            "SELECT root_domain, COUNT(DISTINCT url_normalized), COUNT(*) FROM acquisition_attempts "
+            "WHERE job_id = ? GROUP BY root_domain HAVING MAX(ok) = 0 "
+            "ORDER BY COUNT(DISTINCT url_normalized) DESC, COUNT(*) DESC LIMIT ?", (job_id, max_hosts)):
+        why = conn.execute(
+            "SELECT reason, COUNT(*) n FROM acquisition_attempts WHERE job_id = ? AND root_domain = ? "
+            "AND ok = 0 AND reason <> '' GROUP BY reason ORDER BY n DESC LIMIT 1", (job_id, host)).fetchone()
+        # A URL whose FIRST rung was Wayback skipped the live rungs: the run had
+        # given up on the host (to_markdown/fetch.py, host_giveup_after).
+        gave_up = conn.execute(
+            "SELECT COUNT(*) FROM acquisition_attempts WHERE job_id = ? AND root_domain = ? "
+            "AND technique = 'wayback' AND rung = 1", (job_id, host)).fetchone()[0]
+        unreachable.append({"host": host, "urls": urls, "attempts": attempts,
+                            "reason": why[0] if why else "", "gave_up": bool(gave_up)})
+    return {"job_id": job_id, "routes": routes, "urls": {"tried": tried, "got": int(got)},
+            "paid_units": round(sum(r["paid_units"] for r in routes), 1),
+            "rate_wait_s": int(wait_ms / 1000), "unreachable": unreachable}
+
+
 def print_report(rep: dict) -> None:
     print(f"[ACQ] acquisition report — last {rep['days']} days"
           + (f" — {rep['domain']}" if rep.get("domain") else ""))
