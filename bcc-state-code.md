@@ -13217,3 +13217,13 @@ a scheduled job is added, name folding changes.
 * **WRITTEN - docs/search-subsystem-brief-for-dpi.md:** the web search + listing scorer described for
   a DPI session (DPI keeps Amazon search through Rainforest for category pools; the gap is finding
   the listing of a NAMED product). Proposed as a shared package, not a copy. DPI not touched.
+* **STARTED - shared package `searchkit`** (`C:\Users\john\PycharmProjects\searchkit`, local git
+  eb05a44, NO remote yet): `web.search` (Brave, settings on a Config, no storage), `identity_score`
+  with the word lists as data (`Vocabulary`, default `KITCHEN` = BCC's constants), `stores` (Amazon +
+  a one-pattern adapter for any other store), `candidates` / `best_candidate`. 24 tests, network
+  stubbed. PARITY with BCC's scorer: 273 stored picks + 159 live titles, 0 differ
+  (`scripts/parity_with_recipes_app.py`). BCC DOES NOT USE IT YET - a scorer fix must be made in both
+  places until the cut-over in the kit's `docs/adopting-in-recipes.md`. Note for the DPI session:
+  the kit's `docs/note-for-dpi.md`. FOUND for the cut-over: BCC's "one more page" fallback in
+  `google_candidates` (`pages=2`) is ONE Brave request, so it re-reads the same 20 results.
+  OPEN: who owns the kit (other kits are owned on BAILEY) and where its remote lives.
