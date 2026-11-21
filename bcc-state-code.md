@@ -13147,3 +13147,47 @@ a scheduled job is added, name folding changes.
   "monastic vegetable stew" flagged on 11-20.
 * **PARKED:** the video shelf + Video tab on the recipe list (curator chose "shelf plus tab"); nothing
   written. Needs views per day stored on the recipe row first.
+
+### 2026-11-21 (evening, later) — BRAVE is the search provider; Licurdia's record repaired; a signals stamp is stale when the recipes change
+
+* **BUILT + ACTIVE - Brave Search API as a provider (97806f3).** `input/pipeline/serp_search.py`:
+  `_brave()` behind the same `serp_search()` contract; key from `.env` `BRAVE_KEY`. 20 results per
+  request, offset 0-9 (200 per line at most), so pages/2 requests cover the old depth; one request
+  per 1.1 s; a country or language Brave does not list is a 422 and the request is repeated without
+  them; no off-topic retry (that guard exists for a scraper). No google.com/goto wrappers, so none of
+  the 25-70 s verification waits. `system_config.serp_provider = "brave"`; BCC on MARLEY restarted by
+  the curator. Brave is wired for WEB results only: `serp_image_search` falls back to whichever
+  Google vendor has a key.
+* **COST (estimate, curator's actual plan not known):** Brave about $0.005 per request, about $0.03 per
+  dish refresh (6 requests). The old provider took an estimated 30-50 requests per refresh, $0.18-$0.30
+  on its 10k plan.
+* **FIRST LIVE RUN on Brave + title screen - Veal Cacciatore #3071:** 15/15 winners are veal
+  cacciatore (the old provider's run this morning seated 7 chicken). 17 minutes: about 3 search and
+  filter, about 14 extracting the winners ONE AT A TIME (about a minute each).
+  FOUND, NOT FIXED: (1) the same page seated twice under two spellings of its address - sfizioso.it
+  with and without `/ricetta/`, fiordifrolla.it with and without `www`; (2) sfizioso.it took 4 of the
+  5 Italian seats - there is no per-site limit on reserved seats; (3) winner extraction is serial.
+* **NOT TESTED ON BRAVE:** product listing identity (`site:amazon.com`), the review finder, publisher
+  collection discovery. The Amazon identity comparison (14 known products, both providers) ran past
+  ten minutes on the old provider's waits and was killed by the machine for low memory with no
+  output. Not rerun. Until it is, those paths are on Brave unproven; pin them to the old provider
+  before a product curation run, or rerun the test on Brave alone a few products at a time.
+  Brave also returns few YouTube links in web results - the video lane will need Brave's video results.
+* **Licurdia's record REPAIRED (curator: "fix the licurdia dish record"):** description (Calabrian
+  onion soup), identity card, embedding, chapter Soups & Stews, display name "Licurdia (Calabrian Onion
+  Soup)", aliases (Licurdia Calabrese, Zuppa di cipolle alla calabrese, Calabrian Onion Soup, Calabrese
+  Onion Soup), cohort signals re-stamped, story and cook notes rewritten with no mention of the
+  liqueur. The 27 liqueur rows in `run_candidates` for old job #2959 are history and were left.
+* **Stories regenerated** (`dish_story.fill(force=True)`) for Veal Parmigiana, Veal Piccata and Veal
+  Cacciatore, from the clean cohorts. Veal Parmigiana's cohort still holds the three veal roasts from
+  #3063 until it is rerun (suggested Italian line: `cotolette di vitello alla parmigiana`, not changed).
+* **FIXED - stale signals (c531ebc).** `_ensure_signals` trusted a stamp whenever its `cohort_n`
+  equalled the live count; Licurdia swapped ten liqueurs for ten soups and the story was still being
+  written from licorice / alcohol signals. NEW `dish_signals.cohort_key()` = count + a fingerprint of
+  the members' `url_normalized` (row ids are reused by SQLite, so not ids); `compute_signals` stamps
+  `cohort_key`; a stamp whose fingerprint differs, or that has none, is re-stamped. Tests added to
+  `test_dish_story_fill.py`, all pass.
+* **OPEN:** duplicate-address seating; per-site seat limit; parallel winner extraction; the Brave test
+  of the product paths; Kalogeros's description ("monastic vegetable stew" - it is eggplant stuffed
+  with braised beef); Veal Parmigiana rerun; the video shelf + tab (parked); rest of video step 3.
+  The dish form fixes of this morning have still not been clicked through in a browser.
