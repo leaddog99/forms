@@ -58,7 +58,7 @@
     // it came from stays on the row (q_src) for the form and the refresh log.
     const xl = o.langs ? `<button type="button" class="qr-xl ed-btn" title="Translate this query into the line's language (what a native speaker would type into Google)" style="padding:6px 8px;${isForeign(r.hl) ? '' : 'visibility:hidden'}">🌐</button>` : '';
     const src = o.langs ? `<div class="qr-src" style="flex-basis:100%;font-size:.75rem;color:var(--muted,#6b5b4f);margin:-4px 0 2px 2px;${r.q_src ? '' : 'display:none'}">${r.q_src ? `translated from “${esc(r.q_src)}” — edit freely` : ''}</div>` : '';
-    return `<div class="qrow" data-qsrc="${esc(r.q_src || '')}" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:flex-start">
+    return `<div class="qrow" data-qsrc="${esc(r.q_src || '')}" data-qxl="${esc(r.q_src ? (r.q || '') : '')}" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:flex-start">
       <textarea rows="1" class="qr-q" placeholder='${esc(o.queryPlaceholder)}' style="flex:1;min-width:0;${QIN}">${esc(r.q || '')}</textarea>
       <input type="number" class="qr-n" min="1" ${o.nMax ? `max="${o.nMax}"` : ''} placeholder="${esc(o.nPlaceholder)}" title="${esc(o.nTitle)}" value="${r.n ?? ''}" style="width:70px;${QIN}">
       ${locale}${xl}
@@ -89,8 +89,13 @@
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      // The reply is for the text that was SENT. If the curator kept typing
+      // while it was on its way, their text stands (2026-11-21: a late reply
+      // overwrote the edit, and the change looked ignored).
+      if (qEl.value.trim() !== q){ say('query changed while translating — left as typed (🌐 translates it)'); return; }
       if (data.changed && data.q){
         qEl.value = data.q;
+        row.dataset.qxl = data.q;
         qEl.style.height = 'auto'; qEl.style.height = qEl.scrollHeight + 'px';
         row.dataset.qsrc = data.q_src || q;
         say(`translated from “${row.dataset.qsrc}” — edit freely`);
@@ -154,7 +159,7 @@
         const hl = row.querySelector('.qr-hl'); if (hl) hl.value = '';
         const gl = row.querySelector('.qr-gl'); if (gl) gl.value = '';
         row.querySelector('.qr-keep').value = '';
-        row.dataset.qsrc = '';
+        row.dataset.qsrc = ''; row.dataset.qxl = '';
         const xl = row.querySelector('.qr-xl'); if (xl) xl.style.visibility = 'hidden';
         const src = row.querySelector('.qr-src'); if (src){ src.textContent = ''; src.style.display = 'none'; }
       }
@@ -197,11 +202,13 @@
       if (isForeign(sel.value) && qEl.value.trim()){
         if (!isForeign(prev)){
           translateRow(row, _opts[boxId], dirty);                 // first pick on English text
-        } else if ((row.dataset.qsrc || '').trim()){
+        } else if ((row.dataset.qsrc || '').trim() && qEl.value.trim() === (row.dataset.qxl || '').trim()){
           // Greek → Italian on a line the editor translated: go back to the
           // English it came from and translate THAT, so the box never holds
           // Greek under an Italian flag (curator, 2026-10-10). A line typed
           // natively has no origin and is left alone — 🌐 is there for it.
+          // So is a translated line the curator has since EDITED: going back
+          // to the old English would throw their change away.
           qEl.value = row.dataset.qsrc;
           translateRow(row, _opts[boxId], dirty);
         }

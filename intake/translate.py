@@ -49,6 +49,13 @@ _anthropic_client = anthropic.Anthropic()
 # (loanwords, quantity formats, technique verbs) which generic NMT
 # misses, but doesn't need Sonnet's reasoning depth. Cost ~$0.0005/page.
 _TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
+# The one-line SEARCH QUERY translation is a different job: it has to know
+# whether a dish has its own name in the target language and must not swap in
+# a neighbour. Haiku answered 'Veal Parmigiana Recipe' AND 'Zucchini Parmigiana
+# Recipe' with 'ricetta melanzane alla parmigiana' (eggplant), and Veal Piccata
+# with saltimbocca (2026-11-21) - five reserved seats went to the wrong dish.
+# A ~150-token call made a few times a day; the larger model costs nothing here.
+_QUERY_TRANSLATION_MODEL = "claude-sonnet-4-6"
 _TRANSLATION_MAX_TOKENS = 8000
 
 # fasttext-langdetect's model file (lid.176.ftz) is ~917KB, downloaded
@@ -477,7 +484,7 @@ def translate_query(query: str, target_lang: str) -> str:
         return (query or "").strip()
     tgt_name = language_name(target_lang)
     msg = llm.create(
-        operation="translate_query", model=_TRANSLATION_MODEL,
+        operation="translate_query", model=_QUERY_TRANSLATION_MODEL,
         max_tokens=120,
         system=(f"You translate recipe SEARCH QUERIES from English into {tgt_name}. "
                 f"Output the query a native {tgt_name} speaker would type into Google to "
@@ -485,8 +492,15 @@ def translate_query(query: str, target_lang: str) -> str:
                 f"script {tgt_name} is written in, plus the natural word for 'recipe' "
                 f"where the English query says 'recipe' (e.g. Italian 'Pizza Sauce' -> "
                 f"'salsa per pizza', 'Pizza Sauce Recipe' -> 'ricetta salsa per pizza'). "
-                f"Never translate word-for-word when the dish has its own name in "
-                f"{tgt_name}. Keep search operators exactly as given: double-quoted "
+                f"Never translate word-for-word when THAT dish has its own name in "
+                f"{tgt_name}. It must stay the SAME dish: every ingredient and "
+                f"preparation word in the English query must be carried into the "
+                f"{tgt_name} query (veal stays veal, zucchini stays zucchini). Never "
+                f"answer with a different, better-known dish of the same family - "
+                f"'Veal Parmigiana' is not 'melanzane alla parmigiana', 'Veal "
+                f"Piccata' is not 'saltimbocca'. If {tgt_name} has no established "
+                f"name for exactly this dish, translate the words plainly. Keep "
+                f"search operators exactly as given: double-quoted "
                 f"phrases stay quoted (translate the words inside), -word and site: "
                 f"terms are copied verbatim. If the query is already in {tgt_name}, "
                 f"return it unchanged. Output ONLY the query text — no quotes around "

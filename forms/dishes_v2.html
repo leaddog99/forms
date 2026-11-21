@@ -102,7 +102,7 @@
   </div>
 
   <script src="/forms/library-shell.js?v=20261029a"></script>
-  <script src="/forms/query-rows.js?v=20261017a"></script>
+  <script src="/forms/query-rows.js?v=20261121a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -236,7 +236,7 @@
         li.innerHTML =
           `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.display_name || d.name)}</span><span class="ed-item-flag ${flag(d)}"></span></div>` +
           `<div class="ed-item-meta">${listMeta(d)}</div>`;
-        li.addEventListener('click', () => { selected = d.name; renderList(); renderMain(); nav.afterSelect(); });
+        li.addEventListener('click', () => { if (d.name !== selected && !okToLeave()) return; selected = d.name; renderList(); renderMain(); nav.afterSelect(); });
         ul.appendChild(li);
       }
     }
@@ -1252,13 +1252,13 @@
     async function doSave(d){
       const hint = $('#hint'); const btn = $('#saveBtn');
       const qr = collectQueryRows('qrows_edit');
-      if (qr.error) return warnHint(qr.error);
+      if (qr.error) { warnHint(qr.error); return false; }
       const serp = parseInt($('#f_serp').value, 10);
       const final = parseInt($('#f_final').value, 10);
-      if (!(serp > 0) || !(final > 0)) return warnHint('Candidate/winner counts must be positive whole numbers');
+      if (!(serp > 0) || !(final > 0)) { warnHint('Candidate/winner counts must be positive whole numbers'); return false; }
       const reservedTotal = qr.rows.reduce((s, r) => s + (r.keep || 0), 0);
       if (reservedTotal > final)
-        return warnHint(`Reserved seats total ${reservedTotal} but only ${final} winners are kept — lower a Reserve or raise Winners`);
+        { warnHint(`Reserved seats total ${reservedTotal} but only ${final} winners are kept — lower a Reserve or raise Winners`); return false; }
       const ttlRaw = $('#f_ttl').value.trim();
       const body = {
         query_rows: qr.rows, top_n_serpapi: serp, top_n_final: final,
@@ -1296,9 +1296,11 @@
         if (sb){ sb.textContent = 'Saved ✓'; sb.classList.add('done'); }
         if (sh) sh.textContent = 'Saved';
         setTimeout(() => { const b = $('#saveBtn'); if (b){ b.textContent = 'Save'; b.classList.remove('done'); } }, 1900);  // stays disabled until next edit
+        return true;
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Save';
         warnHint(String(e.message || e));
+        return false;
       }
     }
 
@@ -1375,6 +1377,12 @@
     }
 
     async function doRefresh(d){
+      // A run reads the SAVED dish. Unsaved edits (a changed search line above
+      // all) are saved first; if the save is refused, nothing runs.
+      if (isDirty()){
+        if (!(await doSave(d))) { flash('Not refreshed — the changes could not be saved (see the note by Save).', true); return; }
+        flash('Changes saved — starting the refresh.');
+      }
       const btn = $('#refreshBtn');
       btn.disabled = true; btn.textContent = 'Queuing…';
       // Re-arm the button ONLY on paths where no stream took over — a live
@@ -1478,6 +1486,13 @@
           if (r.ok) {
             const data = await r.json();
             dishes[dishName] = data;
+            if (selected === dishName && isDirty()) {
+              // Unsaved edits on screen: re-rendering would wipe them. The
+              // results repaint when the curator saves.
+              renderList();
+              flash(`“${dishName}” refresh ${st}. Your unsaved changes were kept — save to see the new results.`);
+              return;
+            }
             if (selected === dishName) { renderList(); renderDetail(data); paint(); }
             else renderList();
           }
@@ -1666,6 +1681,12 @@
     // Editor's Choice inputs live on the same page but post through their own
     // button, and typing there must not light up Save with a false "unsaved
     // dish edits" signal.
+    // Unsaved dish edits = the Save button is live (the state lives ON the
+    // button). Three things used to throw them away without a word
+    // (2026-11-21): Refresh ran the STORED search lines, a finishing run
+    // re-rendered the form, and picking another dish replaced it.
+    function isDirty(){ const b = $('#saveBtn'); return !!b && !b.disabled && b.textContent.trim() === 'Save'; }
+    function okToLeave(){ return !isDirty() || confirm('This dish has unsaved changes. Leave without saving?'); }
     const _markDirty = (e) => {
       const t = e.target;
       if (!t || !(/^f_/.test(t.id || '') || (t.closest && t.closest('#qrows_edit')))) return;
@@ -1683,7 +1704,8 @@
       _markDirty(e);
     });
     $('#page').addEventListener('change', _markDirty);
-    $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
+    $('#addToggle').addEventListener('click', () => { if (!okToLeave()) return; selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
+    window.addEventListener('beforeunload', (e) => { if (isDirty()){ e.preventDefault(); e.returnValue = ''; } });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
 

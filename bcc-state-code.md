@@ -13004,3 +13004,59 @@ a scheduled job is added, name folding changes.
   seen rendered, because the running server predates the endpoint (it hides on a 404).
 * NEEDS a restart of BCC on MARLEY (bcc_restart.bat) to take effect in the service: the fetch-summary
   endpoint, the policy resolver in the extract path, and the paid-first checkbox save.
+
+## Session 2026-11-21 (midday) — the translate button answered with a DIFFERENT dish; the dish form dropped unsaved search-line edits; 14 search lines rewritten
+
+* **Restart done twice (BCC on MARLEY).** After the first, `GET /jobs/3042/fetch-summary` returned 200
+  and the dish form's "How the pages were fetched" panel was read from a headless render of Kalogeros
+  (pill "1 of 18 pages · 1 site unreachable", route table, tasty-guide.gr 17 pages "page needs a
+  browser"). Markup only, no screenshot. The "Paid fetch first" checkbox save is STILL untested.
+* **Curator: "I changed the search term and several times the page just ignored the change."** Cause,
+  reproduced: `intake/translate.py translate_query` (the 🌐 button, Haiku) swapped in a better-known
+  relative of the dish and returned it whatever was typed. 'Veal Parmigiana Recipe' AND 'Zucchini
+  Parmigiana Recipe' → `ricetta melanzane alla parmigiana` (eggplant); 'Veal Cacciatore Recipe' →
+  ossobuco alla cacciatora; 'Veal Piccata Recipe' → saltimbocca di vitello. Job #3052 (Veal Parmigiana,
+  this morning) gave all 5 Italian reserved seats to eggplant parmigiana pages.
+* **FIX (intake/translate.py):** the prompt now says it must stay the SAME dish and carry every
+  ingredient/preparation word across, never a neighbour of the same family, plain translation when the
+  language has no name for exactly this dish. The prompt alone did not fix Haiku (zucchini still came
+  back as eggplant, and one reply was chatty), so `translate_query` moved to
+  `_QUERY_TRANSLATION_MODEL = claude-sonnet-4-6` (page translation stays on Haiku). After: vitello alla
+  parmigiana / vitello alla cacciatora / vitello piccata / zucchini alla parmigiana; controls unchanged
+  (Pizza Sauce → salsa per pizza, Baked Rigatoni, Eggplant Parmigiana, a quoted query with -site:).
+  Live in the service since the second restart.
+* **Dish form (forms/dishes_v2.html, forms/query-rows.js) — five ways an unsaved line edit was lost,
+  all closed.** `isDirty()` = the Save button is live. (1) Refresh ran the STORED lines: it now saves
+  first and does not run if the save is refused (`doSave` returns true/false). (2) A finishing run
+  re-rendered the form over anything typed during it: with unsaved edits it now leaves the form and
+  says so. (3) Picking another dish, New, or closing the tab discarded edits silently: `okToLeave()`
+  confirm + `beforeunload`. (4) A translation reply that arrived after more typing overwrote the box:
+  the reply is dropped if the box no longer holds what was sent. (5) Switching one foreign language to
+  another on a translated line restored the old English and re-translated it: only when the box still
+  holds the translator's own text (`data-qxl`). query-rows.js cache tag → 20261121a (dishes_v2 and
+  product_collections). Checked: node --check on both, page renders, Save starts disabled, rows carry
+  data-qxl. The five behaviours were NOT clicked through in a browser.
+* **Scan of every stored translated line (38) and every hand-typed foreign line (26), judged by
+  reading.** One more wrong dish: Licurdia's Italian line was `ricetta liquirizia` (licorice; the
+  source had a typo, "LicurdiacRecipe") — job #2959 on 11-08 seated five licorice-liqueur recipes.
+  Weak, right dish: Butter Chicken's Hindi line was a word-for-word gloss that found no scoreable
+  candidates (seats went to Google Translate copies of English pages); Revithia's Greek spelling.
+  Chicken Kabobs' Greek line means chicken souvlaki (10 seats) — fair translation, but it pulls the
+  Souvlaki dish's pages; catalog question, left alone.
+* **DATA (dishes.queries, written through `dishes.update_dish`, because the PATCH endpoint answers 401
+  to an unsigned local call).** Each line kept its locale and reserved seats; q_src holds the English.
+  - Veal Parmigiana → `ricetta vitello alla parmigiana`; Veal Cacciatore → `ricetta vitello alla
+    cacciatora`; Veal Piccata → `ricetta vitello piccata`; Licurdia → `ricetta licurdia`.
+  - Butter Chicken → `बटर चिकन रेसिपी`; Revithia → `ρεβίθια σούπα συνταγή` (written by hand: the
+    translator returned only "chickpeas"; curator may prefer ρεβιθάδα).
+  - Latin-script text that was being sent to a non-Latin Google, now in its own script: Fasolada, Fava,
+    Keftedes (Greek Meatballs), Maroulosalata, Melomakarona (Greece) ×2, Soutzoukakia, Souvlaki
+    (Greece), Vasilopita (el); Bulgogi, Ssamjang (ko); Arroz de Marisco's "Recipe" line (pt).
+  - Noticed, not changed: Butter Chicken has ONLY a Hindi line, Souvlaki (Greece) and Melomakarona
+    (Greece) only Greek lines — no English-language pages are searched for them.
+* **RERUNS started from the command line (`python -m jobs run dish_refresh --dish …`), still running
+  when this was written:** #3063 Veal Parmigiana, #3064 Veal Cacciatore, #3065 Veal Piccata, #3066
+  Licurdia, #3067 Butter Chicken, #3068 Revithia. To check on each: what the foreign line's reserved
+  seats took, and that the eggplant / licorice rows from the earlier runs are gone from the winners.
+  The ten other dishes with newly written lines were NOT rerun; they pick the lines up on their next
+  refresh.
