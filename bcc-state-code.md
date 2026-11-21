@@ -13209,3 +13209,11 @@ a scheduled job is added, name folding changes.
   Needs a restart of BCC on MARLEY to be live.
 * **OPEN:** Cuckoo CRP-P1009 - search now picks B00XQEM2BM, catalogue holds B0BXZ72MTM (variant or
   different product, not checked); the other stored-vs-chosen disagreements above.
+* **Rice Cooker product records REBUILT (curator asked):** product 42 was named "Cuckoo CRP-P1009"
+  (the runner-up named in the write-up) while holding the Zojirushi NP-HCC10XH pick's placement and
+  links, since job 650 on 2026-07-29. `rematerialize` keeps a stored name by design, so after it the
+  name, brand and model number of all three were set from the picks through
+  `catalog_store.update_product`; two stale Amazon listings and a KitchenAid link came off #42.
+* **WRITTEN - docs/search-subsystem-brief-for-dpi.md:** the web search + listing scorer described for
+  a DPI session (DPI keeps Amazon search through Rainforest for category pools; the gap is finding
+  the listing of a NAMED product). Proposed as a shared package, not a copy. DPI not touched.
