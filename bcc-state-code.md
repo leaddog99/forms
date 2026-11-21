@@ -12920,15 +12920,15 @@ a scheduled job is added, name folding changes.
 ### 2026-11-21 (later) — a job gives up on a host it cannot break
 
 * to_markdown/html_to_markdown.py. (1) 429 pauses are paid once per host per run: after one URL waits
-  out every paused retry and is still 429, the host goes in  and later URLs do not
+  out every paused retry and is still 429, the host goes in `_RATELIMIT_SPENT` and later URLs do not
   pause again (before: every URL waited and the waits doubled to 480s). A clean direct fetch takes the
-  host back out. (2) : after  (NEW system_config setting, default
+  host back out. (2) `_HOST_LIVE_LOST`: after `host_giveup_after` (NEW system_config setting, default
   3, 0 disables) URLs in a row from one host lose every live rung, the run sends that host's remaining
   URLs straight to Wayback. Any live success resets; a 404/410 relayed by the proxy does not count
-  (). Both are per process, so per job; nothing carries between jobs.
+  (`_UNBLOCKER_ORIGIN_STATUS`). Both are per process, so per job; nothing carries between jobs.
 * Verified: live on cooks.com the fourth URL after three losses finished in 1s; the 429 path only by a
   simulated 429.
 * TO-DO (curator): go back and try cooks.com with different fetch settings. Through the paid proxy a
   made-up cooks.com URL returns an ordinary 404 but a real recipe page returns 550, so the proxy reaches
   the site and the site refuses recipe pages specifically. Untried: render=True, another geo/exit pool,
-  other headers, a homepage session first. If it works, take cooks.com off .
+  other headers, a homepage session first. If it works, take cooks.com off `disallowed_domains`.
