@@ -77,7 +77,11 @@ _FORM_FAMILIES = [
 # Model-shaped: letters THEN digits (TP16, KHM7210, BHM800, TX-1100, F-737,
 # DPC-9SS). Never digit-first — "2-Piece", "5-Quart", "12-Cup" are sizes, and
 # "2PIECE" matched a Furi carving set to a Messermeister pick in testing.
-_MODEL_TOKEN = re.compile(r"^[A-Z]{1,6}-?\d+[A-Z0-9-]*$")
+# A second letter group before the digits is still a model (NS-ZCC10, CRP-P1009):
+# without it the Zojirushi pick had no model key, fell back to word recall, and a
+# two-product listing (water boiler & NS-ZCC10 rice cooker) outscored the real one
+# 1.0 to 0.7 because it happened to repeat "5.5-Cup" (2026-11-21).
+_MODEL_TOKEN = re.compile(r"^[A-Z]{1,6}(?:-[A-Z]{1,6})?-?\d+[A-Z0-9-]*$")
 _ASIN_IN_URL = re.compile(r"/(?:dp|gp/product|clp|gp/aw/d)/([A-Z0-9]{10})(?:[/?#]|$)")
 
 
@@ -146,6 +150,35 @@ def _model_keys(pick: dict) -> set:
 
 
 _PAREN = re.compile(r"\(([^()]*)\)")
+_JOINER = re.compile(r"\s(?:&|and|\+|plus|with)\s", re.I)
+
+
+def _second_product(pick: dict, listing_title: str) -> str:
+    """Does the listing sell TWO products as one? -> the words that say so, or ''.
+
+    The sign is a joiner (&, and, +, plus, with) followed - past an optional
+    repeat of the brand - by a model number. Ours: we are the second item
+    ("Water Boiler and Warmer, 5.0 L, White & NS-ZCC10 Neuro Fuzzy Rice Cooker").
+    Another's: a second item was appended ("NS-ZCC10 ... White & NHS-06 3-Cup
+    Rice Cooker"). A family listing joins its sizes with a slash
+    ("NS-ZCC10/NS-ZCC18") and is not touched. Dry run 2026-11-21: 0 of 260
+    stored picks change; 4 of 182 live candidates, all real combinations."""
+    keys = _model_keys(pick)
+    brand = _brand_token(pick.get("manufacturer", ""))
+    text = _fold(listing_title or "")
+    for m in _JOINER.finditer(text):
+        words = re.findall(r"[A-Za-z0-9-]+", text[m.end():])[:3]
+        if words and brand and words[0].lower() == brand:
+            words = words[1:]
+        if not words:
+            continue
+        said = f"'{m.group().strip()} {words[0]}'"
+        if _MODEL_TOKEN.match(words[0].upper()):
+            return said
+        flat2 = re.sub(r"[^A-Z0-9]", "", "".join(words[:2]).upper())    # "Ns ZCC10"
+        if any(flat2.startswith(k) for k in keys):
+            return said
+    return ""
 
 
 def _class_gloss_want(pick: dict, brand_toks: set) -> list:
@@ -221,8 +254,22 @@ def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
             if not brand_ok and len(key) < 5:
                 continue        # a short code without the brand is not proof
             score = 1.0 if brand_ok else 0.9
-            return {"score": score, "verdict": "verified", "method": "model",
-                    "brand_ok": brand_ok, "why": f"model number {key} in listing"}
+            why = f"model number {key} in listing"
+            # The model number proves the product is IN the listing, not that the
+            # listing is only that product: a bundle, or two products sold as one,
+            # carries it too and used to tie the real listing at 1.0, winning
+            # whenever it ranked first (2026-11-21).
+            extra = (_ACCESSORY & set(_norm_tokens(ltitle))) - set(_norm_tokens(pick.get("product_title", "")))
+            if extra:
+                score *= 0.5
+                why += f"; listing looks like an accessory ({', '.join(sorted(extra))})"
+            two = _second_product(pick, ltitle)
+            if two:
+                score *= 0.5
+                why += f"; two products in one listing ({two})"
+            score = round(score, 2)
+            return {"score": score, "method": "model", "brand_ok": brand_ok, "why": why,
+                    "verdict": "verified" if score >= VERIFIED else ("weak" if score >= WEAK else "reject")}
 
     brand_toks = set(_norm_tokens(pick.get("manufacturer", "")))
     want = [t for t in _norm_tokens(pick.get("product_title", "")) if t not in brand_toks]
@@ -260,6 +307,10 @@ def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
     if extra and not (extra & set(want)):
         score *= 0.5
         why += f"; listing looks like an accessory ({', '.join(sorted(extra))})"
+    two = _second_product(pick, ltitle)
+    if two:
+        score *= 0.5
+        why += f"; two products in one listing ({two})"
     # Recall ignores EXTRA words, so the organic / low-sodium / bulk sibling
     # scores as high as the plain product it names. A variant marker on the
     # listing only is a mild penalty — enough to order siblings, not to reject.

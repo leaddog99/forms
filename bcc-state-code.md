@@ -13191,3 +13191,21 @@ a scheduled job is added, name folding changes.
   of the product paths; Kalogeros's description ("monastic vegetable stew" - it is eggplant stuffed
   with braised beef); Veal Parmigiana rerun; the video shelf + tab (parked); rest of video step 3.
   The dish form fixes of this morning have still not been clicked through in a browser.
+
+### 2026-11-21 (night, later) — Amazon listing search tested on Brave; listing scorer: model numbers like NS-ZCC10, bundles and two-product listings
+
+* **TESTED (Brave only, 14 products, one per class, against the listing we hold):** stored listing
+  found for 11, at position 1 for 9, under 2 s a search, no failures. No baseline on the old provider.
+  The scorer chose the stored listing for 6; the rest not examined beyond three (Pastene = other pack
+  size; Grip EZ = same product under Norpro, our brand field looks wrong; Zojirushi below). Review
+  finder and publisher collection discovery still untested on Brave.
+* **FIXED - intake/products/curate/identity.py:** (1) `_MODEL_TOKEN` accepts a second letter group
+  (NS-ZCC10, CRP-P1009) - 2 of 396 catalogue titles were missed; the Zojirushi pick had no model key,
+  fell to word recall, and a water boiler + rice cooker listing beat the real one 1.0 to 0.7.
+  (2) a model-number match now takes the bundle/accessory penalty (x0.5); (3) NEW `_second_product`:
+  a joiner (&, and, +, plus, with) followed by a model number = two products in one listing, x0.5,
+  on both the model and the title path. Dry run: audit bands unchanged (218 verified / 37 weak /
+  5 reject / 25 no listing); 4 of 182 live candidate titles change, all real combinations.
+  Needs a restart of BCC on MARLEY to be live.
+* **OPEN:** Cuckoo CRP-P1009 - search now picks B00XQEM2BM, catalogue holds B0BXZ72MTM (variant or
+  different product, not checked); the other stored-vs-chosen disagreements above.
