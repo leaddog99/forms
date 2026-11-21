@@ -13227,3 +13227,15 @@ a scheduled job is added, name folding changes.
   the kit's `docs/note-for-dpi.md`. FOUND for the cut-over: BCC's "one more page" fallback in
   `google_candidates` (`pages=2`) is ONE Brave request, so it re-reads the same 20 results.
   OPEN: who owns the kit (other kits are owned on BAILEY) and where its remote lives.
+* **BCC SWITCHED OVER to `searchkit` (kit e3810dd).** `intake/products/curate/identity.py` is now a
+  seam on the kit (rows keep `asin`, add `id` and `link`; the finder runs on our `serp_search()`);
+  `serp_search._brave` calls `searchkit.search` with our retry/dry settings, turns its cancel into
+  `JobCancelled`, feeds its losses to `_page_losses`; `product_types.TYPE_GROUPS` reads the kit's
+  list; `requirements-frozen.txt` gains the editable install (installed in the service's venv).
+  CHECKED: saved old scorer vs new front on 273 picks - same score, verdict, method, reason; audit
+  bands unchanged; three live searches (en + skipped hosts, it/it, site:amazon.com) identical before
+  and after; cancel raises JobCancelled; a listing lookup chose the known listing; intake tests and
+  test_dish_story_fill pass. NOT run: a full dish refresh or a curation run end to end.
+  CHANGED on purpose: the finder's second page is now a real second request; no sleep-and-retry on
+  an empty first answer. NEEDS a restart of BCC on MARLEY (`bcc_restart.bat`) - the running service
+  still has the old code in memory. A machine without the kit folder cannot start BCC now.

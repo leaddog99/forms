@@ -112,6 +112,8 @@ rdflib==7.1.4
 -e c:/users/john/pycharmprojects/imagekit
 # Sibling repo, github.com/leaddog99/llmkit - the counted LLM gateway shared with f2n (2026-10-01)
 -e c:/users/john/pycharmprojects/llmkit
+# Sibling repo (local, no remote yet) - web search + listing scorer, shared with DPI (2026-11-21)
+-e c:/users/john/pycharmprojects/searchkit
 # (forward slashes on purpose: modern pip eats backslashes in requirements
 #  files as escapes — found by the 2026-08-24 BAILEY restore drill)
 recipe_scrapers==15.7.1

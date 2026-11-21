@@ -27,33 +27,12 @@ decides a conflict.
 from __future__ import annotations
 
 # Each group = one kind of object under all the names publishers give it.
-TYPE_GROUPS: list[set] = [
-    {"dutch oven", "french oven", "cocotte", "coquette"},
-    {"bread oven", "bread cloche", "cloche"},
-    {"braiser", "brazier"},
-    {"stock pot", "stockpot", "multipot"},
-    {"saucepan", "saucier"},
-    {"skillet", "fry pan", "frying pan", "sauté pan", "saute pan"},
-    {"grill pan", "griddle"},
-    {"wok"},
-    {"roasting pan", "roaster"},
-    {"loaf pan", "loaf tin", "bread pan"},
-    {"cake pan", "cake tin"},
-    {"sheet pan", "baking sheet", "cookie sheet"},
-    {"muffin pan", "muffin tin", "cupcake pan"},
-    {"pie dish", "pie plate", "pie pan"},
-    {"tart pan", "tart tin"},
-    {"ramekin"},
-    {"mixing bowl"},
-    {"cutting board", "chopping board"},
-    {"stand mixer"},
-    {"hand mixer"},
-    {"food processor"},
-    {"blender"},
-    {"kettle", "tea kettle"},
-    {"knife", "santoku", "cleaver"},
-    {"shears", "kitchen scissors"},
-]
+# The groups themselves live in the shared package (searchkit.KITCHEN.type_groups,
+# since 2026-11-21) so the listing scorer there and the checks here read ONE list.
+# Add a group THERE.
+import searchkit  # noqa: E402
+
+TYPE_GROUPS: list[set] = [set(g) for g in searchkit.KITCHEN.type_groups]
 
 # Shape words that name several different products depending on the publisher. Never used to
 # declare a conflict.

@@ -627,122 +627,43 @@ def _serpapi(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
 
 # ------------------------------------------------------------------- Brave
 # Brave Search API: an official API over Brave's OWN index (not a scrape of
-# Google). Added 2026-11-21 after the Google feed went bad: for "Veal Cacciatore
-# Recipe" the scraping provider returned a first page of chicken cacciatore three
-# times running, while Google in a browser, Bing, DuckDuckGo and Brave all led
-# with veal. On the day's hardest lines Brave returned the dish on every one,
-# Italian, Greek and Hindi included, with no google.com/goto wrappers to resolve
-# (those cost 25-70 s of verification waits per page) and almost no video rows.
+# Google). Made the provider on 2026-11-21 after the Google feed went bad: for
+# "Veal Cacciatore Recipe" the scraping provider returned a first page of chicken
+# cacciatore three times running, while Google in a browser, Bing, DuckDuckGo and
+# Brave all led with veal.
 #
-# Shape differences the caller never sees:
-#   * 20 results per request, `offset` 0..9 -> at most 200 per line. The other
-#     providers' `pages` are 10-result pages, so pages/2 requests cover the same depth.
-#   * `country` is an upper-case code from Brave's own list and `search_lang`
-#     its own language list; a value it does not know is a 422, and the request
-#     is repeated without it (worldwide / any language) rather than lost.
-#   * Rate limit is per second on the entry plan: one request, then a pause.
-#   * No off-topic retry: that guard exists for a scraper that hands back a
-#     stranger's page and a different one when asked again. Brave is asked once.
-BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+# The request code lives in the shared package `searchkit` (sibling repo, also
+# the basis of DPI's search for named products - see its docs/). This is the
+# seam: our settings in, our cancel and page-loss conventions out. The package's
+# `pages` are 10-result pages like ours (two = one Brave request of 20).
 _BRAVE_ALIASES = {"brave", "brave_search", "brave-search"}
-_BRAVE_PAGE = 20
-_BRAVE_MAX_OFFSET = 9
-_BRAVE_LANG = {"zh-cn": "zh-hans", "zh-tw": "zh-hant", "zh": "zh-hans", "pt": "pt-pt", "en": "en"}
-_brave_last = [0.0]
 
 
 def _brave_key() -> str | None:
     return os.getenv("BRAVE_KEY") or os.getenv("BRAVE_API_KEY") or os.getenv("BRAVE_SEARCH_API_KEY")
 
 
-def _brave_get(params: dict, timeout, *, page, should_cancel=None) -> tuple[int, dict]:
-    """One Brave request, spaced at least 1.1 s from the last (the entry plan's
-    per-second limit), retried on a 429 or a network blip. -> (status, json)."""
-    attempts, backoff = _serp_retry_cfg()
-    status, data = 0, {}
-    for attempt in range(1, attempts + 1):
-        _cancel_check(should_cancel, "brave", page)
-        wait = 1.1 - (time.monotonic() - _brave_last[0])
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            r = requests.get(BRAVE_ENDPOINT, params=params, timeout=timeout,
-                             headers={"X-Subscription-Token": _brave_key() or "",
-                                      "Accept": "application/json"})
-            _brave_last[0] = time.monotonic()
-            status = r.status_code
-            try:
-                data = r.json()
-            except Exception:
-                data = {}
-            if status != 429:
-                return status, data
-            print(f"  [brave] page {page}: rate limited (429) - retry {attempt}/{attempts} in {backoff}s")
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-            _brave_last[0] = time.monotonic()
-            print(f"  [brave] page {page} {type(e).__name__} (attempt {attempt}/{attempts})")
-            status, data = 0, {}
-        if attempt < attempts:
-            _backoff(backoff, should_cancel, "brave", page)
-    return status, data
-
-
 def _brave(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
            should_cancel=None) -> list[dict]:
-    """Brave Search API. Same contract as the other providers: [{link, title,
-    rank}] in result order, `skip`-host rows flagged `blocked` and not counted
-    toward `want`."""
-    if not _brave_key():
-        return []
-    out: list[dict] = []
-    seen: set[str] = set()
-    dry_limit = _serp_dry_cfg()
-    dry_streak, last_usable = 0, 0
-    country = (gl or "").upper() or None
-    lang = (hl or "").lower() or None
-    lang = _BRAVE_LANG.get(lang, lang) if lang else None
-    n_pages = max(1, min(_BRAVE_MAX_OFFSET + 1, -(-max(1, pages) // 2)))
-    for p in range(1, n_pages + 1):
-        params = {"q": query, "count": _BRAVE_PAGE, "offset": p - 1,
-                  "result_filter": "web", "text_decorations": "false"}
-        if country:
-            params["country"] = country
-        if lang:
-            params["search_lang"] = lang
-        status, data = _brave_get(params, timeout, page=p, should_cancel=should_cancel)
-        if status == 422 and (country or lang):
-            # A country or language Brave does not list. Say which, ask without.
-            print(f"  [brave] page {p}: country={country} / language={lang} not accepted (422) - "
-                  f"asking without them")
-            country = lang = None
-            params.pop("country", None)
-            params.pop("search_lang", None)
-            status, data = _brave_get(params, timeout, page=p, should_cancel=should_cancel)
-        if status != 200:
-            msg = str(((data.get("error") or {}).get("detail")) or data.get("message") or "")[:120]
-            print(f"  [brave] page {p}: HTTP {status or 'no answer'} {msg}")
-            _page_losses.append({"label": "brave", "page": p, "query": query,
-                                 "error": f"HTTP {status} {msg}".strip()})
-            break
-        res = ((data.get("web") or {}).get("results")) or []
-        if not res:
-            if p == 1:
-                print("  [brave] no results")
-            break
-        org = [{"link": r.get("url"), "title": r.get("title") or "", "snippet": r.get("description") or ""}
-               for r in res]
-        usable = _collect_page(org, out, seen, skip, label="brave", page=p, should_cancel=should_cancel)
-        if want is not None and usable >= want:
-            break
-        if not (data.get("query") or {}).get("more_results_available"):
-            break
-        dry_streak = dry_streak + 1 if usable == last_usable else 0
-        last_usable = usable
-        if dry_streak >= dry_limit:
-            print(f"  [brave] page {p}: {dry_streak} pages in a row added nothing usable - "
-                  f"stopping with {usable} usable")
-            break
-    return _trim(out, want)
+    """Brave, through searchkit. Same contract as the other providers: [{link,
+    title, rank}] in result order (plus `snippet`), `skip`-host rows flagged
+    `blocked` and not counted toward `want`."""
+    import searchkit
+    attempts, backoff = _serp_retry_cfg()
+    cfg = searchkit.Config(api_key=_brave_key(), retries=attempts, backoff=backoff,
+                           dry_pages=_serp_dry_cfg(),
+                           log=lambda line: print(line.replace("[search]", "[brave]", 1)))
+    try:
+        return searchkit.search(query, want=want, pages=pages, country=gl, lang=hl,
+                                skip_hosts=skip, timeout=timeout,
+                                should_cancel=should_cancel, config=cfg)
+    except searchkit.SearchCancelled as e:
+        from input.pipeline.jobs import JobCancelled
+        raise JobCancelled(str(e)) from None
+    finally:
+        for loss in searchkit.pop_losses():
+            _page_losses.append({"label": "brave", "page": loss.get("request"),
+                                 "query": loss.get("query"), "error": loss.get("error")})
 
 
 def _scaleserp(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
