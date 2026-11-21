@@ -87,7 +87,7 @@ EDITABLE_FIELDS = (
     # direct. For a host whose direct answer is ALWAYS a 429 (cooks.com: 205 of
     # 205), where the 429 pause-and-retry ladder only burns 3-8 minutes per URL.
     # CURATED: the default ladder stays direct-first because a wrong flag is pure
-    # spend (see _fetch_with_full_fallback_uncached).
+    # spend (see to_markdown/fetch.py, _fetch_ladder).
     "paid_first",
     # Deep-enrich outputs the create path and scripts/deep_enrich_borrowed.py
     # write through update_domain(). Both were silently DROPPED until 2026-09-11
@@ -1038,8 +1038,7 @@ def preflight_domain(domain: str, conn: Optional[sqlite3.Connection] = None,
     status, detail = "ok", ""
     url = f"https://{host}/"
     try:
-        from to_markdown.html_to_markdown import (fetch_with_ua_fallback,
-                                                  parked_reason, blocked_reason)
+        from to_markdown.fetch import fetch_with_ua_fallback, parked_reason, blocked_reason
         try:
             resp, _ua = fetch_with_ua_fallback(url, timeout=timeout)
         except Exception as e1:

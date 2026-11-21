@@ -149,7 +149,7 @@ def rating_histogram(asin: str, *, timeout: int = 20, allow_unblocker: bool = Fa
 
     if blocked and allow_unblocker:
         try:
-            from to_markdown.html_to_markdown import fetch_via_unblocker
+            from to_markdown.fetch import fetch_via_unblocker
             res = fetch_via_unblocker(WIDGET_URLS[0].format(asin=asin), render=False,
                                       timeout=60)
             if res is not None:

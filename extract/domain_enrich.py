@@ -122,7 +122,7 @@ def _homepage_snippet(host: str, max_chars: int = 1500) -> str:
     LLM falls back to name-only profiling."""
     import re
     try:
-        from to_markdown.html_to_markdown import fetch_with_full_fallback
+        from to_markdown.fetch import fetch_with_full_fallback
         from input.pipeline import domains_lib
         import sqlite3
         from input.pipeline.db import connect as db_connect

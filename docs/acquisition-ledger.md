@@ -11,7 +11,8 @@ exploration + platform inheritance + a bounded model call for novel failures.*
 ## 1. The problem
 
 A recipe page is obtained by a fixed escalation written in
-`to_markdown/html_to_markdown.py` (`fetch_with_full_fallback`) and wrapped
+`to_markdown/fetch.py` (`fetch_with_full_fallback`; it lived in
+`to_markdown/html_to_markdown.py` until 2026-11-21) and wrapped
 again by the harvest filter (`intake/build_query_batch.py::_fetch_for_filter`,
 `_render_rescue`): direct → unblocker static → unblocker render → Wayback,
 with per-domain flags bolted on one lesson at a time (`render_required`,

@@ -343,7 +343,8 @@ def _fetch_og_meta(url, timeout=8):
     # thekitchn cascade). Blocked site → no thumbnail, no Wayback load.
     img, title = None, ""
     try:
-        from to_markdown.html_to_markdown import fetch_with_full_fallback, extract_og_meta
+        from to_markdown.fetch import fetch_with_full_fallback
+        from to_markdown.html_to_markdown import extract_og_meta
         from bs4 import BeautifulSoup
         resp, _meta = fetch_with_full_fallback(url, timeout=timeout, try_wayback=False)
         if resp is not None and getattr(resp, "status_code", 0) == 200:

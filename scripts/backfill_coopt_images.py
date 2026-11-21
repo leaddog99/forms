@@ -52,9 +52,8 @@ from urllib.parse import urljoin  # noqa: E402
 
 from input.pipeline.image_pipeline import coopt_image  # noqa: E402
 from input.pipeline.image_store import get_image_store  # noqa: E402
-from to_markdown.html_to_markdown import (  # noqa: E402
-    fetch_with_full_fallback, extract_og_meta,
-)
+from to_markdown.fetch import fetch_with_full_fallback  # noqa: E402
+from to_markdown.html_to_markdown import extract_og_meta  # noqa: E402
 
 DB_PATH = str(PROJECT_ROOT / "recipes.db")
 OG_THUMBS_DIR = PROJECT_ROOT / "generated" / "og-thumbs"

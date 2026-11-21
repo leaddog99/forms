@@ -1,0 +1,837 @@
+{
+ "direct ok": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "direct 404 is terminal": [
+  {
+   "url": "a",
+   "result": "raised HTTPError 404",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:lost"
+   ],
+   "slept": []
+  }
+ ],
+ "bot UA refused, browser UA served": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot",
+    "direct:browser"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "bot UA challenged with a 2xx stub, browser UA served": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot",
+    "direct:browser"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "403, paid tier off -> wayback": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "403, paid tier off, no snapshot": [
+  {
+   "url": "a",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "403, paid tier on -> unblocker": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "403, paid tier asked for but no credentials": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "challenge stub, paid tier on -> unblocker": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "challenge stub, paid tier off -> wayback": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "unblocker returns a challenge stub": [
+  {
+   "url": "a",
+   "result": "returned unblocker (blocked page)",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost"
+   ],
+   "slept": []
+  }
+ ],
+ "parked domain never pays": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "network error -> unblocker": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "try_wayback off": [
+  {
+   "url": "a",
+   "result": "raised HTTPError 403",
+   "requests": [
+    "direct:bot",
+    "direct:browser"
+   ],
+   "ledger": [
+    "1:direct:lost"
+   ],
+   "slept": []
+  }
+ ],
+ "429 pauses once per host": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "1:direct:lost",
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": [
+    60,
+    120
+   ]
+  },
+  {
+   "url": "b",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": []
+  },
+  {
+   "url": "c",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "unblocker"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "1:direct:lost",
+    "1:direct:lost",
+    "2:unblocker:ok"
+   ],
+   "slept": [
+    60,
+    120
+   ]
+  }
+ ],
+ "429 then served after one pause": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "1:direct:ok"
+   ],
+   "slept": [
+    60
+   ]
+  },
+  {
+   "url": "b",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "render: probe carries the recipe": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:ok:probe"
+   ],
+   "slept": []
+  }
+ ],
+ "render: probe is a JS shell -> rendered fetch": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "unblocker+render"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "render: probe is a JS shell, unblocker blocked": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot",
+    "unblocker+render",
+    "unblocker+render",
+    "unblocker+render"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:direct:ok:probe kept \u2014 render lost"
+   ],
+   "slept": []
+  }
+ ],
+ "render: probe refused, unblocker blocked": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker+render",
+    "unblocker+render",
+    "unblocker+render",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "render: a missing page is terminal and never paid for": [
+  {
+   "url": "a",
+   "result": "raised HTTPError 404",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:lost:probe"
+   ],
+   "slept": []
+  }
+ ],
+ "render: 429 pauses before anything is paid for": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "direct:bot",
+    "direct:browser",
+    "unblocker+render"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "1:direct:lost",
+    "1:direct:lost:probe",
+    "2:unblocker_render:ok"
+   ],
+   "slept": [
+    60,
+    120
+   ]
+  }
+ ],
+ "render: rendered fetch never reaches the site -> one static try": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker+render",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:unblocker:lost",
+    "4:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "paid-first: unblocker returns a challenge stub": [
+  {
+   "url": "a",
+   "result": "returned unblocker (blocked page)",
+   "requests": [
+    "unblocker"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first"
+   ],
+   "slept": []
+  }
+ ],
+ "paid-first: unblocker serves": [
+  {
+   "url": "a",
+   "result": "returned unblocker",
+   "requests": [
+    "unblocker"
+   ],
+   "ledger": [
+    "1:unblocker:ok:paid-first"
+   ],
+   "slept": []
+  }
+ ],
+ "paid-first: unblocker refused -> wayback, never direct": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "paid-first without credentials is inert": [
+  {
+   "url": "a",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  }
+ ],
+ "give up on a host after three lost URLs": [
+  {
+   "url": "a",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "c",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "d",
+   "result": "raised HTTPError",
+   "requests": [
+    "wayback?"
+   ],
+   "ledger": [
+    "1:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "e",
+   "result": "raised HTTPError",
+   "requests": [
+    "wayback?"
+   ],
+   "ledger": [
+    "1:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "a missing page does not count toward giving up": [
+  {
+   "url": "a",
+   "result": "raised HTTPError",
+   "requests": [
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "raised HTTPError",
+   "requests": [
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "c",
+   "result": "raised HTTPError",
+   "requests": [
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "d",
+   "result": "raised HTTPError",
+   "requests": [
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "e",
+   "result": "raised HTTPError",
+   "requests": [
+    "unblocker",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:unblocker:lost:paid-first",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "unblocker breaker opens after three origin blocks": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "unblocker",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "unblocker",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "c",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "unblocker",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "d",
+   "result": "returned wayback",
+   "requests": [
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "a success resets the give-up count": [
+  {
+   "url": "a",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "c",
+   "result": "returned direct",
+   "requests": [
+    "direct:bot"
+   ],
+   "ledger": [
+    "1:direct:ok"
+   ],
+   "slept": []
+  },
+  {
+   "url": "d",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "e",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "f",
+   "result": "raised HTTPError",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:wayback:lost"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ]
+}

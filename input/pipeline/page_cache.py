@@ -8,7 +8,7 @@ CPU that re-runs from the cached page) so both phases — and re-harvests within
 TTL — reuse one fetch.
 
 Design:
-  - ONE chokepoint: `to_markdown.html_to_markdown.fetch_with_full_fallback` consults
+  - ONE chokepoint: `to_markdown.fetch.fetch_with_full_fallback` consults
     this cache, so the is-recipe filter, the JSON-LD-direct lane and the markdown
     conversion all share it.
   - OPT-IN via a contextvar (`enabled()`), default OFF — so only code that explicitly

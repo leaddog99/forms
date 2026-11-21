@@ -97,7 +97,7 @@ def _fetch_image_via_unblocker(url: str) -> Optional[bytes]:
     (e.g. fnl-guide.com). render=False (an image needs no JS render). Best-effort: None when
     there are no unblocker creds, the bytes aren't an image, or anything fails."""
     try:
-        from to_markdown.html_to_markdown import fetch_via_unblocker, unblocker_available
+        from to_markdown.fetch import fetch_via_unblocker, unblocker_available
     except Exception:
         return None
     if not unblocker_available():

@@ -153,7 +153,7 @@ def _unblocker_html(url: str) -> Optional[str]:
         from urllib.parse import urlparse
         from input.pipeline import domains_lib
         from input.pipeline.system_config import get_setting
-        from to_markdown.html_to_markdown import fetch_via_unblocker, unblocker_available
+        from to_markdown.fetch import fetch_via_unblocker, unblocker_available
         if not unblocker_available():
             return None
         host = (urlparse(url).hostname or "").lower().removeprefix("www.")

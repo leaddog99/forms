@@ -86,14 +86,11 @@ FETCH_TIMEOUT_S = 10
 # Single-host harvest: stop after this many full-but-recipe-less pages with no
 # keep yet — a membership wall (mollybaz.com's CLUB, 2026-09-08), not bad luck.
 GATED_ABORT_AFTER = 6
-# Step 3's fetch is now shared with step 7's extract via the canonical
-# `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
-# that the extract can fetch will always pass step 3's filter — no
-# more silent drops from UA mismatch. See [[single-path]].
-from to_markdown.html_to_markdown import (
-    fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
-    fetch_via_unblocker, unblocker_available, blocked_reason, page_declares_recipe,
-)
+# Step 3's fetch and step 7's extract share ONE fetch ladder
+# (to_markdown/fetch.py), so a URL the extract can fetch always passes
+# step 3's filter — no silent drops from a UA mismatch. See [[single-path]].
+from to_markdown.fetch import fetch_with_full_fallback, unblocker_available, blocked_reason
+from to_markdown.html_to_markdown import page_declares_recipe
 from intake.translate import (
     detect_language, translate_markdown, translate_title, is_translation_plausible,
     is_non_english, language_name,
@@ -490,15 +487,6 @@ def _response_to_filter_signals(resp) -> tuple[str, bool, str]:
     )
     # Phrase matching expects lower-cased text (RECIPE_PHRASES is all-lower).
     return normalized_text.lower(), has_recipe_jsonld, lang_code
-
-
-# Backward-compat alias — keeps any caller that imports _fetch_text by
-# name working. The new signature is preferred for new code.
-def _fetch_text(url: str) -> Optional[str]:
-    """Legacy single-return shim. Returns just the text component;
-    callers needing JSON-LD detection should use _fetch_for_filter."""
-    result = _fetch_for_filter(url)
-    return result.text if result.ok else None
 
 
 # Score we stamp on entries whose JSON-LD detection passes them

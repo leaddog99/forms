@@ -12932,3 +12932,43 @@ a scheduled job is added, name folding changes.
   made-up cooks.com URL returns an ordinary 404 but a real recipe page returns 550, so the proxy reaches
   the site and the site refuses recipe pages specifically. Untried: render=True, another geo/exit pool,
   other headers, a homepage session first. If it works, take cooks.com off `disallowed_domains`.
+
+### 2026-11-21 (evening) — fetch ladder cleaned up: its own module, one ladder, a behaviour test
+
+* Curator asked for a cleanup pass over the fetch area (structure, performance, dead code, redundancy).
+  Scope taken: the page-fetch ladder and its callers' imports. NOT reviewed: serp_search.py, the
+  harvest (build_query_batch.py) beyond its fetch imports, acquisition.py, page_cache.py.
+* NEW to_markdown/fetch.py (1,049 lines) holds everything about GETTING a page; html_to_markdown.py
+  (1,629 → 631 lines) only turns HTML into markdown. Callers import fetch names from to_markdown.fetch
+  directly; there is no re-export shim. The history comments moved with the code.
+* One ladder (`_fetch_ladder`): given-up host → Wayback; `paid_first` domain → unblocker, Wayback;
+  everything else `_direct_then_paid` → Wayback. The old 185-line function had a separate render-probe
+  branch that duplicated the direct rung.
+* Per-run host memory is one record, `_HostRun` (unblocker_blocks, rate_pauses, rate_spent, live_lost),
+  behind one lock, replacing five module globals that were mutated from the harvest's thread pool with
+  no lock. `reset_run_state()` for tests. Settings read through one `_setting` helper.
+* BEHAVIOUR CHANGES, all on render-eligible domains (render + unblocker): (1) the direct probe IS the
+  direct rung — a page is no longer fetched direct twice, and a probe response that was a real but
+  unstructured page is kept when rendering fails; (2) a 404/410 on the probe is terminal — it used to
+  pay for a rendered fetch of a missing page; (3) a 429 on the probe pauses before anything is paid
+  for, as it already did everywhere else; (4) after a rendered fetch the origin refused, the static
+  unblocker fetch is not tried as well (it still is when the rendered fetch never reached the site).
+  Worst case measured in the test: 12 requests for one URL → 7. Also: a paid-first fetch that returns
+  a blocked-looking page now returns it to the caller, as the other paths always have, instead of
+  going to Wayback.
+* Performance: `_page_text` decodes and lower-cases a response body once; the block/parked checks ran
+  three or four times per response and `resp.text` re-decodes the whole body on every access.
+* Dead code removed: `fetch_html` (+ its test-only `user_agent` parameter), `_looks_blocked`,
+  `_BLOCK_MARKERS`, `_UNBLOCKER_ORIGIN_STATUS`, the parked "; trying Wayback" suffix that was never
+  shown; in the harvest the unused `_fetch_text` alias and three unused fetch imports.
+* NEW to_markdown/tests/test_fetch_ladder.py: 31 scenarios replayed with no network against
+  fetch_ladder_golden.json (requests made, ledger rows, sleeps, result). Recorded from the OLD code
+  first: 25 of 27 identical after the carve, the other two are changes (1) and (4) above. Live check:
+  seriouseats direct OK end to end through html_to_markdown; cooks.com paid-first unchanged.
+* LEFT, as recommendations: (a) the fetch POLICY is still resolved in five places (save_recipe_api
+  `_pub_unblocker` and the extract path ~14586, the dish batch's `_allow_render`, domain_enrich,
+  screenshot_pipeline) while `paid_first` is resolved inside the ladder — one `fetch_policy(url)` in
+  domains_lib would make the callers pass nothing; (b) the block/parked marker lists and the Wayback
+  breaker numbers are constants in code, not settings; (c) build_query_batch.py still has eight unused
+  imports (left: one module reads env at import time); (d) nothing carries a dead host between jobs —
+  the nightly `content_obtainable` policy is the place for it.

@@ -29,7 +29,7 @@ import time
 sys.path.insert(0, ".")
 from bs4 import BeautifulSoup
 
-from to_markdown.html_to_markdown import fetch_via_unblocker
+from to_markdown.fetch import fetch_via_unblocker
 from input.pipeline.embeddings import embed_text, vec_to_bytes
 
 DB = "recipes.db"
