@@ -301,6 +301,74 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int,
     return out
 
 
+_VIDEO_HOSTS = frozenset({"youtube.com", "youtu.be"})
+
+
+def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
+    """The video lane's ADMISSION READ (docs/video-recipes-lane.md 4.1, step 3).
+
+    Video results stay off the web lane (youtube.com is a blocked host and
+    _filter_disallowed drops them next, as before). Here each one's WATCH PAGE
+    is read - no transcript, nothing paid - and classed by what it holds:
+    a written recipe (the only class the lane will admit), an ingredient list
+    with a spoken method, a link to a written recipe elsewhere, a transcript
+    only, or nothing. Every result goes to the acquisition ledger with its
+    class, admitted or not, plus the page's view count and publish date and
+    the views-per-day they give, so the classes can be counted before anyone
+    decides seats or rank.
+
+    LEDGER FIRST: this changes no candidate and no winner. A linked page is
+    recorded, not yet handed to the web lane. Stamps `_video` on the entry.
+    Returns {results, read, classes, links} for the run log."""
+    try:
+        from input.pipeline.system_config import get_setting as _gs
+        cap = int(_gs("video_lane_read_max", 40) or 0)
+    except Exception:
+        cap = 40
+    videos = [e for e in entries if (e.get("domain") or "").lower() in _VIDEO_HOSTS]
+    out = {"results": len(videos), "read": 0, "classes": {}, "links": []}
+    if not videos or cap <= 0:
+        return out
+    import json as _json
+    from intake import youtube_source as _ys
+    from input.pipeline import acquisition as _acq
+    videos.sort(key=lambda e: (e.get("google_rank") is None, e.get("google_rank") or 0))
+    quiet = lambda *_a, **_k: None                                   # noqa: E731
+    for e in videos[:cap]:
+        if should_cancel and should_cancel():
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled("cancelled while reading video results")
+        url = e["url"]
+        if not _ys.is_youtube_url(url):
+            continue
+        try:
+            with _acq.timed() as t:
+                res = _ys.ladder(url, want_transcript=False, log=quiet)
+        except ValueError:
+            continue                                   # a channel or playlist page, not a video
+        cls = res.watch_class
+        vpd = _ys.views_per_day(res.views, res.published)
+        e["_video"] = {"class": cls, "channel": res.channel, "channel_id": res.channel_id,
+                       "views": res.views, "published": res.published, "views_per_day": vpd}
+        notes = {"rank": e.get("google_rank"), "lines": e.get("_lines") or [],
+                 "channel": res.channel or None, "channel_id": res.channel_id or None,
+                 "views": res.views, "published": res.published or None,
+                 "views_per_day": vpd,
+                 "views_per_day_method": _ys.VIEWS_PER_DAY_METHOD if vpd is not None else None,
+                 "link": res.links[0] if (cls == "link" and res.links) else None}
+        _acq.record_video(url, cls, admitted=(cls == "description"), ms=t.ms,
+                          notes=_json.dumps({k: v for k, v in notes.items() if v not in (None, [], "")},
+                                            ensure_ascii=False))
+        out["read"] += 1
+        out["classes"][cls] = out["classes"].get(cls, 0) + 1
+        if cls == "link" and res.links:
+            out["links"].append(res.links[0])
+        vtxt = (f"{vpd:,.0f} views/day" if vpd >= 10 else f"{vpd:.1f} views/day") if vpd is not None else "views not stated"
+        print(f"      [video] #{e.get('google_rank')} {cls:<12} {vtxt:<18} "
+              f"{(res.channel or '?')[:28]:<28} {(res.title or e.get('title') or '')[:60]}")
+    return out
+
+
 def _blocked_root_domains() -> tuple[set[str], set[str]]:
     """(blocked, aggregator) root-domain sets - the config seed unioned with the
     curator's table list, and the curated aggregator hosts. Shared by the SERP
@@ -1855,6 +1923,22 @@ def build_batch(
         print(f"      [thin] only {serpapi_union} candidate(s) for a target "
               f"of {top_n_serpapi} — broaden the query (add a `| \"phrasing\"` "
               f"term, or relax quotes) if you want more.")
+
+    # Video lane, admission read (ledger first - counts, seats nothing).
+    _cc("the video read")
+    try:
+        _vid = _read_video_results(entries, should_cancel=should_cancel)
+    except Exception as _ve:
+        if type(_ve).__name__ == "JobCancelled":
+            raise
+        print(f"      [video] read skipped ({type(_ve).__name__}: {_ve})")
+        _vid = {"results": 0, "read": 0, "classes": {}, "links": []}
+    if _vid["results"]:
+        _order = ("description", "ingredients", "link", "transcript", "none", "unreadable")
+        _split = ", ".join(f"{_vid['classes'][c]} {c}" for c in _order if _vid["classes"].get(c))
+        print(f"      [video] {_vid['results']} video result(s), {_vid['read']} read: {_split or 'none read'}"
+              f" - {_vid['classes'].get('description', 0)} carry a written recipe "
+              f"(counted in the ledger; not seated yet)")
 
     print(f"\n[2/7] filter_disallowed (domain + URL-path blacklist)")
     entries, dropped_disallowed = _filter_disallowed(entries)

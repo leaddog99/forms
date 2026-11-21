@@ -13060,3 +13060,46 @@ a scheduled job is added, name folding changes.
   seats took, and that the eggplant / licorice rows from the earlier runs are gone from the winners.
   The ten other dishes with newly written lines were NOT rerun; they pick the lines up on their next
   refresh.
+
+### 2026-11-21 (afternoon) — video lane step 3, first half: the harvest READS every YouTube result and counts it; views per day; Butter Chicken gets an English line
+
+* **Curator: "should we be processing YouTube pages where we can find a textual recipe" → go on step 3**
+  of docs/video-recipes-lane.md, ledger first. The 13 video rows in master_recipes (3 in recipes) are
+  all hand saves since 10-16, none attached to a dish; the harvest was still dropping YouTube.
+* **BUILT (nothing seated, no candidate or winner changes):**
+  - `intake/youtube_source.py`: `LadderResult` gains `readable`, `written` (recipe | ingredients | link
+    | none), `has_captions`, `views`, `published`, set at the ONE place the ladder judges the
+    description; `watch_class` property = description · ingredients · link · transcript · none ·
+    unreadable. `VideoInfo.views` / `.published` from the watch page (videoDetails.viewCount,
+    microformat.publishDate) - no Data API. `views_per_day()` (`views_per_day_v1` = views / max(whole
+    days since publication, 1); None when either input is missing; a real 0 survives). 5 new tests.
+  - `input/pipeline/acquisition.py`: `record_video()` writes one `acquisition_attempts` row per video
+    (technique `video_ladder`, gate `video:<class>`, usable = written recipe, JSON notes: rank, lines,
+    channel, channel_id, views, published, views_per_day + method, link). `run_summary` leaves these
+    rows out of the page routes/counts/unreachable and returns a `video` block (None when no videos).
+  - `intake/build_query_batch.py` `_read_video_results()`, between the search and filter_disallowed:
+    best Google position first, `ladder(want_transcript=False)`, up to `video_lane_read_max` (NEW
+    system_config setting, default 40, 0 = off). About 1 s per video, nothing paid.
+  - `forms/dishes_v2.html`: the Run panel's fetch section shows "Videos in the search results".
+* **BUG FOUND AND FIXED (input/pipeline/serp_search.py):** yesterday's same-path cap treated every
+  `youtube.com/watch?v=` as one page under many query strings and kept two per line - the video IS
+  the query string. Exempted.
+* **MEASURED - Butter Chicken #3070 (lines: 'Butter Chicken Recipe' us/en + the Hindi line):** 111
+  video results, 40 read: 8 description, 11 ingredients, 3 link, 17 transcript, 1 none. The eight
+  written-recipe videos run from 0.0 to 14,505 views a day and Google position does not separate
+  them (#5 = 0.2/day, #13 Get Curried = 14,505/day, #23 Spice Eats = 2,110/day).
+* **DECISION (curator, 11-21): the video subset is ordered by VIEWS PER DAY** (recorded in the design
+  doc 4.2; reverses its "views stay out"; Google position becomes the tie-break). Curator wants the
+  videos as a subset on the recipe list/search page, UX to be thought through before building.
+* **Butter Chicken**: English line `Butter Chicken Recipe` (gl=us hl=en) added ahead of the Hindi
+  line. #3067 (Hindi only) cancelled; #3069 saved 5/15 (the English line found only 5 usable pages in
+  5 search pages); #3070 found 40 usable on the same line - cause of the difference NOT established.
+* **RERUN RESULTS so far.** Licurdia #3066: all 5 Italian seats are real licurdia pages (saved 10/10).
+  Veal Parmigiana #3063: saved 15/15, no eggplant, but 3 of the 5 Italian seats are "arrosto di
+  vitello al parmigiano" (veal ROAST with parmesan) - `ricetta vitello alla parmigiana` is a weak
+  line; `cotolette di vitello alla parmigiana` would be the better one (not changed). #3064 Veal
+  Cacciatore, #3065 Veal Piccata, #3068 Revithia, #3070 Butter Chicken still running when written.
+* **STILL TO DO in step 3:** hand `link` pages to the web lane; decide whether `ingredients` (list
+  written, method spoken) is admitted; channel standing. Then step 4 (seats, ordered by views per day).
+* **NEEDS a BCC restart on MARLEY (bcc_restart.bat)** for the fetch-summary endpoint to return the
+  video block and for the new setting to appear under System → Limits. Jobs already pick up the read.

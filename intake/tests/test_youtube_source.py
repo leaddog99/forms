@@ -364,3 +364,39 @@ if __name__ == "__main__":
                 print(f"FAIL {name}: {type(e).__name__}: {e}")
     print("all passed" if not fails else f"{fails} failed")
     sys.exit(1 if fails else 0)
+
+
+# --- the watch-page class the harvest's video lane reads (docs/video-recipes-lane.md 4.1)
+def _watch(desc, captions=(("en", "asr"),), info=True):
+    fw = (lambda v, log: _info(desc, captions)) if info else (lambda v, log: None)
+    return ys.ladder(URL, want_transcript=False, log=_quiet, _fetch_watch=fw,
+                     _fetch_transcript=lambda v, log: (_ for _ in ()).throw(AssertionError("no transcript at harvest")))
+
+
+def test_watch_class_written_recipe_is_description():
+    assert _watch(FALLOW_DESC).watch_class == "description"
+
+
+def test_watch_class_link_only():
+    assert _watch(LINK_ONLY_DESC).watch_class == "link"
+
+
+def test_watch_class_nothing_written_is_transcript_or_none():
+    assert _watch("Thanks for watching!").watch_class == "transcript"
+    assert _watch("Thanks for watching!", captions=()).watch_class == "none"
+
+
+def test_watch_class_unreadable_page():
+    assert _watch("", info=False).watch_class == "unreadable"
+
+
+def test_views_per_day_absent_is_none_not_zero():
+    from datetime import datetime, timezone
+    now = datetime(2026, 11, 21, tzinfo=timezone.utc)
+    assert ys.views_per_day(None, "2026-01-01", now) is None
+    assert ys.views_per_day(1000, "", now) is None
+    assert ys.views_per_day(1000, "not a date", now) is None
+    assert ys.views_per_day(0, "2026-11-11", now) == 0.0          # a real zero survives
+    assert ys.views_per_day(1000, "2026-11-11", now) == 100.0
+    assert ys.views_per_day(1000, "2026-11-11T08:00:00-07:00", now) == 111.11
+    assert ys.views_per_day(500, "2026-11-21", now) == 500.0       # published today: one day

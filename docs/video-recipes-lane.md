@@ -106,7 +106,19 @@ ranks on signals we already own or can buy honestly:
 | `url_traffic` | SEMrush URL-level organic traffic in the line's market | ~400 API units per URL; English-indexed markets only; stamped with method + date, absent elsewhere ([[feedback_absent_not_zero]]) |
 | `channel_standing` | the channel's own record (§5): how many dishes it has ranked for, its mean position, curator flags | accrues over time |
 
-Rank within the lane: `serp_position ASC` as the primary key, `url_traffic DESC
+**DECISION 2026-11-21 (curator): the lane is ordered by VIEWS PER DAY.**
+Lifetime views divided by days since publication, both read off the watch page
+with the title (no Data API, so its policy on derived scores does not bind us).
+Stored as value + inputs + method id (`views_per_day_v1`, `views` and
+`published` beside it), absent when the page does not state them. This
+replaces the order in the paragraph below and reverses its "views stay out";
+Google position becomes the tie-break. The first measurement is the reason:
+on Butter Chicken the eight written-recipe videos ran from 0.0 to 14,505
+views a day, and Google's position did not separate them (position 5 had 0.2
+a day, position 13 had 14,505). Known bias: a lifetime average flatters a new
+video in its first weeks and understates an old one that has gone quiet.
+
+*Superseded 2026-11-21:* Rank within the lane: `serp_position ASC` as the primary key, `url_traffic DESC
 NULLS LAST` as the tie-break, `channel_standing` as the second tie-break; a
 curator pin beats all. This is deliberately not a formula over YouTube's own
 numbers: views, likes and subscribers stay out, per the Data API policy decision
@@ -229,8 +241,25 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    `forms/channels.html` in the Corpus menu, and the capture block made to
    survive the save. First row: Fallow (UCJ901NqoRaXMnIm7aOjLyuA, @FallowChefs),
    2 master recipes.
-3. Harvest admission + the video lane in the refresh (ledger first, so the
-   rung classes are counted before anything is seated).
+3. **FIRST HALF BUILT 2026-11-21 — the admission read, ledger only.** A dish
+   refresh now reads the watch page of every YouTube result (best Google
+   position first, up to `video_lane_read_max`, default 40; no transcript,
+   nothing paid) and writes one ledger row per video: technique
+   `video_ladder`, `gate` = `video:<class>`, `usable` = 1 only for a written
+   recipe, and a JSON `notes` with rank, lines, channel, views, publish date
+   and views per day (`build_query_batch._read_video_results`,
+   `acquisition.record_video`, `LadderResult.watch_class`). The classes are
+   description · ingredients (list written, method spoken) · link · transcript
+   · none · unreadable. Nothing is seated and no candidate changes; a linked
+   page is recorded, not yet handed to the web lane. The dish form's Run panel
+   shows the counts. First measurement, Butter Chicken #3070 (English + Hindi
+   lines): 111 video results, 40 read, 8 with a written recipe, 11 with the
+   ingredients written, 3 links, 17 spoken only. Found on the way: the
+   same-path cap of 11-20 treated every `youtube.com/watch?v=` as one page and
+   kept two videos per line; fixed.
+   STILL TO DO in step 3: hand `link` pages to the web lane; decide whether
+   `ingredients` is admitted (it needs the transcript for the method); stamp
+   the channel's standing.
 4. Seats and the `video_seats` control; SEMrush stamping for seated winners.
 5. Share-sheet and screenshot doors; rung pill.
 

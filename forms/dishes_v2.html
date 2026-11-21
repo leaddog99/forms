@@ -1354,7 +1354,7 @@
         const fr = await fetch(`/jobs/${last.id}/fetch-summary`);
         if (!fr.ok) return;                       // older server: no summary, no panel
         const f = await fr.json();
-        if (selected !== dishName || !f.urls || !f.urls.tried) return;
+        if (selected !== dishName || ((!f.urls || !f.urls.tried) && !f.video)) return;
         const acc = $('#fetchAcc'); if (!acc) return;
         const lost = f.unreachable || [];
         $('#fetchPill').textContent = `${f.urls.got} of ${f.urls.tried} pages` + (lost.length ? ` · ${lost.length} site${lost.length === 1 ? '' : 's'} unreachable` : '');
@@ -1368,6 +1368,16 @@
             ${(f.routes || []).map(x => `<tr><td>${escapeHtml(ROUTE_LBL[x.technique] || x.technique)}</td><td class="n">${x.attempts}</td><td class="n">${x.got}</td></tr>`).join('')}
           </tbody></table>
           <p class="ed-notes-help" style="margin:10px 0 0">${escapeHtml(facts)}</p>
+          ${f.video ? (() => {
+            // Video results: read and counted, not seated (video lane, step 3).
+            const c = f.video.classes || {};
+            const bits = [[c.description, 'with the recipe written under the video'], [c.ingredients, 'with the ingredients written and the method spoken'],
+                          [c.link, 'pointing to a written recipe elsewhere'], [c.transcript, 'spoken only'],
+                          [c.none, 'with nothing to read'], [c.unreadable, 'that could not be read']]
+              .filter(b => b[0]).map(b => `${b[0]} ${b[1]}`).join(' · ');
+            return `<h4 style="margin:18px 0 0;font-size:.85em">Videos in the search results</h4>
+              <p class="ed-notes-help" style="margin:6px 0 0">${f.video.results} read: ${escapeHtml(bits)}. Counted only — videos are not seated yet.</p>`;
+          })() : ''}
           ${lost.length ? `<h4 style="margin:18px 0 0;font-size:.85em">Could not be reached</h4>
           <ul class="d-lost">${lost.map(h => `<li><span class="h">${escapeHtml(h.host)}</span>
             <span class="w">${h.urls} page${h.urls === 1 ? '' : 's'} · ${escapeHtml(WHY_LBL[h.reason] || h.reason || 'failed')}</span>

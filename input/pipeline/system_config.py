@@ -326,6 +326,17 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "URLs on that host do not pause again.",
     },
     {
+        "key": "video_lane_read_max",
+        "value": 40,
+        "type": "int",
+        "category": "Limits",
+        "label": "Video results read per dish refresh",
+        "description": "A dish refresh reads the watch page of up to this many YouTube results "
+                       "(best Google position first) to see which carry a written recipe, and "
+                       "records what it finds. About one second each, nothing paid. The videos "
+                       "are counted, not yet seated. 0 turns the reading off.",
+    },
+    {
         "key": "host_giveup_after",
         "value": 3,
         "type": "int",

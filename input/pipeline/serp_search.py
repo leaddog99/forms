@@ -426,6 +426,12 @@ def _collect_page(org: list[dict], out: list[dict], seen: set[str], skip: set[st
     # whole line so far, so a flood that starts on page 1 is still capped on page 3.
     def _path_key(u: str):
         sp = urlsplit(u)
+        # youtube.com/watch?v=<id>: the query string IS the video. The cap was
+        # dropping every video after the second on each line (Butter Chicken
+        # #3069: "8 more links to www.youtube.com/watch ... dropped" on page
+        # after page), so the video lane's read saw 3 of some 60 results.
+        if sp.path == "/watch" and sp.netloc.lower().endswith("youtube.com"):
+            return None
         return (sp.netloc.lower(), sp.path) if sp.query else None
     path_n: dict = {}
     for r in out:

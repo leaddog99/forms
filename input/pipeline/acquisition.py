@@ -40,6 +40,11 @@ TECHNIQUES = ("cache", "direct", "unblocker", "unblocker_render", "wayback", "wa
 # several× a static one by every provider; recorded as 1 unit of its own kind.
 COST_UNITS = {"cache": 0.0, "direct": 0.0, "unblocker": 1.0, "unblocker_render": 1.0,
               "wayback": 0.0, "walker": 0.0, "human": 0.0}
+# The harvest's read of a video result's watch page (docs/video-recipes-lane.md
+# 4.1). Not a rung of the page ladder, so it is not in TECHNIQUES and the
+# per-run page counts leave it out; it has its own block in run_summary.
+VIDEO_TECHNIQUE = "video_ladder"
+VIDEO_CLASSES = ("description", "ingredients", "link", "transcript", "none", "unreadable")
 
 # ------------------------------------------------------------------ context
 _ctx: contextvars.ContextVar = contextvars.ContextVar("acq_ctx", default=None)
@@ -331,6 +336,38 @@ def record(url: str, technique: str, *, ok: bool, rung: int = 1, reason: str = "
         return None
 
 
+def record_video(url: str, watch_class: str, *, admitted: bool, ms: Optional[int] = None,
+                 notes: str = "") -> Optional[int]:
+    """One video search result, read from its watch page: `gate` holds the class
+    ('video:description', 'video:link', ...), `ok` = the page was readable,
+    `usable` = it carries a written recipe and would be admitted to the video
+    lane. Every result is written, admitted or not, so the classes can be
+    counted before anything is seated. Never raises."""
+    try:
+        ctx = context()
+        host = _host(url)
+        ok = watch_class != "unreadable"
+        conn = _connect()
+        try:
+            _ensure_once(conn)
+            cur = conn.execute(
+                "INSERT INTO acquisition_attempts(ts, job_id, run_kind, domain, root_domain, "
+                "url_normalized, technique, rung, ok, reason, detail, ms, cost_units, gate, "
+                "usable, notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (_now(), ctx.get("job_id"), ctx.get("run_kind") or "", host, _root(host),
+                 norm_url(url), VIDEO_TECHNIQUE, 1, 1 if ok else 0,
+                 "" if ok else "video:unreadable", "" if ok else "watch page could not be read",
+                 ms, 0.0, f"video:{watch_class}", 1 if admitted else 0,
+                 notes or None))        # JSON: never cut, a cut row cannot be read back
+            conn.commit()
+            return cur.lastrowid
+        finally:
+            conn.close()
+    except Exception as e:                                       # pragma: no cover
+        print(f"[ACQ] video ledger write skipped: {type(e).__name__}: {e}")
+        return None
+
+
 def _stamp_domain(conn: sqlite3.Connection, host: str, technique: str) -> None:
     """The domain remembers how its pages were last obtained (curator ask,
     2026-09-10: the technique must be visible on the domain record and form).
@@ -465,20 +502,22 @@ def run_summary(conn: sqlite3.Connection, job_id: int, *, max_hosts: int = 12) -
         {"technique": t, "attempts": n, "got": int(ok or 0), "paid_units": float(cost or 0)}
         for t, n, ok, cost in conn.execute(
             "SELECT technique, COUNT(*), SUM(ok), SUM(cost_units) FROM acquisition_attempts "
-            "WHERE job_id = ? GROUP BY technique", (job_id,))]
+            "WHERE job_id = ? AND technique <> ? GROUP BY technique", (job_id, VIDEO_TECHNIQUE))]
     order = {t: i for i, t in enumerate(TECHNIQUES)}
     routes.sort(key=lambda r: order.get(r["technique"], 99))
     tried, got = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(won), 0) FROM (SELECT MAX(ok) won FROM acquisition_attempts "
-        "WHERE job_id = ? GROUP BY url_normalized)", (job_id,)).fetchone()
+        "WHERE job_id = ? AND technique <> ? GROUP BY url_normalized)",
+        (job_id, VIDEO_TECHNIQUE)).fetchone()
     wait_ms = conn.execute(
         "SELECT COALESCE(SUM(ms), 0) FROM acquisition_attempts WHERE job_id = ? "
         "AND detail LIKE '429 rate-limited%'", (job_id,)).fetchone()[0]
     unreachable = []
     for host, urls, attempts in conn.execute(
             "SELECT root_domain, COUNT(DISTINCT url_normalized), COUNT(*) FROM acquisition_attempts "
-            "WHERE job_id = ? GROUP BY root_domain HAVING MAX(ok) = 0 "
-            "ORDER BY COUNT(DISTINCT url_normalized) DESC, COUNT(*) DESC LIMIT ?", (job_id, max_hosts)):
+            "WHERE job_id = ? AND technique <> ? GROUP BY root_domain HAVING MAX(ok) = 0 "
+            "ORDER BY COUNT(DISTINCT url_normalized) DESC, COUNT(*) DESC LIMIT ?",
+            (job_id, VIDEO_TECHNIQUE, max_hosts)):
         why = conn.execute(
             "SELECT reason, COUNT(*) n FROM acquisition_attempts WHERE job_id = ? AND root_domain = ? "
             "AND ok = 0 AND reason <> '' GROUP BY reason ORDER BY n DESC LIMIT 1", (job_id, host)).fetchone()
@@ -489,9 +528,19 @@ def run_summary(conn: sqlite3.Connection, job_id: int, *, max_hosts: int = 12) -
             "AND technique = 'wayback' AND rung = 1", (job_id, host)).fetchone()[0]
         unreachable.append({"host": host, "urls": urls, "attempts": attempts,
                             "reason": why[0] if why else "", "gave_up": bool(gave_up)})
+    # Video results the search returned, by what their watch page holds. Absent
+    # (None) when the run read no videos - never a row of zeros.
+    vrows = dict(conn.execute(
+        "SELECT gate, COUNT(*) FROM acquisition_attempts WHERE job_id = ? AND technique = ? "
+        "GROUP BY gate", (job_id, VIDEO_TECHNIQUE)).fetchall())
+    video = None
+    if vrows:
+        classes = {c: int(vrows.get(f"video:{c}", 0)) for c in VIDEO_CLASSES}
+        video = {"results": sum(classes.values()), "written": classes["description"],
+                 "classes": classes}
     return {"job_id": job_id, "routes": routes, "urls": {"tried": tried, "got": int(got)},
             "paid_units": round(sum(r["paid_units"] for r in routes), 1),
-            "rate_wait_s": int(wait_ms / 1000), "unreachable": unreachable}
+            "rate_wait_s": int(wait_ms / 1000), "unreachable": unreachable, "video": video}
 
 
 def print_report(rep: dict) -> None:

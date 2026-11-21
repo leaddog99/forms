@@ -56,7 +56,7 @@ from video_lookup import youtube_id
 __all__ = [
     "LadderResult", "VideoInfo", "ladder", "fetch_watch", "fetch_transcript",
     "recipe_signal", "recipe_links", "build_markdown", "canonical_url",
-    "thumbnail_url", "is_youtube_url",
+    "thumbnail_url", "is_youtube_url", "views_per_day", "VIEWS_PER_DAY_METHOD",
 ]
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -95,6 +95,11 @@ class VideoInfo:
     caption_tracks: list[tuple[str, str]] = field(default_factory=list)  # (lang, kind)
     playable: bool = True
     unplayable_reason: str = ""
+    # The watch page's own count and date (videoDetails.viewCount,
+    # microformat.publishDate) - read off the page like the title, no Data API.
+    # None / "" when the page does not state them: absent, never zero.
+    views: Optional[int] = None
+    published: str = ""         # ISO date or datetime, as the page gives it
 
     @property
     def url(self) -> str:
@@ -157,6 +162,8 @@ def fetch_watch(video_id: str, *, timeout: float = _WATCH_TIMEOUT_S,
         caption_tracks=[((t.get("languageCode") or ""), (t.get("kind") or "manual")) for t in tracks],
         playable=(status.get("status") or "OK") == "OK",
         unplayable_reason=(status.get("reason") or ""),
+        views=int(vd["viewCount"]) if str(vd.get("viewCount") or "").isdigit() else None,
+        published=(mf.get("publishDate") or mf.get("uploadDate") or "").strip(),
     )
     log(f"[YOUTUBE] {video_id}: {info.title!r} by {info.channel!r}, "
         f"{len(info.description)} desc chars, {info.length_s}s, "
@@ -385,6 +392,34 @@ class LadderResult:
     # curator was left with nothing while a 2,255-word transcript existed.
     fallback_markdown: Optional[str] = None
     fallback_rung: Optional[str] = None     # comment | transcript
+    # What the WATCH PAGE alone says, whichever rung was taken - set by the
+    # ladder at the one place the description is judged, so the harvest's video
+    # lane (which reads the watch page only, no transcript) classifies with the
+    # same test every door uses. docs/video-recipes-lane.md 4.1.
+    readable: bool = True                   # the watch page gave us its player data
+    views: Optional[int] = None             # the page's view count; None = not stated
+    published: str = ""                     # the page's publish date; "" = not stated
+    written: str = "none"                   # recipe | ingredients | link | none
+    has_captions: bool = False              # a caption track exists (a transcript could be read)
+
+    @property
+    def watch_class(self) -> str:
+        """The harvest class of this video from its watch page alone:
+        description   the whole recipe is written under the video (ADMITTED)
+        ingredients   the ingredient list is written, the method is spoken
+        link          the description points at a written recipe elsewhere
+        transcript    nothing written; captions exist, so the recipe is only spoken
+        none          nothing written and nothing to read
+        unreadable    the watch page could not be read"""
+        if not self.readable:
+            return "unreadable"
+        if self.written == "recipe":
+            return "description"
+        if self.written == "ingredients" and self.has_captions:
+            return "ingredients"
+        if self.links:
+            return "link"
+        return "transcript" if self.has_captions else "none"
 
     def capture_extra(self) -> dict:
         """The fields stamped on the staged grab's `capture` block and, from
@@ -396,6 +431,31 @@ class LadderResult:
                 "caption_language": self.caption_language or None,
                 "links": self.links or None, "reject": self.reject,
                 "fallback_rung": self.fallback_rung}
+
+
+VIEWS_PER_DAY_METHOD = "views_per_day_v1"
+
+
+def views_per_day(views: Optional[int], published: str,
+                  now: Optional[datetime] = None) -> Optional[float]:
+    """A video's traffic indicator (curator, 2026-11-21): lifetime views divided
+    by days since it was published. views_per_day_v1 = views / max(days, 1),
+    days counted in whole UTC days. None when either input is missing or the
+    date does not parse - absent, never zero. The caller stores the two inputs
+    and the method id beside the value."""
+    if views is None or not published:
+        return None
+    try:
+        d = datetime.fromisoformat(published.strip().replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            d = datetime.fromisoformat(published.strip()[:10])
+        except ValueError:
+            return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    days = ((now or datetime.now(timezone.utc)) - d).days
+    return round(views / max(days, 1), 2)
 
 
 def _strip_title(t: str) -> str:
@@ -484,7 +544,13 @@ def ladder(url: str, *, description: Optional[str] = None, comments: Optional[li
                 handle=(info.handle if info else "") or "",
                 thumbnail=thumbnail_url(vid), links=links, description_chars=len(desc),
                 comments_used=0, transcript_words=transcript.words if transcript else 0,
-                caption_language=transcript.language if transcript else "", length_s=length_s)
+                caption_language=transcript.language if transcript else "", length_s=length_s,
+                readable=info is not None, has_captions=bool(info.caption_tracks) if info else False,
+                views=info.views if info else None, published=(info.published if info else "") or "",
+                written=("recipe" if sig.has_recipe
+                         else "ingredients" if (sig.has_ingredient_list
+                                                and not (links and sig.points_elsewhere))
+                         else "link" if links else "none"))
 
     if sig.has_recipe:
         rung = "description"
