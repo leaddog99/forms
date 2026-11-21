@@ -64,6 +64,7 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("filter-llm",        "prefilter",  True),
     # --- inferences: overturnable ----------------------------------------
     ("no-recipe-structure", "is_recipe", True),   # detection failure
+    ("off-dish-title",      "is_recipe", True),   # the title screen's read of the TITLE alone
     ("recipe-score<",       "is_recipe", True),   # heuristic threshold
     ("translation-suspect", "is_recipe", True),   # heuristic
     ("url-prefilter",       "is_recipe", True),   # word-list heuristic

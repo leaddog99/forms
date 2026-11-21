@@ -1944,6 +1944,26 @@ def build_batch(
     entries, dropped_disallowed = _filter_disallowed(entries)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_disallowed)}")
 
+    # TITLE SCREEN (intake/dish_title_screen.py): is each result even the dish?
+    # Asked of the title, before the fetch, Moz and the extraction are paid for.
+    # Its drops are counted with the is-recipe stage's (they are that stage's
+    # kind of verdict: "not a page we want", inferred, overturnable).
+    _cc("the title screen")
+    dropped_off_dish: list[dict] = []
+    try:
+        from intake import dish_title_screen as _dts
+        entries, dropped_off_dish, _ts = _dts.screen(dish, entries)
+        if _ts["mode"] != "off" and _ts["judged"]:
+            _verb = "dropped" if _ts["mode"] == "drop" else "WOULD drop (report mode, nothing dropped)"
+            print(f"      [title screen] {_ts['judged']} titles read for {dish!r}: {_ts['same']} the dish, "
+                  f"{_ts['unclear']} unclear (kept), {_ts['different']} another dish or not a recipe - {_verb}")
+            for _t, _what in _ts["would_drop"]:
+                print(f"         x {_what:<34} {_t[:80]}")
+    except Exception as _te:
+        if type(_te).__name__ == "JobCancelled":
+            raise
+        print(f"      [title screen] skipped ({type(_te).__name__}: {_te}) - every candidate stays")
+
     print(f"\n[3/7] is_recipe fetch+score (threshold={IS_RECIPE_THRESHOLD})")
     # LOUD by design (curator, 2026-09-06): this is the SLOW stage, and a quiet
     # log here reads as a hung job. Set the expectation before the silence.
@@ -2011,6 +2031,7 @@ def build_batch(
     except Exception:
         pass
     print(f"      -> kept {len(entries)}, dropped {len(dropped_not_recipe)}")
+    dropped_not_recipe = dropped_off_dish + dropped_not_recipe
 
     print(f"\n[4/7] Moz scoring on survivors")
     _cc("Moz scoring")

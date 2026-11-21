@@ -13103,3 +13103,47 @@ a scheduled job is added, name folding changes.
   written, method spoken) is admitted; channel standing. Then step 4 (seats, ordered by views per day).
 * **NEEDS a BCC restart on MARLEY (bcc_restart.bat)** for the fetch-summary endpoint to return the
   video block and for the new setting to appear under System → Limits. Jobs already pick up the read.
+
+### 2026-11-21 (late afternoon) — wrong-dish winners: the search provider serves the wrong page; TITLE SCREEN before any fetch
+
+* **Curator: "we are burning money with these."** Veal Cacciatore #3064 saved 15/15 with 12 winners
+  whose titles name another dish (ten chicken cacciatore, venison, vitello tonnato, veal scallopini).
+* **CAUSE, measured:** for `Veal Cacciatore Recipe` (us/en) the SERP provider returned a first page of
+  chicken cacciatore three times running (8 results, 6-7 chicken, no veal cacciatore recipe). The
+  off-topic guard dropped it correctly (no result names both words) and the run built its winners from
+  later pages. In the curator's Chrome the same query gave: Google 7 of 7 veal cacciatore (Colavita,
+  Flying Fourchette, Epicurious, BigOven, cooks.com); Bing and DuckDuckGo the same sites with one beef
+  cacciatore; Brave Epicurious and Colavita near the top. RULED OUT: quoting the dish name (same mix),
+  our `filter=0` (same page without it), a query rewrite (the reply reports none), the guard itself.
+  The provider is intermittent - the same run did also receive the Colavita/Epicurious pages.
+  Downstream, `dish_match.off_dish` only rejects a page that is FAR and never names the dish, so a near
+  twin passes; and it runs at seating, after the fetch, Moz and extraction are paid.
+* **Other engines:** the Bing Search API was retired 2025-08-11 (its replacement returns no raw
+  results); DuckDuckGo has no official results API and mirrors Bing; Brave has an official API with its
+  own index (~$5 per 1,000 queries per search snippets, not verified on their page). Curator is setting
+  up a Brave key; `serp_search()` is the one place a provider is added. NOT built yet.
+* **BUILT - intake/dish_title_screen.py, wired into build_batch after filter_disallowed:** one
+  claude-sonnet-4-6 call per refresh reads every surviving result's title + URL and answers same /
+  different / unclear; only `different` is dropped (reason `off-dish-title: <what it is>`, an
+  overturnable is_recipe-stage inference in candidate_ledger; counted with dropped_not_recipe). Pins
+  are never screened; a failed or unparseable call leaves every candidate in. The dish NAME is the
+  authority; the stored description rides along as a note the model is told may be wrong. NEW setting
+  `dish_title_screen` = off | report | drop (default drop). 5 tests (intake/tests).
+* **MEASURED before it could drop (six runs of today, 363 candidates):** Veal Cacciatore 48 different
+  of 72, including 12 of the 15 winners; Butter Chicken #3070 flagged the eight Sally's Baking pages
+  (bagels, cinnamon rolls) that had been fetched, scored and extracted before the seating guard threw
+  them out; Veal Parmigiana the three veal ROASTS and a ground-meat parmigiana; Licurdia a ribollita
+  and two fontina onion soups while keeping all seven real licurdia winners; Revithia no winner.
+  Arguable calls: `Piccatine al pomodoro`, `Piccata al Marsala`, a veal parmesan sandwich. The SMALL
+  model on the same list called nearly every licurdia page "different" - hence the larger one.
+  Wired module re-run on #3064's stored candidates: 72 judged, 48 dropped, 3 of the old winners stay.
+  NOT yet exercised inside a live refresh.
+* **FOUND, NOT FIXED (a data write was declined - curator to approve):** Licurdia's dish record is
+  wrong. description = "Calabrese confection made with licorice root", and its identity card,
+  embedding and story follow (written 11-08 from the mistranslated line). It is a Calabrian onion
+  soup. The stories of Veal Parmigiana ("a third of the cohort use eggplant"), Veal Cacciatore
+  (chicken) and Veal Piccata (rabbit) were written from this morning's polluted cohorts and are
+  fill-where-blank, so they were not rewritten by the reruns. Kalogeros's description is still the
+  "monastic vegetable stew" flagged on 11-20.
+* **PARKED:** the video shelf + Video tab on the recipe list (curator chose "shelf plus tab"); nothing
+  written. Needs views per day stored on the recipe row first.

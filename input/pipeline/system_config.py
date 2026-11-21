@@ -326,6 +326,18 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "URLs on that host do not pause again.",
     },
     {
+        "key": "dish_title_screen",
+        "value": "drop",
+        "type": "string",
+        "category": "Search",
+        "label": "Title screen on dish search results",
+        "description": "Before any page is fetched, one model call reads every search result's title "
+                       "and drops those that plainly name another dish (chicken cacciatore in a veal "
+                       "cacciatore run) or are not a recipe at all. drop = drop them; report = print "
+                       "what it would drop and drop nothing; off = do not run it. Titles that do not "
+                       "say enough are always kept.",
+    },
+    {
         "key": "video_lane_read_max",
         "value": 40,
         "type": "int",
