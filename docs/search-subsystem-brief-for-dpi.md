@@ -10,8 +10,11 @@ BCC has two pieces DPI does not: a web search behind one function, and a scorer 
 a store listing is the product that was named. Should DPI use them, and can they be shared as a
 package instead of copied?
 
-The curator's view: worth considering. This brief is the input; the decision and the plan belong to
-the DPI session.
+**Curator's direction (2026-11-21, after this brief was drafted):** BCC is still meant to migrate to
+using DPI for products. But the Brave experiment produced the better search, so BCC's search and
+scorer become the BASIS of DPI's search for named products. The flow is: the search moves into a
+shared package, DPI builds on it, and BCC later reaches it through DPI. That settles the direction;
+how it lands in DPI (the plan, the vocabularies, the governor) still belongs to the DPI session.
 
 ## What this is NOT proposing
 
