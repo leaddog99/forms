@@ -686,7 +686,7 @@
           </label>
           <p class="opt-h">For a site that answers every free fetch with "too many requests". Skips the free fetch and its minutes of waiting, goes straight to the paid fetch, then the web archive. Every page costs a paid fetch, so tick it only when the free fetch never works.</p>
           <div class="ed-field" style="margin:10px 0 0;max-width:260px">
-            <label for="f_fetch_wait_seconds">Wait between page requests (seconds) <button type="button" class="info-dot" data-info-title="Wait between page requests" data-info="The harvest pauses this many seconds before each page request after the first. For a site that serves a few pages and then stops answering. <b>0</b> = no wait. The wait is added for every page: 60 seconds on 120 pages is two hours. Pages already in our own cache are not waited for.">i</button></label>
+            <label for="f_fetch_wait_seconds">Wait between page requests (average seconds, randomised) <button type="button" class="info-dot" data-info-title="Wait between page requests" data-info="The harvest pauses before each page request after the first. For a site that serves a few pages and then stops answering. <b>0</b> = no wait.<br><br><b>The pause is random</b>, so requests do not arrive on a clock: each one is drawn between half and one and a half times this number. Set 60 and each pause is somewhere from 30 to 90 seconds, 60 on average.<br><br>The wait is added for every page: 60 on 120 pages is about two hours. Pages already in our own cache are not waited for.">i</button></label>
             <input id="f_fetch_wait_seconds" type="number" min="0" max="600" step="1" value="${Number(d.fetch_wait_seconds) || 0}">
           </div>
           </div>

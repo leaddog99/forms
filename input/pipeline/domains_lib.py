@@ -310,7 +310,8 @@ _RENDER_COLUMNS = {
     "score_only": "INTEGER NOT NULL DEFAULT 0",
     # CURATED: skip the direct fetch, paid unblocker first, then Wayback.
     "paid_first": "INTEGER NOT NULL DEFAULT 0",
-    # CURATED: seconds to wait between page requests on a harvest. 0 = none.
+    # CURATED: AVERAGE seconds to wait between page requests on a harvest; each
+    # pause is random between 0.5x and 1.5x of it. 0 = none.
     "fetch_wait_seconds": "REAL NOT NULL DEFAULT 0",
 }
 

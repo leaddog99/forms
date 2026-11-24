@@ -1044,13 +1044,16 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     # are already in flight, and the pool is never used for a single host.
     _wait = max(0.0, float(wait_seconds or 0.0)) if _pool is None else 0.0
     _last_src = None
+    # RANDOMISED (curator, 2026-11-24): each pause is drawn evenly between half
+    # and one and a half times the set value, so the average is the set value
+    # and the requests do not arrive on a clock.
     if _wait:
-        print(f"  [fetch] waiting {_wait:g}s between page requests "
-              f"(about {int(_wait * max(0, len(plan) - 1) / 60)} min of waiting "
-              f"for {len(plan)} page(s))", flush=True)
+        print(f"  [fetch] waiting {_wait * 0.5:g}-{_wait * 1.5:g}s (random, average {_wait:g}s) "
+              f"between page requests: about {int(_wait * max(0, len(plan) - 1) / 60)} min "
+              f"of waiting for {len(plan)} page(s)", flush=True)
     for k, (i, e, _render_now) in enumerate(plan):
         if _wait and k > 0 and "cache" not in (_last_src or ""):   # source is "page-cache"
-            _until = time.monotonic() + _wait
+            _until = time.monotonic() + random.uniform(_wait * 0.5, _wait * 1.5)
             while True:
                 _left = _until - time.monotonic()
                 if _left <= 0:
