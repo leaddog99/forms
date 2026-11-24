@@ -8778,9 +8778,26 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         from input.pipeline import system_config as _vcfg
         seats = max(0, min(10, int(_vcfg.get_setting("video_seats", 3) or 0)))
         floor = max(0.0, float(_vcfg.get_setting("video_min_views_per_day", 10) or 0))
+        check_mode = str(_vcfg.get_setting("video_method_check", "drop") or "drop").strip().lower()
     except Exception:
-        seats, floor = 3, 10.0
+        seats, floor, check_mode = 3, 10.0, "drop"
     out["seats"], out["floor"] = seats, floor
+    # THE POLITE NOTE: videos with nothing written under them are not considered
+    # (no transcript-only class). Said on the dish's reject list for the ones
+    # over the floor - the ones a curator might wonder about; the rest are in
+    # the log and the ledger only.
+    out["notes"] = []
+    for nc in (lane.get("not_considered") or []):
+        _nv = nc.get("views_per_day")
+        if floor > 0 and (_nv is None or _nv < floor):
+            continue
+        _why = ("Video not considered: the recipe is only spoken. Nothing is written under the video, "
+                "so it does not have the ingredients or instructions to warrant consideration."
+                if nc.get("class") == "transcript" else
+                "Video not considered: no recipe is written under the video and it has no captions to read.")
+        out["notes"].append({"url": nc.get("url"), "title": nc.get("title") or "", "reason": _why})
+        print(f"[REFRESH-DISH] VIDEO NOT CONSIDERED ({nc.get('class')}, "
+              f"{_nv:,.0f} views/day, {nc.get('channel') or '?'})  {nc.get('url')}")
     if floor > 0:
         _keep = []
         for a in admitted:
@@ -8802,6 +8819,26 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         return out
     print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {len(admitted)} video(s) with a recipe "
           f"over the floor of {floor:g} views/day for {seats} seat(s), most views per day first")
+    # CAPTIONS REFUSED (2026-11-24: YouTube blocked this machine's caption
+    # requests after a day of heavy reading). A video classed `ingredients`
+    # HAS a caption track, so if the first one's captions cannot be read the
+    # refusal is YouTube's, not the video's. Nothing is retired and nothing is
+    # seated in that run: last time's videos stay exactly as they are.
+    _first_spoken = next((a for a in admitted
+                          if (a.get("_video") or {}).get("class") == "ingredients"), None)
+    if _first_spoken is not None:
+        try:
+            from intake import youtube_source as _pys
+            _probe = await asyncio.to_thread(
+                _pys.fetch_transcript, _pys.youtube_id(_first_spoken["url"]),
+                log=lambda *_a, **_k: None)
+        except Exception:
+            _probe = None
+        if _probe is None:
+            out["captions_refused"] = True
+            print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: captions cannot be read right now "
+                  f"(YouTube is refusing them). Nothing retired, nothing seated; last time's videos stay.")
+            return out
     with _db() as conn:
         retired = dishes_lib.delete_master_rows_for_dish(conn, canonical_name, kind="video")
     if retired:
@@ -8863,6 +8900,37 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         if _stranger:
             _drop(a, str(_stranger))
             continue
+        # METHOD CHECK (input/pipeline/video_method_check.py): a spoken method
+        # was composed by the extractor from the captions. A separate model
+        # call reads captions, description and recipe side by side and answers
+        # five specific questions, strictly (is it a real recipe lesson at all,
+        # then four on the method). A fail takes no seat; so does a check that
+        # could not be run - an unchecked spoken method is not seated.
+        _mcheck = None
+        if _rung == "description+transcript" and check_mode in ("drop", "report"):
+            try:
+                from intake import youtube_source as _vys
+                from input.pipeline import video_method_check as _vmc
+                _vid_id = _vys.youtube_id(url)
+                _quiet = lambda *_a, **_k: None                      # noqa: E731
+                _tr = await asyncio.to_thread(_vys.fetch_transcript, _vid_id, log=_quiet)
+                _winfo = await asyncio.to_thread(_vys.fetch_watch, _vid_id, log=_quiet)
+                _mcheck = await asyncio.to_thread(
+                    _vmc.check, recipe_dict, _tr.text if _tr else "",
+                    (_winfo.description if _winfo else "") or "")
+            except Exception as _ce:
+                _mcheck = {"verdict": "error", "checks": {},
+                           "reason": f"the method check could not be run ({type(_ce).__name__})"}
+            _bad = ", ".join(_mcheck.get("failed") or [])
+            print(f"[REFRESH-DISH] VIDEO METHOD CHECK {_mcheck.get('verdict')}"
+                  f"{' [' + _bad + ']' if _bad else ''}: {_mcheck.get('reason')}  {url}")
+            if _mcheck.get("verdict") != "pass" and check_mode == "drop":
+                _why = ("Video not seated: its method is spoken, and our reading of it did not pass the "
+                        f"method check. {_mcheck.get('reason') or ''}".strip())
+                _drop(a, _why)
+                out["notes"].append({"url": url, "title": recipe_dict.get("name") or a.get("title") or "",
+                                     "reason": _why})
+                continue
         payload = dict(recipe_dict)
         payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
         payload["user_id"] = 0
@@ -8880,6 +8948,9 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         if _rung == "description+transcript":
             # the method is OUR reading of what was said, not the creator's written text
             payload["_master"]["video"]["method_from"] = "captions"
+        if _mcheck:
+            # value + method id + the four answers, on the row
+            payload["_master"]["video"]["method_check"] = _mcheck
         payload["_skip_auto_enrich"] = True
         try:
             await asyncio.to_thread(_save_recipe_core, payload)
@@ -9453,6 +9524,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             raise
         print(f"[REFRESH-DISH] video lane failed (non-fatal): {type(_vle).__name__}: {_vle}")
         video_summary = {"error": f"{type(_vle).__name__}: {_vle}"}
+    # The video lane's notes (not considered / not seated) go on the dish's
+    # reject list beside the web rejects. No authority numbers: a video has none.
+    for _vn in (video_summary.get("notes") or []):
+        rejects.append({"url": _vn.get("url"), "reason": _vn.get("reason"), "title": _vn.get("title") or "",
+                        "da": None, "pa": None, "ou": None, "rank": None,
+                        "exc_score": None, "exc_grade": None})
 
     # Phase A: record authority-scored FETCH-FAILS (likely anti-bot) as rejects
     # so the dish UI flags which would have qualified (ou vs bottom_ou) for a

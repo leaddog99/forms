@@ -330,7 +330,7 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
         cap = 40
     videos = [e for e in entries if (e.get("domain") or "").lower() in _VIDEO_HOSTS]
     out = {"results": len(videos), "read": 0, "classes": {}, "links": [], "admitted": [],
-           "link_pages": []}
+           "link_pages": [], "not_considered": []}
     if not videos or cap <= 0:
         return out
     import json as _json
@@ -391,6 +391,16 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
                 "google_rank": e.get("google_rank"),
                 "_lines": e.get("_lines") or [], "_queries": e.get("_queries") or [],
                 "_video": dict(e["_video"], method=_ys.VIEWS_PER_DAY_METHOD if vpd is not None else None)})
+        if cls in ("transcript", "none"):
+            # NOT CONSIDERED (curator decision 2026-11-24: no transcript-only
+            # class). Nothing is written under the video, so there is no
+            # ingredient list to anchor a recipe on. Carried back so the dish's
+            # reject list can say so, politely, for the videos people watch.
+            out["not_considered"].append({
+                "url": _ys.canonical_url(res.video_id) if getattr(res, "video_id", "") else url,
+                "title": res.title or e.get("title") or "", "class": cls,
+                "channel": res.channel or None, "views_per_day": vpd,
+                "google_rank": e.get("google_rank")})
         vtxt = (f"{vpd:,.0f} views/day" if vpd >= 10 else f"{vpd:.1f} views/day") if vpd is not None else "views not stated"
         print(f"      [video] #{e.get('google_rank')} {cls:<12} {vtxt:<18} "
               f"{(res.channel or '?')[:28]:<28} {(res.title or e.get('title') or '')[:60]}")
@@ -2063,7 +2073,8 @@ def build_batch(
         if type(_ve).__name__ == "JobCancelled":
             raise
         print(f"      [video] read skipped ({type(_ve).__name__}: {_ve})")
-        _vid = {"results": 0, "read": 0, "classes": {}, "links": [], "admitted": [], "link_pages": []}
+        _vid = {"results": 0, "read": 0, "classes": {}, "links": [], "admitted": [], "link_pages": [],
+                "not_considered": []}
     try:
         _vid["linked"] = _hand_linked_pages(entries, _vid.get("link_pages") or [])
         if _vid["linked"]["handed"]:

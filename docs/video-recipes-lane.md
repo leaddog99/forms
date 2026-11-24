@@ -299,6 +299,32 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    day, one written at 951); Butter Chicken dropped 3 under the floor and
    retired the two unwatched rows seated earlier that day.
    NOT VERIFIED: any spoken method against what is actually said in the video.
+   METHOD CHECK (2026-11-24, `input/pipeline/video_method_check.py`, method id
+   `video_method_check_v2`, setting `video_method_check` drop/report/off). A
+   spoken method is OUR composition from captions, so before it takes a seat a
+   separate Opus call reads captions + description + recipe and answers five
+   questions, strictly (curator: popular videos are often jokes, street-food
+   travelogues or memes, useless as recipe sources; when in doubt leave it out):
+   recipe_lesson, ingredients_used, cues_present, complete, nothing_invented.
+   Pass = all five. A fail, or a check that could not be run, takes no seat.
+   The verdict rides on `_master.video.method_check`. First run of the
+   four-question version on 7 real videos: 5 pass, 1 fail (Nick DiGiovanni
+   beef Wellington: crepe quantities in the method contradict the written list),
+   1 unreadable reply (token limit, since raised); two deliberately damaged
+   copies (half the method removed; an invented step) both failed for the
+   right reason.
+   NO TRANSCRIPT-ONLY CLASS (curator decision 2026-11-24). `transcript` and
+   `none` videos over the floor are named on the dish's reject list: "Video not
+   considered: the recipe is only spoken...". Failed method checks go there too.
+   CAPTIONS REFUSED: YouTube IP-blocked caption requests from MARLEY on
+   2026-11-24 after a day of reading. The seats now probe the first
+   `ingredients` video's captions; if refused, nothing is retired and nothing
+   seated that run.
+   TO DO (curator asked for this note): (1) HUMAN CALIBRATION - watch about 10
+   judged videos, passes and fails, and compare with the verdicts; the judge
+   reads captions, not the video. (2) Run the five-question version on real
+   videos, including a known entertainment video; `recipe_lesson` has only
+   been unit-tested with a faked reply because of the caption block.
    NOT BUILT in step 4: a per-dish `video_seats` control (it needs a column on
    `dishes`, the table with the vec-trigger caution); the `dish_video` ledger
    membership and the dish form's video block (the seats are visible only in the

@@ -13347,3 +13347,17 @@ a scheduled job is added, name folding changes.
   correlation +0.11 across all 56; +0.21 one-per-site (n=44); median views/day by DA band: under
   30 = 144, 30-49 = 263, 50-69 = 153, 70+ = 239. No usable relationship. Script + data: scratchpad
   vpd_da.py / vpd_da.json.
+* **2026-11-24 - VIDEO LANE: method check + polite note + captions-refused guard.** Curator
+  decisions: no transcript-only class; the judgement on a spoken method must be strict (popular
+  joke / travelogue / meme videos are no recipe source). Built: `input/pipeline/video_method_check.py`
+  (Opus, forced tool reply, five questions, pass = all five, method id v2), setting
+  `video_method_check` (drop/report/off, default drop), verdict on `_master.video.method_check`;
+  `_read_video_results` returns `not_considered` (transcript/none); `_seat_video_lane` returns
+  `notes`, which the refresh handler appends to the dish's rejects. Tests:
+  intake/tests/test_video_method_check.py (4, faked model). Real run of the FOUR-question version:
+  5 pass, 1 fail (Beef Wellington crepe quantities), 1 unreadable reply (max_tokens 1200 -> 2500),
+  2 damaged copies failed correctly. Then YouTube IP-BLOCKED caption requests from MARLEY (my
+  volume of reads today), so the five-question version has NOT run on a real video. Guard added:
+  first ingredients video's captions are probed; if refused, nothing retired, nothing seated
+  (verified live on Sweet Potato Casserole: rows kept).
+  OWED: human calibration of the check (about 10 videos watched); live run of v2 once captions read.

@@ -375,6 +375,22 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "lowest was 27. 0 turns the floor off.",
     },
     {
+        "key": "video_method_check",
+        "value": "drop",
+        "type": "string",
+        "category": "Limits",
+        "label": "Method check on videos with a spoken method",
+        "description": "A video whose ingredients are written and whose method is spoken has its "
+                       "method written by us from the captions. Before it takes a video seat, a "
+                       "second model call compares that method with the captions, strictly: the "
+                       "video is a cook seriously teaching the recipe (not comedy, a food-travel "
+                       "piece or a meme, however popular), every written ingredient is used, "
+                       "cooking steps carry a time, temperature or cue that was said, the method "
+                       "is complete, nothing was added. drop = a video that fails "
+                       "(or cannot be checked) takes no seat; report = record the verdict and seat "
+                       "it anyway; off = do not run it. One extra model call per such video.",
+    },
+    {
         "key": "host_giveup_after",
         "value": 3,
         "type": "int",
