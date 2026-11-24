@@ -72,7 +72,13 @@ Write-Host "== ${Standby}: code + assets (incremental) =="
 # them. When MARLEY's git repacks (10-10 did), rclone fails to delete the stale
 # pair and, as on 09-12, SKIPS ALL DELETIONS for the run - three nights of
 # alerts and a tree that only grew. Clear the attribute under .git first.
-& $ssh -o BatchMode=yes $who "cmd /c attrib -R /S C:\Users\john\PycharmProjects\forms\.git\*.*" | Out-Null
+# 2026-11-24: this step had NEVER worked. attrib wants the path BEFORE /S, and
+# the old line (`cmd /c attrib -R /S <path>`) answered "Parameter format not
+# correct" into Out-Null, so four more nights failed on two commit-graph
+# files. The path-first form below was run by hand against BAILEY and cleared
+# them. A complaint from attrib is now printed, not swallowed.
+$unlock = & $ssh -o BatchMode=yes $who "attrib -R C:\Users\john\PycharmProjects\forms\.git\*.* /S" 2>&1
+if ($unlock) { Write-Host "  (unlock step said: $unlock)" }
 & $rc sync $src $dst --stats-one-line --no-update-dir-modtime `
   --exclude "recipes.db" --exclude "recipes.db-wal" --exclude "recipes.db-shm" `
   --exclude "page_cache.db" --exclude "media.db" --exclude "training.db" `
