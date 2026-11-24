@@ -346,7 +346,19 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "A dish refresh reads the watch page of up to this many YouTube results "
                        "(best Google position first) to see which carry a written recipe, and "
                        "records what it finds. About one second each, nothing paid. The videos "
-                       "are counted, not yet seated. 0 turns the reading off.",
+                       "only reads them; 'Video seats per dish' decides how many are kept. "
+                       "0 turns the reading off.",
+    },
+    {
+        "key": "video_seats",
+        "value": 3,
+        "type": "int",
+        "category": "Limits",
+        "label": "Video seats per dish",
+        "description": "After a dish refresh has saved its web winners, up to this many videos "
+                       "that carry a WRITTEN recipe in their description are extracted and saved "
+                       "as video recipes for the dish, most views per day first. They never take "
+                       "a web seat. Each costs one extraction, like a web page. 0 = keep none.",
     },
     {
         "key": "host_giveup_after",

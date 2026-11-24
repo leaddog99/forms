@@ -8745,6 +8745,127 @@ def messages_endpoint(category: str, order: str = "", count: int = 0, fallback: 
 # =========================================================================
 
 
+async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dict:
+    """The video lane's SEATS (docs/video-recipes-lane.md step 4, built 2026-11-24
+    for the `description` class only: videos whose description carries a whole
+    written recipe).
+
+    Runs after the web winners are saved and never competes with them: up to
+    `video_seats` (System -> Limits, default 3, cap 10) admitted videos are
+    extracted and saved as master rows with `_master.kind = "video"` for this
+    dish, in lane order (views per day, set by the batch). Each passes the same
+    save gate and right-dish guard as a web winner; a failure backfills from the
+    next admitted video. The dish's previous video rows are retired first, like
+    the web lane's, but only when this run admitted at least one video - a run
+    in which the video read found nothing leaves last time's videos alone.
+
+    A video already in the library under other ownership (a curator's save,
+    another dish) is left exactly as it is and takes no seat.
+    -> {results, read, admitted, seats, seated, saved, dropped}"""
+    lane = lane or {}
+    admitted = list(lane.get("admitted") or [])
+    out = {"results": lane.get("results", 0), "read": lane.get("read", 0),
+           "admitted": len(admitted), "seats": 0, "seated": 0, "saved": [], "dropped": []}
+    try:
+        from input.pipeline import system_config as _vcfg
+        seats = max(0, min(10, int(_vcfg.get_setting("video_seats", 3) or 0)))
+    except Exception:
+        seats = 3
+    out["seats"] = seats
+    if not admitted or seats <= 0:
+        if lane.get("results"):
+            print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {lane.get('results')} video result(s), "
+                  f"{len(admitted)} with a written recipe, {seats} seat(s) - nothing to seat")
+        return out
+    print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {len(admitted)} video(s) with a written "
+          f"recipe for {seats} seat(s), most views per day first")
+    with _db() as conn:
+        retired = dishes_lib.delete_master_rows_for_dish(conn, canonical_name, kind="video")
+    if retired:
+        print(f"[REFRESH-DISH] VIDEO LANE retired {retired} prior video row(s)")
+
+    def _drop(a, why):
+        out["dropped"].append({"url": a["url"], "reason": why})
+        print(f"[REFRESH-DISH] VIDEO DROP {why}  {a['url']}")
+
+    for a in admitted:
+        if out["seated"] >= seats:
+            break
+        url = a["url"]
+        norm = normalize_url(url) or url
+        with _db() as conn:
+            held = conn.execute("SELECT data FROM master_recipes WHERE url_normalized = ? "
+                                "AND user_id = 0", (norm,)).fetchone()
+        if held:
+            _pm = (json.loads(held[0]).get("_master") or {})
+            _drop(a, "already in the library"
+                     + (f" (held by {_pm.get('dish')!r})" if _pm.get("dish") else "")
+                     + ", left as it is")
+            continue
+        try:
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0, force_refresh=True)
+        except Exception as e:
+            _drop(a, f"extract-miss: {type(e).__name__}: {str(e)[:120]}")
+            continue
+        recipe_dict = (extract_result or {}).get("recipe") or {}
+        if not recipe_dict:
+            _drop(a, "extract-miss: empty recipe")
+            continue
+        ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                                   min_steps=SAVE_GATE_MIN_INSTRUCTIONS)
+        if not ok:
+            _drop(a, f"skip-thin: {reason}")
+            continue
+        # Right-dish guard, as for a web winner: far from the dish AND never names it.
+        try:
+            from input.pipeline import dish_match as _vdm
+            from input.pipeline.embeddings import compose_recipe_text as _vtxt, embed_text as _vemb
+            _t = _vtxt(recipe_dict)
+            _vec = _vemb(_t) if _t.strip() else None
+            with _db() as conn:
+                _stranger = _vdm.off_dish(conn, _vec, canonical_name, recipe_dict)
+        except Exception as _oe:
+            _stranger = None
+            print(f"[REFRESH-DISH] VIDEO right-dish guard skipped: {type(_oe).__name__}: {_oe}")
+        if _stranger:
+            _drop(a, str(_stranger))
+            continue
+        payload = dict(recipe_dict)
+        payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+        payload["user_id"] = 0
+        payload["_master"] = {
+            "kind": "video", "lane": "video", "dish": canonical_name,
+            "refreshed_at": now_iso, "rank": out["seated"] + 1,
+            "queries": a.get("_queries") or [],
+            "search_line": ((a.get("_lines") or a.get("_queries") or [None])[0]),
+            "lines": a.get("_lines") or [],
+            "batch_source": "/dishes/refresh",
+            # value + inputs + method, absent when the page did not state them
+            "video": {k: v for k, v in (a.get("_video") or {}).items() if v not in (None, "")},
+            "google_rank": a.get("google_rank"),
+        }
+        payload["_skip_auto_enrich"] = True
+        try:
+            await asyncio.to_thread(_save_recipe_core, payload)
+        except HTTPException as e:
+            _drop(a, f"save-fail-{e.status_code}: {e.detail}")
+            continue
+        except Exception as e:
+            _drop(a, f"save-fail: {type(e).__name__}: {str(e)[:120]}")
+            continue
+        out["seated"] += 1
+        out["saved"].append(url)
+        _v = a.get("_video") or {}
+        _vpd = _v.get("views_per_day")
+        _vtxt2 = f"{_vpd:,.0f} views/day" if _vpd is not None else "views not stated"
+        print(f"[REFRESH-DISH] VIDEO SEAT {out['seated']}/{seats}  {_vtxt2}  "
+              f"{(_v.get('channel') or '?')}  {(recipe_dict.get('name') or '')[:60]!r}  {url}")
+    print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: seated {out['seated']}/{seats} "
+          f"from {len(admitted)} admitted; {len(out['dropped'])} passed over")
+    return out
+
+
 async def _handle_dish_refresh_job(job: dict) -> dict:
     """Job handler — registered with the runner under type 'dish_refresh'.
     The runner has already tee'd stdout/stderr to the per-job log file
@@ -9281,6 +9402,16 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
             _record_reject(entry, f"save-fail: {type(e).__name__}")
 
+    # VIDEO LANE: its own seats, after the web winners, never competing with them.
+    try:
+        video_summary = await _seat_video_lane(
+            canonical_name, batch_result.get("video_lane") or {}, now_iso)
+    except Exception as _vle:
+        if type(_vle).__name__ == "JobCancelled":
+            raise
+        print(f"[REFRESH-DISH] video lane failed (non-fatal): {type(_vle).__name__}: {_vle}")
+        video_summary = {"error": f"{type(_vle).__name__}: {_vle}"}
+
     # Phase A: record authority-scored FETCH-FAILS (likely anti-bot) as rejects
     # so the dish UI flags which would have qualified (ou vs bottom_ou) for a
     # Playwright/bookmarklet recovery. They carry Moz DA/PA + a fit-derived OU
@@ -9385,6 +9516,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         "ou_fit": batch_result.get("ou_fit"),
         "front_end_counts": batch_result["counts"],
         "elapsed_s": batch_result["elapsed_s"],
+        "video_lane": video_summary,
     }
 
 

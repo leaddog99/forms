@@ -326,7 +326,7 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
     except Exception:
         cap = 40
     videos = [e for e in entries if (e.get("domain") or "").lower() in _VIDEO_HOSTS]
-    out = {"results": len(videos), "read": 0, "classes": {}, "links": []}
+    out = {"results": len(videos), "read": 0, "classes": {}, "links": [], "admitted": []}
     if not videos or cap <= 0:
         return out
     import json as _json
@@ -363,9 +363,26 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
         out["classes"][cls] = out["classes"].get(cls, 0) + 1
         if cls == "link" and res.links:
             out["links"].append(res.links[0])
+        if cls == "description":
+            # ADMITTED to the video lane (step 4, 2026-11-24): the only class
+            # that carries a whole written recipe. The refresh handler seats
+            # these; this function still changes no web candidate.
+            # The canonical watch address: a result link can carry &t= or a
+            # playlist, and the saved row must key on the video alone.
+            out["admitted"].append({
+                "url": _ys.canonical_url(res.video_id) if getattr(res, "video_id", "") else url,
+                "title": res.title or e.get("title") or "",
+                "google_rank": e.get("google_rank"),
+                "_lines": e.get("_lines") or [], "_queries": e.get("_queries") or [],
+                "_video": dict(e["_video"], method=_ys.VIEWS_PER_DAY_METHOD if vpd is not None else None)})
         vtxt = (f"{vpd:,.0f} views/day" if vpd >= 10 else f"{vpd:.1f} views/day") if vpd is not None else "views not stated"
         print(f"      [video] #{e.get('google_rank')} {cls:<12} {vtxt:<18} "
               f"{(res.channel or '?')[:28]:<28} {(res.title or e.get('title') or '')[:60]}")
+    # Lane order (curator decision 2026-11-21): views per day, most first; a video
+    # whose page does not state them goes last; Google position breaks ties.
+    out["admitted"].sort(key=lambda a: (a["_video"].get("views_per_day") is None,
+                                        -(a["_video"].get("views_per_day") or 0.0),
+                                        a.get("google_rank") or 10_000))
     return out
 
 
@@ -1959,13 +1976,12 @@ def build_batch(
         if type(_ve).__name__ == "JobCancelled":
             raise
         print(f"      [video] read skipped ({type(_ve).__name__}: {_ve})")
-        _vid = {"results": 0, "read": 0, "classes": {}, "links": []}
+        _vid = {"results": 0, "read": 0, "classes": {}, "links": [], "admitted": []}
     if _vid["results"]:
         _order = ("description", "ingredients", "link", "transcript", "none", "unreadable")
         _split = ", ".join(f"{_vid['classes'][c]} {c}" for c in _order if _vid["classes"].get(c))
         print(f"      [video] {_vid['results']} video result(s), {_vid['read']} read: {_split or 'none read'}"
-              f" - {_vid['classes'].get('description', 0)} carry a written recipe "
-              f"(counted in the ledger; not seated yet)")
+              f" - {len(_vid.get('admitted') or [])} carry a written recipe and go to the video lane")
 
     print(f"\n[2/7] filter_disallowed (domain + URL-path blacklist)")
     entries, dropped_disallowed = _filter_disallowed(entries)
@@ -2317,6 +2333,9 @@ def build_batch(
         # winners. The save loop pulls from here when a winner fails.
         "reserve": reserve,
         "top_n_final": top_n_final,
+        # The video lane's admission read: counts by class, and `admitted` - the
+        # videos with a written recipe, in lane order. Seated by the caller.
+        "video_lane": _vid,
     }
 
 

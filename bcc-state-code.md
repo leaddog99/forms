@@ -13284,3 +13284,8 @@ a scheduled job is added, name folding changes.
   Dishes page: "Run dish check" + info dot under the list controls, polls the job, shows counts
   and links. NOT run end to end yet; needs the BCC restart. Harvest wait is RANDOM (0.5x-1.5x,
   c6deb14). Site-icon fill finished: 517 of 543 publishers have an icon (59 via the paid fetch).
+* **2026-11-24 - video lane step 4, description class.** A dish refresh now SEATS videos: see
+  docs/video-recipes-lane.md section 9 item 4 (what is built, what is not). New setting
+  `video_seats` (default 3). Proven on Mapo Tofu from the ledger's recorded videos (no search):
+  3 seated, master rows 22465-22467, class video. NOT proven: a whole dish refresh end to end
+  with the new batch key `video_lane`, and the retire on a second run.

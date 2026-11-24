@@ -260,7 +260,24 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    STILL TO DO in step 3: hand `link` pages to the web lane; decide whether
    `ingredients` is admitted (it needs the transcript for the method); stamp
    the channel's standing.
-4. Seats and the `video_seats` control; SEMrush stamping for seated winners.
+4. **BUILT 2026-11-24 for the `description` class.** After a dish refresh saves
+   its web winners, `_seat_video_lane` (save_recipe_api.py) extracts and saves up
+   to `video_seats` admitted videos (System -> Limits, default 3, cap 10; ONE
+   setting for every dish) as master rows with `_master.kind = "video"`,
+   `lane = "video"`, the dish, a lane rank and a `video` block (views per day
+   with its inputs and method id, channel). Lane order is views per day, Google
+   position the tie-break (`_read_video_results` returns `admitted`, with the
+   canonical watch address). Same save gate and right-dish guard as a web
+   winner; a failure backfills from the next admitted video. The dish's prior
+   `kind=video` rows are retired first, only when the run admitted at least one
+   video. A video already in the library under other ownership is left alone and
+   takes no seat. First run, Mapo Tofu: 4 admitted, 3 seated (616, 160 and 130
+   views a day), rows class `video`.
+   NOT BUILT in step 4: a per-dish `video_seats` control (it needs a column on
+   `dishes`, the table with the vec-trigger caution); the `dish_video` ledger
+   membership and the dish form's video block (the seats are visible only in the
+   run log and the library's Video tab); SEMrush stamping; marking the ledger
+   row `saved`. Not exercised: a second refresh of the same dish (the retire).
 5. Share-sheet and screenshot doors; rung pill.
 
 Each step verifies against Butter Chicken on the Hindi line, where today's
