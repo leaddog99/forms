@@ -13331,3 +13331,19 @@ a scheduled job is added, name folding changes.
   Not run: a full dish refresh through the new code; lane tests still 24 pass (no new test for the
   floor). Needs a restart of BCC on MARLEY only for the new setting to show in the System form;
   refresh jobs run out of process and already use it.
+* **2026-11-24 - Full refresh through the new video code: Sweet Potato Casserole #3195.** Web 10/10.
+  8 video results on the new engine: 1 written, 4 ingredients, 3 link (1 linked page handed to the
+  web lane, 2 already results). 5 over the floor, 3 seated: Mary Katherine's Table 19,352/day and
+  The Carefree Kitchen 1,698/day (both spoken method), Collard Valley Cooks 974/day (written). The
+  retire rule removed the 3 rows seated by the test an hour earlier and re-seated the same videos.
+* **2026-11-24 - CORRECTION to the Moz-on-videos entry above.** The script read the wrong field
+  names (`pa`/`da`; the lookup returns `page_authority`/`domain_authority`). Real result: 24 of 26
+  no data, 2 of 26 SCORED (The Stay At Home Chef PA 78, Get Curried PA 75, both DA 100 = youtube.com,
+  both via a 302). Conclusion unchanged: Moz covers too few videos to rank the lane.
+* **2026-11-24 - EXPERIMENT: video views per day vs the DA of the creator's own site.** 152 videos
+  in the ledger, watch pages re-read (free) for the first recipe link or first outside link; shops,
+  shorteners and social dropped -> 56 videos / 44 sites. DA from the domains table (22) or a Moz
+  home-page lookup (34; 28 lookups, run twice because of the same field-name slip). Rank
+  correlation +0.11 across all 56; +0.21 one-per-site (n=44); median views/day by DA band: under
+  30 = 144, 30-49 = 263, 50-69 = 153, 70+ = 239. No usable relationship. Script + data: scratchpad
+  vpd_da.py / vpd_da.json.
