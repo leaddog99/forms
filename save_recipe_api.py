@@ -7845,6 +7845,15 @@ def remove_domain_top_member_endpoint(domain: str, url: str):
     return {"domain": host, "removed": url}
 
 
+@app.get("/domains/{domain}/site-icon")
+def domain_site_icon_endpoint(domain: str):
+    """The icon the site declares for itself (free: its home page + the icon).
+    Returns it for the form to show; saves nothing - the curator saves the record."""
+    from input.pipeline import domains_lib, site_icon
+    host = domains_lib._canon_host(domain)
+    return {"domain": host, "icon_url": site_icon.find(host)}
+
+
 @app.get("/domains/{domain}/top")
 def domain_top_endpoint(domain: str, all: int = 0):
     """Stored publisher ledger (collection_members) for the domains page. Default =

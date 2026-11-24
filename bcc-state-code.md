@@ -13264,3 +13264,14 @@ a scheduled job is added, name folding changes.
   publisher depth above 4 pages buys nothing. NOT checked: whether country alone changes ranking
   for an English line (gr+en: accepted, 0 of 20 on .gr). Form labels still say "Google".
   Wait option: a page-cache hit was still waited for (source is "page-cache", not "cache") - fixed.
+* **2026-11-24 - Chicken Stew line + labels (97c6fe8).** The line's bare `-youtube.com` words are now
+  `-site:`; search forms say "Web search", help warns that a bare `-domain.com` does not exclude.
+* **2026-11-24 - site icon replaces the dead logo address.** The logo service the record pointed at
+  no longer resolves (269 stored addresses). New `input/pipeline/site_icon.find(host)`: largest
+  icon the home page declares, else /favicon.ico, only if it answers with an image; free, direct.
+  `domain_enrich._logo_url_for` uses it; `GET /domains/{d}/site-icon`; the form's bottom section is
+  "Site icon": preview square + shared URL field (open/copy/clear) + "Find the site's icon" (falls
+  back to the browser loading /favicon.ico when the site refuses the server, e.g. smittenkitchen
+  429). BACKFILL run on `domains.logo_url` (blank or dead only): 458 stored, 37 dead cleared to
+  blank, 48 still blank; before/after in scratchpad logo_before.json / logo_after.json.
+  Form NOT seen in a browser; endpoint needs the BCC restart.

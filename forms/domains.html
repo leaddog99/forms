@@ -757,12 +757,20 @@
           <textarea id="f_notes" class="ed-notes" placeholder="Anything else worth recording about this site…">${escapeHtml(d.notes || '')}</textarea>
         </section>
 
-        <details class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
-          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo</summary>
-          <div class="ed-form-grid" style="margin-top:12px">
-            ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://… (Clearbit auto-fills)' })}
+        <!-- SITE ICON (2026-11-24). Was "Advanced - logo": an address on a logo
+             service that has shut down. Now the site's own icon, shown beside the
+             shared URL field (open / copy / clear inside the box). -->
+        <section class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
+          <h3 class="ed-block-label">Site icon</h3>
+          <div style="display:flex;gap:12px;align-items:flex-end">
+            <div id="siteIconBox" title="The icon as it loads from the address in the box"
+                 style="flex:0 0 44px;width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:.7rem;color:var(--muted);text-align:center;line-height:1.1"></div>
+            <div style="flex:1;min-width:0">
+              ${urlField('f_logo_url', 'Icon address <button type="button" class="info-dot" data-info-title="Site icon" data-info="The icon the site declares for itself: the largest icon on its home page, else its favicon. <b>Find the site&#39;s icon</b> fetches the home page (free) and fills the box; nothing is stored until you save. The square on the left shows the icon as it loads from the address in the box; &quot;none&quot; means the address does not return an image.">i</button>', d.logo_url || '', { ph: 'https://…' })}
+            </div>
+            <button type="button" class="ed-btn" id="findIconBtn" style="flex:0 0 auto;margin-bottom:2px">Find the site's icon</button>
           </div>
-        </details>
+        </section>
 
         <div class="ed-actions">
           <!-- Starts in the CLEAN state (a freshly rendered record has nothing to
@@ -785,6 +793,44 @@
       // run button will do — the checkbox and the button are the same decision.
       $('#f_score_only')?.addEventListener('change', syncRunButton);
       syncRunButton();
+      // Site icon: the square shows the icon AS IT LOADS from the address in the
+      // box, so a dead address is visible as "none" instead of a silent blank.
+      const paintIcon = () => {
+        const box = $('#siteIconBox'); if (!box) return;
+        const u = ($('#f_logo_url')?.value || '').trim();
+        box.textContent = '';
+        if (!/^https?:\/\//i.test(u)){ box.textContent = 'none'; return; }
+        const img = new Image();
+        img.alt = ''; img.referrerPolicy = 'no-referrer';
+        img.style.cssText = 'max-width:36px;max-height:36px';
+        img.onerror = () => { box.textContent = 'none'; };
+        img.src = u; box.appendChild(img);
+      };
+      $('#f_logo_url')?.addEventListener('input', paintIcon);
+      $('#f_logo_url')?.addEventListener('change', paintIcon);
+      paintIcon();
+      $('#findIconBtn')?.addEventListener('click', async () => {
+        const btn = $('#findIconBtn'), host = d.domain || ($('#f_domain')?.value || '').trim();
+        if (!host){ flash('Enter the domain first', true); return; }
+        const label = btn.textContent; btn.disabled = true; btn.textContent = 'Looking…';
+        try {
+          const r = await fetch(`/domains/${encodeURIComponent(host)}/site-icon`);
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+          let icon = data.icon_url;
+          if (!icon){
+            // Some sites refuse the server (smittenkitchen answers it 429) but not
+            // a browser: try the conventional address from THIS browser.
+            const guess = `https://${host}/favicon.ico`;
+            icon = await new Promise(res => { const im = new Image(); im.referrerPolicy = 'no-referrer';
+              im.onload = () => res(guess); im.onerror = () => res(''); im.src = guess; });
+          }
+          if (!icon){ flash('The site declares no icon that loads', true); return; }
+          const el = $('#f_logo_url'); el.value = icon;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) { flash('Icon lookup failed: ' + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = label; }
+      });
       renderKnownFor($('#f_known_for')?.value);
       renderKeywords($('#f_ranking_keywords')?.value);
       // The SEMrush deep-link is a plain stored field now — no live regeneration,

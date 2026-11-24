@@ -107,11 +107,15 @@ DOMAIN_ENRICH_PROMPT_VERSION = hashlib.sha256(
 
 
 def _logo_url_for(host: str) -> str:
-    """Deterministic brand-logo URL via Clearbit's logo API, keyed on the
-    registrable domain. No API key needed; returns a real logo for known
-    brands, 404 otherwise (the curator clears it if it doesn't load)."""
-    root = root_domain("http://" + host) or host
-    return f"https://logo.clearbit.com/{root}" if root else ""
+    """The site's OWN icon (input.pipeline.site_icon): the largest icon its home
+    page declares, else /favicon.ico; '' when none loads. Until 2026-11-24 this
+    built an address on a third-party logo service, which has since shut down:
+    269 stored addresses pointed at a host that no longer resolves."""
+    try:
+        from input.pipeline import site_icon
+        return site_icon.find(host)
+    except Exception:
+        return ""
 
 
 def _homepage_snippet(host: str, max_chars: int = 1500) -> str:
