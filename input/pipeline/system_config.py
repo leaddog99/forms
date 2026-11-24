@@ -252,7 +252,7 @@ SYSTEM_DEFAULTS: list[dict] = [
     },
     {
         "key": "dish_default_top_n_final",
-        "value": 15,
+        "value": 10,     # curator 2026-11-24 (was 15)
         "type": "int",
         "category": "Limits",
         "label": "New dish: default kept winners",
