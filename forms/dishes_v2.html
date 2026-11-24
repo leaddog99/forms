@@ -138,16 +138,16 @@
     /* ------------------------- search-line row editor -------------------------
        Shared component (forms/query-rows.js, lifted from here 2026-09-09 so the
        product-pool editor uses the SAME rows). A dish's queries are ROWS
-       {q, n, gl, hl, keep}: each line is its own Google search with its own
+       {q, n, gl, hl, keep}: each line is its own web search with its own
        result count and locale; null = follow the dish, resolved at run time
        (country included - resolve_query_locales owns the language->country table). */
     const DISH_QROWS = {
       langs: SOURCE_LANGS, nLabel: 'Results', nPlaceholder: 'dflt',
       translateUrl: '/dishes/translate-query',
-      nTitle: "Candidates fetched for THIS line (blank = the dish's SERP candidates default)",
+      nTitle: "Candidates fetched for THIS line (blank = the dish's search candidates default)",
       queryPlaceholder: 'verbatim query — "…" exact, -word / -site:… exclude',
       queryInfoTitle: 'Search lines — syntax, locales, examples',
-      queryInfo: '<b>Syntax</b> — <code>&quot;exact phrase&quot;</code> exact match (straight quotes; curly are auto-fixed) &middot; <code>-word</code> exclude pages with that word (drops EVERY page containing it) &middot; <code>-site:domain.com</code> exclude a site &middot; <code>site:gr</code> only that country&#39;s TLD.<br><b>Alternate phrasings go on their own lines</b> — each runs as a separate search and results merge; more reliable than <code>OR</code> (undocumented precedence). Blocklist exclusions are auto-appended each run (System &rarr; Search).<br><br><b>Results</b> — candidates fetched for that line only (blank = the dish&#39;s SERP-candidates default).<br><b>Language / Country</b> — WHICH Google answers, in what language (blank = follow Sources-in). <b>Write the query in that language</b>: Google Italy asked for <code>Pizza Sauce</code> returns English blogs and jars of Mutti; Italian recipe pages are titled <code>salsa per pizza</code>. Picking a language on an English line translates it for you (🌐 re-runs it); the English it came from is kept on the line and shown in the refresh log. They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece — not the same as <code>site:gr</code>, since most Greek publishers aren&#39;t on .gr.<br><br><b>Examples</b><br><code>&quot;carrot cake&quot; recipe</code> + results blank + language dish-default &rarr; default count, follows Sources-in<br><code>γιουβαρλάκια αυγολέμονο</code> + results 120 + language Greek &rarr; 120 candidates from Greek Google, in Greek<br><code>moules frites</code> + language English + country fr &rarr; English-language pages that rank on google.fr',
+      queryInfo: '<b>Syntax</b> — <code>&quot;exact phrase&quot;</code> exact match (straight quotes; curly are auto-fixed) &middot; <code>-word</code> exclude pages with that word (drops EVERY page containing it) &middot; <code>-site:domain.com</code> exclude a site (a bare <code>-domain.com</code> does NOT exclude it: it is read as a search FOR that site) &middot; <code>site:gr</code> only that country&#39;s TLD.<br><b>Alternate phrasings go on their own lines</b> — each runs as a separate search and results merge; more reliable than <code>OR</code> (undocumented precedence). Blocklist exclusions are auto-appended each run (System &rarr; Search).<br><br><b>Results</b> — candidates fetched for that line only (blank = the dish&#39;s search-candidates default).<br><b>Language / Country</b> — which country&#39;s results are favoured, in what language (blank = follow Sources-in). <b>Write the query in that language</b>: a search set to Italy asked for <code>Pizza Sauce</code> returns English blogs and jars of Mutti; Italian recipe pages are titled <code>salsa per pizza</code>. Picking a language on an English line translates it for you (🌐 re-runs it); the English it came from is kept on the line and shown in the refresh log. They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece — not the same as <code>site:gr</code>, since most Greek publishers aren&#39;t on .gr.<br><br><b>Examples</b><br><code>&quot;carrot cake&quot; recipe</code> + results blank + language dish-default &rarr; default count, follows Sources-in<br><code>γιουβαρλάκια αυγολέμονο</code> + results 120 + language Greek &rarr; 120 candidates favouring Greece, in Greek<br><code>moules frites</code> + language English + country fr &rarr; English-language pages, favouring France',
       reserveInfo: 'Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.',
     };
     function qRowHtml(r){ return QueryRows.rowHtml(r || {}, DISH_QROWS); }
@@ -346,7 +346,7 @@
         <div class="ed-kicker">
           <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit Dish <span id="purposeArrow">▾</span></button>
           <div class="ed-purpose-pop" id="purposePop" hidden>
-            <strong>Purpose:</strong> tune a dish’s search queries + cohort sizing, refresh it (re-runs SERP → Moz → extract → save into the curated top set), and review its OU fit and current winners. Name is the immutable join key — delete + recreate to rename.
+            <strong>Purpose:</strong> tune a dish’s search queries + cohort sizing, refresh it (re-runs the web search → Moz → extract → save into the curated top set), and review its OU fit and current winners. Name is the immutable join key — delete + recreate to rename.
           </div>
         </div>
 
@@ -388,7 +388,7 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Search lines and sizes</h3>
           <div class="ed-field full" style="margin-bottom:16px">
-            <label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to Google verbatim)</span></label>
+            <label>Web search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to the search engine verbatim)</span></label>
             ${queryRowsBlockHtml('qrows_edit')}
           </div>
           <div class="ed-form-grid">
@@ -1557,7 +1557,7 @@
         <h1 class="ed-title" style="margin:0 0 18px">Add a dish</h1>
         <section class="ed-block" style="border-top:none;padding-top:0">
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off" value="${escapeHtml(p?.name || '')}"></div>
-          <div class="ed-field full" style="margin-bottom:16px"><label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
+          <div class="ed-field full" style="margin-bottom:16px"><label>Web search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
           <div class="ed-form-grid">
             <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? _limits.serpDefault}"><div class="fetch-total" id="fetchTotal_new" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? _limits.finalDefault}"></div>

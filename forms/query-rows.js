@@ -47,7 +47,7 @@
         .map(([c, l]) => `<option value="${c}" ${(r.hl || '') === c ? 'selected' : ''}>${l}</option>`).join('');
       locale = `
         <select class="qr-hl" title="Search language for this line (dish default = follow 'Sources in')" style="width:150px;${QIN}">${langOpts}</select>
-        <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Google country index, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${esc(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">`;
+        <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Country whose results to favour, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${esc(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">`;
     }
     // 🌐 (2026-10-10): translate the line's English into its search language —
     // Pizza Sauce on an it/it line fetched English blogs + Italian jars of
@@ -56,7 +56,7 @@
     // line and fires by itself the first time a language is picked. What it
     // writes lands in the box for the curator to read and edit; the English
     // it came from stays on the row (q_src) for the form and the refresh log.
-    const xl = o.langs ? `<button type="button" class="qr-xl ed-btn" title="Translate this query into the line's language (what a native speaker would type into Google)" style="padding:6px 8px;${isForeign(r.hl) ? '' : 'visibility:hidden'}">🌐</button>` : '';
+    const xl = o.langs ? `<button type="button" class="qr-xl ed-btn" title="Translate this query into the line's language (what a native speaker would type into a search engine)" style="padding:6px 8px;${isForeign(r.hl) ? '' : 'visibility:hidden'}">🌐</button>` : '';
     const src = o.langs ? `<div class="qr-src" style="flex-basis:100%;font-size:.75rem;color:var(--muted,#6b5b4f);margin:-4px 0 2px 2px;${r.q_src ? '' : 'display:none'}">${r.q_src ? `translated from “${esc(r.q_src)}” — edit freely` : ''}</div>` : '';
     return `<div class="qrow" data-qsrc="${esc(r.q_src || '')}" data-qxl="${esc(r.q_src ? (r.q || '') : '')}" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:flex-start">
       <textarea rows="1" class="qr-q" placeholder='${esc(o.queryPlaceholder)}' style="flex:1;min-width:0;${QIN}">${esc(r.q || '')}</textarea>

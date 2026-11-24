@@ -258,7 +258,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.harvest_status === 'ok' ? `<span class="ed-item-flag fresh" title="Harvested ${escapeHtml(fmtDate(d.last_harvested_at))} — fresh until ${escapeHtml(d.next_harvest_at || '')}"></span>` : ''}${(d.discovery_source && !d.last_harvested_at) ? `<span class="ed-item-flag source" title="Discovered via ${escapeHtml(d.discovery_source)} — borrowed from a publisher list, not yet judged by a harvest"></span>` : ''}${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.harvest_status === 'ok' ? `<span class="ed-item-flag fresh" title="Harvested ${escapeHtml(fmtDate(d.last_harvested_at))} — fresh until ${escapeHtml(d.next_harvest_at || '')}"></span>` : ''}${(d.discovery_source && !d.last_harvested_at) ? `<span class="ed-item-flag source" title="Discovered via ${escapeHtml(d.discovery_source)} — borrowed from a publisher list, not yet judged by a harvest"></span>` : ''}${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or web search) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
         // GUARDED record switch. renderDetail() rebuilds the form from scratch, so
         // clicking another domain silently destroys unsaved work — and beforeunload
@@ -594,7 +594,7 @@
             </div>
             <div class="src-group" data-src="serp">
               <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${d.harvest_source === 'serp' ? 'checked' : ''}>
-                Google — site: search <span class="src-sub">SERP; depth set in pages of ~10 results</span></label>
+                Web search — site: query <span class="src-sub">depth set in pages of ~10 results; a site: search runs dry near 40</span></label>
               <div class="ed-form-grid">
                 ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
                 ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
