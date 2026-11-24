@@ -375,6 +375,28 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "lowest was 27. 0 turns the floor off.",
     },
     {
+        "key": "caption_wait_seconds",
+        "value": 20,
+        "type": "int",
+        "category": "Limits",
+        "label": "Wait between video caption reads (average seconds, randomised)",
+        "description": "A video's captions are read from YouTube once and then kept. Reads that "
+                       "do go to YouTube are spaced by this many seconds on average (each wait is "
+                       "random, between half and one and a half times this), across every job on "
+                       "this machine. YouTube refused all caption requests on 2026-11-24 after a "
+                       "day of rapid reading. 0 = no wait.",
+    },
+    {
+        "key": "caption_paid_fallback",
+        "value": True,
+        "type": "bool",
+        "category": "Limits",
+        "label": "Read captions through the paid unblocker when YouTube refuses",
+        "description": "When YouTube refuses a caption request, retry once through the paid "
+                       "unblocker (about three paid requests per video). Off = a refused read "
+                       "returns nothing; a dish then keeps the videos it already has.",
+    },
+    {
         "key": "video_method_check",
         "value": "drop",
         "type": "string",

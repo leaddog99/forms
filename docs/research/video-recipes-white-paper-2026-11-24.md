@@ -33,7 +33,27 @@ For the ingredients-only kind, the method has to come from the video's captions.
 
 That is better than expected, with three cautions. The method is our wording of what was said, not the creator's text. Captions are machine-made and mishear words (one turned "leg of lamb" into "Lego lamb"). And one of the five, found under Butter Chicken, turned out to be a mushroom dish: the search was wrong, not the reading.
 
-A later check found a real fault in one of the five: in a Beef Wellington video, our written method gave different crepe quantities from the creator's own ingredient list. So a recovered method cannot be trusted without being checked.
+A later check found a real fault in one of the five: in a Beef Wellington video, the crepe quantities in the written ingredient list (1 cup of flour, 2 eggs) do not match what the cook says and does on camera (2 cups, 4 eggs). So a recovered method cannot be trusted without being checked.
+
+### The strict reading, tried on real videos
+
+We then ran the full five-question reading (described under "What we decided") on nine real videos. Six passed and three failed.
+
+| Video | Verdict | Why |
+|---|---|---|
+| Mary Katherine's Table, sweet potato casserole | Pass | |
+| The Carefree Kitchen, sweet potato casserole | Pass | |
+| Laura in the Kitchen, sweet potato casserole | Pass | |
+| Sip and Feast, roast leg of lamb | Pass | |
+| Chef Bhupi's Kitchen (Hindi) | Pass | |
+| Spice N' Pans, mapo tofu | Pass | |
+| Nick DiGiovanni, beef Wellington | Fail | Written crepe quantities contradict the spoken ones |
+| Amy's Louisiana Kitchen, sweet potato casserole | Fail | She cooks a doubled batch, so spoken sugar and eggs disagree with the written list; our method also added a baking time nobody stated |
+| Joshua Weissman, beef Wellington | Fail | Our method says 2 tablespoons of searing oil; he says 3 |
+
+Every failure was about quantities, and the lesson is a surprising one: in two of the three, the disagreement is between the creator's own written list and the creator's own words. A cook reading the list and a cook watching the video would make different dishes. The reading also caught two deliberately damaged recipes we fed it (one with half the method removed, one with an invented step).
+
+Whether failing a recipe over one tablespoon of oil is the right degree of strictness is a judgement for the curator, and part of the comparison with a human viewer that is still owed.
 
 ## Popularity is not quality
 
@@ -49,6 +69,20 @@ We rank web recipes partly on the authority of the page and the site. Neither wo
 
 The search engine matters a great deal. The same Butter Chicken search returned 111 videos on the old engine and 7 on the new one, because the new engine shows only a handful of videos per search. Fewer videos means fewer good candidates, and for some dishes none at all.
 
+## Reading captions is a privilege, not a right
+
+On 24 November 2026, after a day of reading captions heavily, YouTube began refusing every caption request from our machine. The video pages themselves still loaded; only the captions were withheld. This matters because the whole ingredients-only kind depends on captions.
+
+We made three changes in response. A video's captions are now read once and kept, so the same video is never asked for twice. Requests that do go to YouTube are spaced out, about twenty seconds apart on average and at irregular intervals. And when YouTube refuses, the request is retried through the paid service we already use for web pages that block us. That paid route worked on the first attempt while the refusal was still in force. If all of that fails, a dish simply keeps the videos it already has.
+
+We considered YouTube's official programming interface. It would give dependable facts about a video (views, date, channel) and a way to search for more videos. It would not give us captions for other people's videos, which is the part that was refused. It also comes with legal conditions on how its data may be stored and displayed. The curator has put it on hold until those conditions are read properly.
+
+## Two standards: the library and the individual
+
+The dish library is curated and strict. A person saving a recipe for their own use is in a different position: they may want a spoken-only recipe precisely so they can fill in the blanks themselves in the editor. Refusing them would be wrong.
+
+So a personal save of a video recipe is never refused. When the recipe is questionable, the person sees one polite, specific warning and chooses to save or cancel. For a spoken-only video the warning says that nothing was written under the video and the recipe is our reading of the captions. For an ingredients-only video the strict reading is run, and if it finds a problem the warning says exactly what, for example that the written crepe quantities contradict the spoken ones. A recipe that passes is saved with no interruption. Once acknowledged, the warning is not shown again for that recipe.
+
 ## What we decided
 
 1. Videos get their own small number of places per dish (three by default) and never take a web recipe's place.
@@ -57,15 +91,21 @@ The search engine matters a great deal. The same Butter Chicken search returned 
 4. A video that only links to a recipe hands that page to the web side.
 5. A spoken-only video is not considered, however popular. The run says so politely.
 6. A video must draw at least 10 views a day. Of the first 49 eligible videos, 14 fell below 10 and the next lowest was 27, so the line falls in a natural gap.
+7. These rules govern the dish library. A person saving for themselves is warned, never refused.
+8. Captions are read once, kept, requested slowly, and fetched through the paid route when refused.
+9. YouTube's official interface is on hold until its legal terms have been read.
 
 ## What we do not know yet
 
 - **Whether the strict reading agrees with a person.** Nobody has yet watched a set of judged videos and compared verdicts. The reading works from captions, not from the video, so a misheard number would pass. This is the most important open test.
-- **Whether the "serious lesson" question works.** It has been tested only in a dry run. On the day it was written, YouTube began refusing caption requests from our machine after a day of heavy reading.
-- **How reliable caption access is.** That refusal shows it can be withdrawn. When it is, a dish keeps the videos it already has.
+- **Whether the "serious lesson" question can say no.** All nine real videos were genuine lessons and it passed them all. It has not yet met a joke video, a street-food travelogue or a meme, which is the case it exists for.
+- **Whether the strictness is set right.** One recipe failed over a single tablespoon of oil.
+- **How long caption access will be refused,** and what the paid route costs at volume (about three paid requests per video).
+- **How the personal-save warning reads on screen.** It has been tested behind the scenes, not yet by a person saving a recipe.
 - **Whether three places per dish is right,** and whether popular dishes deserve more.
 - **How the sample holds up.** 152 videos across 23 dishes is enough to see the shape, not to trust every percentage.
 
 ## Change log
 
 - **24 November 2026.** First version. Covers the four kinds of video, the caption test, the comparison with site authority, the search-engine difference, and the six decisions.
+- **24 November 2026, later.** Added the strict reading's results on nine real videos (six pass, three fail, all on quantities); YouTube's refusal of caption requests and the three responses; the official interface put on hold; the separate, lenient standard for personal saves; decisions 7 to 9.

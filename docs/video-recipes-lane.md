@@ -320,6 +320,15 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    2026-11-24 after a day of reading. The seats now probe the first
    `ingredients` video's captions; if refused, nothing is retired and nothing
    seated that run.
+   CAPTIONS (later 2026-11-24): `fetch_transcript` now keeps every transcript
+   (page_cache.db `video_transcripts`), paces live reads (`caption_wait_seconds`)
+   and retries a refused read through the paid unblocker
+   (`caption_paid_fallback`). Verified while blocked. With that route the
+   five-question check ran on 9 real videos: 6 pass, 3 fail on quantities;
+   `recipe_lesson` has still not met an entertainment video.
+   HAND SAVES are lenient: `_video_caution_message` warns (save / cancel) on a
+   spoken-only recipe or a failed method check and never refuses.
+   Plain-language account: docs/research/video-recipes-white-paper-2026-11-24.md.
    TO DO (curator asked for this note): (1) HUMAN CALIBRATION - watch about 10
    judged videos, passes and fails, and compare with the verdicts; the judge
    reads captions, not the video. (2) Run the five-question version on real

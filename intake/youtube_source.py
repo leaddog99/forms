@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -325,44 +326,205 @@ class Transcript:
     truncated: bool = False
 
 
+# ---------------------------------------------------------- captions: store, pace, paid
+# 2026-11-24: after a day of heavy caption reading YouTube refused this machine's
+# caption requests outright (IpBlocked). Three answers, all here so every door
+# that reads a transcript gets them:
+#   STORE  a transcript is read from YouTube ONCE and kept (page_cache.db,
+#          table video_transcripts). Captions do not change; re-reading the
+#          same video was most of that day's volume.
+#   PACE   live reads are spaced by `caption_wait_seconds` on average (random
+#          0.5x-1.5x), across processes - the last read time is in the same db.
+#   PAID   when YouTube refuses, the read is retried once through the paid
+#          unblocker proxy (`caption_paid_fallback`), about three paid requests.
+_CAPTION_DB = str(Path(__file__).resolve().parents[1] / "page_cache.db")
+_BLOCK_ERRORS = ("IpBlocked", "RequestBlocked", "YouTubeRequestFailed")
+_refused_this_process = False          # after one refusal, later reads go straight to paid
+
+
+def _caption_db():
+    import sqlite3
+    conn = sqlite3.connect(_CAPTION_DB, timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("CREATE TABLE IF NOT EXISTS video_transcripts ("
+                 "video_id TEXT PRIMARY KEY, language TEXT, is_generated INTEGER, words INTEGER, "
+                 "text_gz BLOB NOT NULL, source TEXT, fetched_at TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS caption_pace (k TEXT PRIMARY KEY, at REAL NOT NULL)")
+    return conn
+
+
+def _setting(key: str, default):
+    try:
+        from input.pipeline.system_config import get_setting
+        v = get_setting(key, default)
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+def _shape(all_words: list[str], language: str, is_generated: bool, max_words: int) -> Transcript:
+    truncated = len(all_words) > max_words
+    text = " ".join(all_words[:max_words])
+    # Auto-captions carry no sentence breaks; a paragraph every ~120 words
+    # keeps the block readable for the model and for a curator.
+    text = re.sub(r"((?:\S+\s+){119}\S+)\s+", r"\1\n\n", text)
+    return Transcript(text=text, language=language, is_generated=is_generated,
+                      words=min(len(all_words), max_words), truncated=truncated)
+
+
+def _stored_transcript(video_id: str):
+    """-> (words, language, is_generated, source) or None."""
+    try:
+        import gzip
+        with _caption_db() as conn:
+            row = conn.execute("SELECT text_gz, language, is_generated, source FROM video_transcripts "
+                               "WHERE video_id = ?", (video_id,)).fetchone()
+        if row:
+            return gzip.decompress(row[0]).decode("utf-8").split(), row[1] or "", bool(row[2]), row[3] or ""
+    except Exception:
+        pass
+    return None
+
+
+def _store_transcript(video_id: str, words: list[str], language: str, is_generated: bool, source: str) -> None:
+    try:
+        import gzip
+        from datetime import datetime, timezone
+        with _caption_db() as conn:
+            conn.execute("INSERT OR REPLACE INTO video_transcripts VALUES (?,?,?,?,?,?,?)",
+                         (video_id, language, 1 if is_generated else 0, len(words),
+                          gzip.compress(" ".join(words).encode("utf-8")), source,
+                          datetime.now(timezone.utc).isoformat()))
+    except Exception:
+        pass                                   # the store is a convenience, never a failure
+
+
+def _pace(log: Callable[[str], None]) -> None:
+    """Wait so live caption reads are `caption_wait_seconds` apart on average."""
+    import random
+    import time
+    avg = float(_setting("caption_wait_seconds", 20) or 0)
+    try:
+        with _caption_db() as conn:
+            row = conn.execute("SELECT at FROM caption_pace WHERE k = 'last'").fetchone()
+            now = time.time()
+            wait = 0.0
+            if avg > 0 and row:
+                wait = max(0.0, random.uniform(avg * 0.5, avg * 1.5) - (now - row[0]))
+            conn.execute("INSERT OR REPLACE INTO caption_pace VALUES ('last', ?)", (now + wait,))
+    except Exception:
+        return
+    if wait >= 1:
+        log(f"[YOUTUBE] pacing caption reads: waiting {wait:.0f}s")
+        time.sleep(wait)
+
+
+def _paid_api():
+    """A transcript client routed through the paid unblocker proxy, or None when
+    there is no proxy-style unblocker configured or the fallback is switched off."""
+    if not _setting("caption_paid_fallback", True):
+        return None
+    try:
+        from urllib.parse import quote
+        import requests
+        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api.proxies import GenericProxyConfig
+        from to_markdown import fetch as _f
+        cfg = _f._unblocker_cfg()
+        if cfg["provider"] not in _f._UNBLOCKER_PROXY_PROVIDERS or not _f._has_creds(cfg):
+            return None
+        host, port, _hdr = _f._UNBLOCKER_PROXY_PROVIDERS[cfg["provider"]]
+        proxy = (f"http://{quote(cfg['proxy_user'], safe='')}:{quote(cfg['proxy_pass'], safe='')}"
+                 f"@{cfg.get('proxy_host') or host}:{cfg.get('proxy_port') or port}")
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+        sess = requests.Session()
+        sess.verify = False                    # the unblocker intercepts TLS, as for pages
+        return YouTubeTranscriptApi(proxy_config=GenericProxyConfig(http_url=proxy, https_url=proxy),
+                                    http_client=sess)
+    except Exception:
+        return None
+
+
+def _read_captions(api, video_id: str, languages: tuple[str, ...]):
+    """-> (words, language, is_generated) or None when the video has no caption
+    track. Raises whatever the library raises."""
+    tl = api.list(video_id)
+    try:
+        tr = tl.find_transcript(list(languages))
+    except Exception:
+        tr = next(iter(tl), None)
+    if tr is None:
+        return None
+    fetched = tr.fetch()
+    pieces = [re.sub(r"\s+", " ", s.text).strip() for s in fetched.snippets]
+    return (" ".join(p for p in pieces if p).split(),
+            getattr(fetched, "language_code", "") or tr.language_code,
+            bool(getattr(fetched, "is_generated", tr.is_generated)))
+
+
 def fetch_transcript(video_id: str, *, languages: tuple[str, ...] = ("en",),
                      max_words: int = TRANSCRIPT_MAX_WORDS,
-                     log: Callable[[str], None] = print) -> Optional[Transcript]:
+                     log: Callable[[str], None] = print, refresh: bool = False) -> Optional[Transcript]:
     """The caption track as one block of prose (no timestamps — the extractor
     wants what was said, not when). English first, then whatever the video
-    has. None when the video has no captions or YouTube refused (cloud IPs
-    get empty bodies; ours does not)."""
+    has. None when the video has no captions or they could not be read.
+
+    Read from YouTube once and kept (see the block above); `refresh=True`
+    reads again. Live reads are paced; a refusal by YouTube is retried once
+    through the paid unblocker."""
+    global _refused_this_process
+    if not refresh:
+        hit = _stored_transcript(video_id)
+        if hit:
+            out = _shape(hit[0], hit[1], hit[2], max_words)
+            log(f"[YOUTUBE] {video_id}: transcript {out.words} words, {out.language}, from our store")
+            return out
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
         log("[YOUTUBE] youtube-transcript-api not installed; transcript rung off")
         return None
-    try:
-        api = YouTubeTranscriptApi()
-        tl = api.list(video_id)
+    got, source = None, "direct"
+    refused = _refused_this_process
+    if not refused:
+        _pace(log)
         try:
-            tr = tl.find_transcript(list(languages))
-        except Exception:
-            tr = next(iter(tl), None)
-        if tr is None:
+            got = _read_captions(YouTubeTranscriptApi(), video_id, languages)
+            if got is None:
+                log(f"[YOUTUBE] {video_id}: no caption tracks")
+                return None
+        except Exception as e:  # noqa: BLE001 — the library raises a family of its own
+            if type(e).__name__ in _BLOCK_ERRORS:
+                refused = _refused_this_process = True
+                log(f"[YOUTUBE] {video_id}: YouTube refused the caption request ({type(e).__name__})")
+            else:
+                log(f"[YOUTUBE] {video_id}: transcript unavailable ({type(e).__name__}: {str(e)[:120]})")
+                return None
+    if got is None and refused:
+        paid = _paid_api()
+        if paid is None:
+            log(f"[YOUTUBE] {video_id}: captions refused and no paid route to retry through")
+            return None
+        try:
+            got = _read_captions(paid, video_id, languages)
+            source = "unblocker"
+        except Exception as e:  # noqa: BLE001
+            log(f"[YOUTUBE] {video_id}: captions refused, and the paid retry failed "
+                f"({type(e).__name__}: {str(e)[:120]})")
+            return None
+        if got is None:
             log(f"[YOUTUBE] {video_id}: no caption tracks")
             return None
-        fetched = tr.fetch()
-    except Exception as e:  # noqa: BLE001 — the library raises a family of its own
-        log(f"[YOUTUBE] {video_id}: transcript unavailable ({type(e).__name__}: {str(e)[:120]})")
-        return None
-    pieces = [re.sub(r"\s+", " ", s.text).strip() for s in fetched.snippets]
-    words = " ".join(p for p in pieces if p).split()
-    truncated = len(words) > max_words
-    text = " ".join(words[:max_words])
-    # Auto-captions carry no sentence breaks; a paragraph every ~120 words
-    # keeps the block readable for the model and for a curator.
-    text = re.sub(r"((?:\S+\s+){119}\S+)\s+", r"\1\n\n", text)
-    out = Transcript(text=text, language=getattr(fetched, "language_code", "") or tr.language_code,
-                     is_generated=bool(getattr(fetched, "is_generated", tr.is_generated)),
-                     words=min(len(words), max_words), truncated=truncated)
+    words, language, is_generated = got
+    _store_transcript(video_id, words, language, is_generated, source)
+    out = _shape(words, language, is_generated, max_words)
     log(f"[YOUTUBE] {video_id}: transcript {out.words} words, {out.language}, "
-        f"{'auto-generated' if out.is_generated else 'manual'}{', truncated' if truncated else ''}")
+        f"{'auto-generated' if out.is_generated else 'manual'}{', truncated' if out.truncated else ''}"
+        f"{' (read through the paid unblocker)' if source == 'unblocker' else ''}")
     return out
 
 

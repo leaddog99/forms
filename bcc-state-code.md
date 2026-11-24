@@ -13361,3 +13361,34 @@ a scheduled job is added, name folding changes.
   first ingredients video's captions are probed; if refused, nothing retired, nothing seated
   (verified live on Sweet Potato Casserole: rows kept).
   OWED: human calibration of the check (about 10 videos watched); live run of v2 once captions read.
+* **2026-11-24 - Polite note confirmed end to end: Butter Chicken #3196.** Web 15/15. Nick's Kitchen
+  (spoken only, 19,721 views/day) is on the dish's reject list as "Video not considered: the recipe
+  is only spoken...". 3 videos under the floor, Fallow already in the library, 0 seated.
+* **2026-11-24 - CAPTIONS: store, pace, paid fallback (intake/youtube_source.py `fetch_transcript`).**
+  STORE: page_cache.db table `video_transcripts` (gzip text, source direct|unblocker), read once,
+  `refresh=True` to re-read. PACE: `caption_wait_seconds` (Limits, default 20, random 0.5x-1.5x),
+  shared across processes via table `caption_pace`. PAID: on IpBlocked/RequestBlocked the read is
+  retried through the proxy unblocker (`caption_paid_fallback`, default on; about 3 paid requests);
+  after one refusal a process goes straight to paid. Verified live WHILE BLOCKED: two transcripts
+  read through the paid route (17 s, 13 s), third call served from the store in 0 s. Pacing wait
+  itself not observed (every live read today went the paid route, which is not paced).
+* **2026-11-24 - Five-question method check on real videos (via the paid caption route).** 9 judged:
+  6 pass, 3 fail, all on quantities (Nick DiGiovanni: written crepe list vs spoken; Amy's Louisiana
+  Kitchen: doubled batch spoken vs written list, plus a baking time we added; Joshua Weissman: 2 vs
+  3 tbsp oil). 2 not testable (one now reads as a link video, one extract failed). `recipe_lesson`
+  passed all 9; NO entertainment video was in the sample, so its "no" is still unexercised.
+  Damaged copies failed correctly.
+* **2026-11-24 - VIDEO CAUTION on hand saves (curator: users are not held to the library's bar).**
+  `_save_recipe_core` + `_video_caution_message` (save_recipe_api.py): a hand save of a YouTube
+  recipe with rung `transcript`, or rung `description+transcript` whose method check fails or cannot
+  run, returns a structured 422 `{video_caution, message, method_check}`; forms/recipe_form_styled.html
+  shows the message with save / cancel and retries with `video_ack`. Ack + verdict kept on
+  `_source.capture` (`caution`, `method_check`) so later saves do not ask again. Lane saves
+  (`_master.lane == "video"`) skip it. Applies to every hand save, curator's included. Tested without
+  saving: spoken-only -> 422 with the message; Beef Wellington -> 422 naming the crepe quantities;
+  a passing video -> no warning. NOT tested: the dialog in a browser, the acknowledged retry
+  actually saving, i18n of the strings (server-side English, like the thin-recipe gate beside it).
+* **2026-11-24 - YouTube Data API: ON HOLD (curator: legal terms).** Not built. It would not supply
+  other people's captions in any case.
+* **2026-11-24 - docs/research/video-recipes-white-paper-2026-11-24.md** - plain-language living paper
+  on all of the above, with a change log.

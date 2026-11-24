@@ -8745,6 +8745,52 @@ def messages_endpoint(category: str, order: str = "", count: int = 0, fallback: 
 # =========================================================================
 
 
+def _video_caution_message(capture: dict, recipe_dict: dict) -> str:
+    """The polite, specific warning for a hand save of a video recipe, or '' when
+    there is nothing to warn about. `capture` is the recipe's _source.capture.
+
+    spoken only (rung transcript)   always warned: nothing was written at all.
+    ingredients written, method spoken (rung description+transcript)
+                                    the method check runs once (its verdict is
+                                    kept on the capture); warned when it fails
+                                    or cannot be run, with what it found.
+    Mutates `capture` to keep the verdict."""
+    rung = capture.get("rung")
+    if rung == "transcript":
+        return ("This recipe was taken only from what is said in the video. Nothing is written under the "
+                "video, so the ingredients, quantities and steps are our reading of the captions and may "
+                "have gaps or misheard words. You are welcome to save it and fill in the blanks in the editor.")
+    if rung != "description+transcript":
+        return ""
+    verdict = capture.get("method_check") if isinstance(capture.get("method_check"), dict) else None
+    if verdict is None:
+        try:
+            from intake import youtube_source as _cys
+            from input.pipeline import video_method_check as _cvmc
+            from video_lookup import youtube_id as _cyid
+            _url = ((recipe_dict.get("_source") or {}).get("originalUrl") or "")
+            _vid = _cyid(_url) or ""
+            _q = lambda *_a, **_k: None                                  # noqa: E731
+            _tr = _cys.fetch_transcript(_vid, log=_q) if _vid else None
+            _info = _cys.fetch_watch(_vid, log=_q) if _vid else None
+            verdict = _cvmc.check(recipe_dict, _tr.text if _tr else "",
+                                  (_info.description if _info else "") or "")
+        except Exception as _e:
+            verdict = {"verdict": "error", "checks": {},
+                       "reason": f"the method check could not be run ({type(_e).__name__})"}
+        capture["method_check"] = verdict
+    if verdict.get("verdict") == "pass":
+        return ""
+    lead = ("The ingredients for this recipe were written by the video's creator, but the method is our "
+            "reading of what is said in the video. ")
+    if verdict.get("verdict") == "fail":
+        return (lead + "A check of that method against the captions found a problem: "
+                + (verdict.get("reason") or "it did not pass.").strip()
+                + " You are welcome to save it and correct it in the editor.")
+    return (lead + "We could not check it against the captions just now, so please read it through. "
+            "You are welcome to save it and correct it in the editor.")
+
+
 async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dict:
     """The video lane's SEATS (docs/video-recipes-lane.md step 4, built 2026-11-24).
     Two classes are admitted: `description` (the whole recipe is written under
@@ -13336,6 +13382,33 @@ def _save_recipe_core(payload: dict) -> dict:
                     ),
                 },
             )
+
+    # VIDEO CAUTION (curator, 2026-11-24). The dish library is strict about
+    # video; a person saving for themselves is not held to that - they may want
+    # a spoken recipe precisely to fill in the blanks in the editor. So a hand
+    # save of a questionable video recipe is never refused: it gets ONE polite,
+    # specific warning with the choice to save or cancel (same structured-422
+    # envelope as the thin gate; the form retries with video_ack=true). The
+    # acknowledgement is kept on the capture block so later saves do not ask
+    # again. The dish lane's own saves (_master.lane == "video") were judged
+    # already and never see this.
+    _vsrc = recipe.source
+    _vcap = _vsrc.capture if (_vsrc is not None and isinstance(_vsrc.capture, dict)) else None
+    _lane_save = ((payload.get("_master") or {}).get("lane") == "video")
+    if _vcap and _vcap.get("kind") == "youtube" and not _lane_save:
+        _caution = _vcap.get("caution") if isinstance(_vcap.get("caution"), dict) else None
+        if payload.get("video_ack") and _caution:
+            _caution["acknowledged"] = True
+        elif not (_caution and _caution.get("acknowledged")):
+            _vmsg = _video_caution_message(_vcap, recipe.model_dump(by_alias=True))
+            if _vmsg:
+                _vcap["caution"] = {"message": _vmsg, "acknowledged": bool(payload.get("video_ack"))}
+                if not payload.get("video_ack"):
+                    print(f"[SAVE-GATE] video caution: {_vmsg}")
+                    raise HTTPException(status_code=422, detail={
+                        "video_caution": True, "message": _vmsg,
+                        # the verdict rides back so the retry does not run the check again
+                        "method_check": _vcap.get("method_check")})
 
     # recipe_id is now app-minted at extract time and must be present on save.
     # Fallback to a fresh UUID kept only for callers that still POST without

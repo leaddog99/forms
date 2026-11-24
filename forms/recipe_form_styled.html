@@ -6323,6 +6323,25 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           return;
         }
 
+        // Video caution: a hand save of a video recipe whose method (or all of
+        // it) was read from speech. Never a refusal - one polite, specific
+        // warning, save or cancel. The verdict rides back in so the retry
+        // does not run the check a second time.
+        if (det && det.video_caution) {
+          const proceed = confirm(
+            `${det.message || 'This recipe was read from a video.'}\n\n` +
+            `OK = save it. Cancel = go back without saving.`
+          );
+          if (proceed) {
+            const src = { ...(sendPayload._source || {}) };
+            src.capture = { ...(src.capture || {}),
+                            caution: { message: det.message, acknowledged: true } };
+            if (det.method_check) src.capture.method_check = det.method_check;
+            await postSave({ ...extra, _source: src, video_ack: true });
+          }
+          return;
+        }
+
         // URL-conflict gate: this form's recipe is DIFFERENT from the record
         // already saved for the same source URL (silently adopting overwrote
         // three of four dressings entered from one multi-recipe page,
