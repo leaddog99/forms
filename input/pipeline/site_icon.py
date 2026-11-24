@@ -6,11 +6,16 @@ Replaces the logo address the domain record used to carry: it pointed at a
 third-party logo service that no longer exists (curator, 2026-11-24: "a logo
 field ... that seems to go to a site that doesnt exist"). The icon comes from the
 site's own home page: the largest <link rel="icon"> / apple-touch-icon it
-declares, else /favicon.ico. Every candidate is requested once, and only an
-address that answers with an image is returned: a blank is a correct answer.
+declares, else /favicon.ico.
 
-Free: one direct home-page request and one or two small image requests. No paid
-fetch is ever used for an icon.
+Free first: one direct home-page request and one or two small image requests.
+When the site REFUSES the direct request (403 / 429: smittenkitchen.com answers
+a server 429 and a browser 200) and `paid=True`, the home page is read once
+through the paid unblocker (curator, 2026-11-24: "use unblocker to get an
+favicon if rejected"). The icon itself is never fetched through the paid route:
+a browser loads it without trouble, so on a refusing site the address the home
+page DECLARES is trusted unchecked. Only when the page declares none is one more
+paid fetch spent, on /favicon.ico. A blank is a correct answer.
 """
 from __future__ import annotations
 
@@ -20,6 +25,8 @@ from urllib.parse import urljoin
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 _HEADERS = {"User-Agent": _UA, "Accept": "text/html,image/*,*/*;q=0.8"}
+_REFUSED = (401, 403, 406, 429, 503)
+_IMG_EXT = (".ico", ".png", ".svg", ".jpg", ".jpeg", ".webp", ".gif")
 
 
 def _declared(html: str, base: str) -> list[tuple[int, str]]:
@@ -46,41 +53,79 @@ def _declared(html: str, base: str) -> list[tuple[int, str]]:
     return out
 
 
-def _is_image(url: str, timeout: float) -> bool:
+def _image_check(url: str, timeout: float):
+    """True = answers with an image; False = does not; None = the site refused us."""
     import requests
     try:
         r = requests.get(url, headers=_HEADERS, timeout=timeout, stream=True)
-        ok = (r.status_code == 200
-              and ("image" in (r.headers.get("content-type") or "").lower()
-                   or url.lower().split("?")[0].endswith((".ico", ".png", ".svg", ".jpg", ".webp")))
-              and "text/html" not in (r.headers.get("content-type") or "").lower())
+        ctype = (r.headers.get("content-type") or "").lower()
+        status = r.status_code
         r.close()
-        return ok
     except Exception:
         return False
+    if status in _REFUSED:
+        return None
+    return (status == 200 and "text/html" not in ctype
+            and ("image" in ctype or url.lower().split("?")[0].endswith(_IMG_EXT)))
 
 
-def find(host: str, *, timeout: float = 8.0) -> str:
-    """The site's own icon address, or '' when it declares none that loads."""
+def _home_direct(base: str, timeout: float):
+    """-> (html or '', final address, refused?)"""
     import requests
+    try:
+        r = requests.get(base, headers=_HEADERS, timeout=timeout)
+    except Exception:
+        return "", base, False
+    if r.status_code == 200 and r.text:
+        return r.text[:400_000], (r.url or base), False
+    return "", base, r.status_code in _REFUSED
+
+
+def _paid_get(url: str, log):
+    """One paid fetch, no browser render (icon links are in the served HTML)."""
+    try:
+        from to_markdown.fetch import fetch_via_unblocker, unblocker_available
+        if not unblocker_available():
+            log("  [icon] paid fetch not configured")
+            return None
+        got = fetch_via_unblocker(url, render=False)
+        return got[0] if got else None
+    except Exception as e:  # noqa: BLE001
+        log(f"  [icon] paid fetch failed: {type(e).__name__}: {e}")
+        return None
+
+
+def find(host: str, *, timeout: float = 8.0, paid: bool = False, log=print) -> str:
+    """The site's own icon address, or '' when it has none we can establish.
+    `paid=True` allows the paid unblocker when the site refuses the direct request."""
     host = (host or "").strip().lower()
     if not host:
         return ""
     base = f"https://{host}/"
-    candidates: list[str] = []
-    try:
-        r = requests.get(base, headers=_HEADERS, timeout=timeout)
-        if r.status_code == 200 and r.text:
-            base = r.url or base                       # follows www / redirects
-            candidates = [u for _, u in _declared(r.text[:400_000], base)]
-    except Exception:
-        pass
-    candidates.append(urljoin(base, "/favicon.ico"))
+    html, base, refused = _home_direct(base, timeout)
+    via_paid = False
+    if not html and refused and paid:
+        resp = _paid_get(base, log)
+        if resp is not None and getattr(resp, "status_code", 0) == 200 and resp.text:
+            html, via_paid = resp.text[:400_000], True
+            log(f"  [icon] {host}: home page read through the paid fetch")
+    candidates = [u for _, u in _declared(html, base)] if html else []
+    fallback = urljoin(base, "/favicon.ico")
     seen = set()
-    for url in candidates[:4] + candidates[-1:]:
+    for url in candidates[:4] + [fallback]:
         if url in seen:
             continue
         seen.add(url)
-        if _is_image(url, timeout):
+        ok = _image_check(url, timeout)
+        if ok:
             return url
+        if ok is None and url != fallback and via_paid:
+            return url          # the page declares it; the site refuses only our check
+    if (via_paid or (refused and paid)) and not candidates:
+        # Nothing declared (or no page at all): is there a /favicon.ico? One paid fetch.
+        resp = _paid_get(fallback, log)
+        ctype = (getattr(resp, "headers", {}) or {}).get("content-type", "").lower() if resp is not None else ""
+        if resp is not None and resp.status_code == 200 and "text/html" not in ctype and resp.content:
+            log(f"  [icon] {host}: /favicon.ico confirmed through the paid fetch")
+            return fallback
     return ""

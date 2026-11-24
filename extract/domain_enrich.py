@@ -113,7 +113,7 @@ def _logo_url_for(host: str) -> str:
     269 stored addresses pointed at a host that no longer resolves."""
     try:
         from input.pipeline import site_icon
-        return site_icon.find(host)
+        return site_icon.find(host, paid=True)   # paid fetch only if the site refuses us
     except Exception:
         return ""
 

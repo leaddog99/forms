@@ -7847,11 +7847,12 @@ def remove_domain_top_member_endpoint(domain: str, url: str):
 
 @app.get("/domains/{domain}/site-icon")
 def domain_site_icon_endpoint(domain: str):
-    """The icon the site declares for itself (free: its home page + the icon).
+    """The icon the site declares for itself: free (its home page + the icon)
+    unless the site refuses the direct request, then one paid home-page fetch.
     Returns it for the form to show; saves nothing - the curator saves the record."""
     from input.pipeline import domains_lib, site_icon
     host = domains_lib._canon_host(domain)
-    return {"domain": host, "icon_url": site_icon.find(host)}
+    return {"domain": host, "icon_url": site_icon.find(host, paid=True)}
 
 
 @app.get("/domains/{domain}/top")
