@@ -91,6 +91,10 @@ EDITABLE_FIELDS = (
     # CURATED: the default ladder stays direct-first because a wrong flag is pure
     # spend (see to_markdown/fetch.py, _fetch_ladder).
     "paid_first",
+    # WAIT BETWEEN PAGE REQUESTS (2026-11-24). Seconds the harvest pauses before
+    # each page request after the first. For a host that serves a few pages and
+    # then stops answering (atreatsaffair.com, job 3163). 0 = no wait.
+    "fetch_wait_seconds",
     # Deep-enrich outputs the create path and scripts/deep_enrich_borrowed.py
     # write through update_domain(). Both were silently DROPPED until 2026-09-11
     # because they were never registered here — every deep-enriched row carried
@@ -306,6 +310,8 @@ _RENDER_COLUMNS = {
     "score_only": "INTEGER NOT NULL DEFAULT 0",
     # CURATED: skip the direct fetch, paid unblocker first, then Wayback.
     "paid_first": "INTEGER NOT NULL DEFAULT 0",
+    # CURATED: seconds to wait between page requests on a harvest. 0 = none.
+    "fetch_wait_seconds": "REAL NOT NULL DEFAULT 0",
 }
 
 # Editorial provenance the curator can set (optional). cuisine_focus already lives in

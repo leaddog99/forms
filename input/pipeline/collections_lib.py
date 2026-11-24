@@ -839,7 +839,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
                           exclude_words=None, score_only=False,
-                          keyword_prescreen=None) -> dict:
+                          keyword_prescreen=None, fetch_wait=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -1110,6 +1110,10 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             # clue and whose traffic is mostly home/garden). Same read-here idiom as
             # render_required above; ε-exploration inside the filter keeps labels honest.
             _url_prefilter = bool((_row or {}).get("url_prefilter"))
+            # Seconds to wait between page requests. The caller's value wins (the
+            # run form sends it); absent that, the publisher's stored setting.
+            if fetch_wait is None:
+                fetch_wait = (_row or {}).get("fetch_wait_seconds")
         except Exception as _e:
             print(f"  [harvest] render_required lookup skipped: {type(_e).__name__}: {_e}")
         if _url_prefilter:
@@ -1128,6 +1132,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             exclude_words=exclude_words,
             keyword_prescreen=keyword_prescreen, prescreen_domain=domain,
             domain_lang=domain_lang,
+            wait_seconds=float(fetch_wait or 0),
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
         # These carry their own `_dropped_reason` (no-recipe-structure, fetch-failed,

@@ -685,6 +685,10 @@
             <span class="opt-t">Paid fetch first <span style="font-weight:400;color:var(--muted)">(skip the free try)</span></span>
           </label>
           <p class="opt-h">For a site that answers every free fetch with "too many requests". Skips the free fetch and its minutes of waiting, goes straight to the paid fetch, then the web archive. Every page costs a paid fetch, so tick it only when the free fetch never works.</p>
+          <div class="ed-field" style="margin:10px 0 0;max-width:260px">
+            <label for="f_fetch_wait_seconds">Wait between page requests (seconds) <button type="button" class="info-dot" data-info-title="Wait between page requests" data-info="The harvest pauses this many seconds before each page request after the first. For a site that serves a few pages and then stops answering. <b>0</b> = no wait. The wait is added for every page: 60 seconds on 120 pages is two hours. Pages already in our own cache are not waited for.">i</button></label>
+            <input id="f_fetch_wait_seconds" type="number" min="0" max="600" step="1" value="${Number(d.fetch_wait_seconds) || 0}">
+          </div>
           </div>
           </div>
 
@@ -1423,6 +1427,7 @@
       const exclude_words = ($('#f_exclude_words')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
       const score_only = $('#f_score_only')?.checked ? 1 : 0;
+      const fetch_wait = Math.max(0, Number($('#f_fetch_wait_seconds')?.value) || 0);
       btn.disabled = true; btn.textContent = score_only ? '⏳ Scoring…' : '⏳ Harvesting…';
       const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
       if (hint){ hint.style.color = ''; hint.textContent = 'Queuing refresh job…'; }
@@ -1434,11 +1439,12 @@
           await fetch(`/domains/${encodeURIComponent(domain)}`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fetch_strategy: ($('#f_fetch_strategy')?.value || 'plain'),
-                                   render_required: ($('#f_render_required')?.checked ? 1 : 0) }) });
+                                   render_required: ($('#f_render_required')?.checked ? 1 : 0),
+                                   fetch_wait_seconds: fetch_wait }) });
         } catch {}
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, exclude_words, check_recipe, score_only,
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, exclude_words, check_recipe, score_only, fetch_wait,
                                  unblocker: !!$('#f_unblocker_fallback')?.checked }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
@@ -1732,6 +1738,7 @@
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         human_capture_only: $('#f_human_capture_only')?.checked ? 1 : 0,   // R4 (Gated mode)
         paid_first: $('#f_paid_first')?.checked ? 1 : 0,                   // skip direct, paid unblocker first
+        fetch_wait_seconds: Math.max(0, Number($('#f_fetch_wait_seconds')?.value) || 0),   // pause between page requests
         aggregator: $('#f_aggregator')?.checked ? 1 : 0,                   // thin-wrapper index — shut down
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),

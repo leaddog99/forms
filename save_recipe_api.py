@@ -7283,10 +7283,14 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     exclude_words = p.get("exclude_words") or ""   # per-domain exclusionary section words
     unblocker = bool(p.get("unblocker"))           # fetch_strategy='unblocker' → live paid fetch
     score_only = bool(p.get("score_only"))         # Moz-rank only, no fetch/verify/ingest (curation)
+    # Seconds between page requests. None = not sent: the harvest then reads the
+    # publisher's stored fetch_wait_seconds.
+    _fw = p.get("fetch_wait")
+    fetch_wait = None if _fw in (None, "") else max(0.0, min(float(_fw), 600.0))
     job_id = job.get("id")
     print(f"[PUBLISHER-REFRESH] {host} | source={source} query={query!r} pages={pages} "
           f"records={records} keep={keep} check_recipe={check_recipe} unblocker={unblocker} "
-          f"score_only={score_only}")
+          f"score_only={score_only} fetch_wait={fetch_wait}")
 
     def _should_cancel():
         # Cross-process poll: the server sets cancel_requested; we (the out-of-process
@@ -7306,7 +7310,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
                 host, keep=keep, discover_n=pages * 10,
                 recipe_path=recipe_path, query=query, check_recipe=check_recipe,
                 source=source, records=records, unblocker=unblocker,
-                backlinks_dir=backlinks_dir,
+                backlinks_dir=backlinks_dir, fetch_wait=fetch_wait,
                 exclude_words=exclude_words, should_cancel=_should_cancel, score_only=score_only)
         with _db() as conn:
             from input.pipeline import domains_lib
@@ -7780,6 +7784,9 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
                     "source": source, "records": records, "log_label": host,
                     "backlinks_dir": backlinks_dir,
                     "exclude_words": exclude_words, "score_only": score_only,
+                    # Seconds between page requests: the form's value, else the
+                    # publisher's stored one (the harvest reads it when None).
+                    "fetch_wait": payload.get("fetch_wait"),
                     # EXPLICIT beats implicit (curator 2026-08-26: two giallo runs
                     # launched with the flag silently False because the form's
                     # pre-run PATCH re-stamped a stale fetch_strategy). The form

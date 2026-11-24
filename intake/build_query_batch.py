@@ -665,6 +665,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       render_escalate: bool = True,
                       render: bool = False,
                       subject_words=None,
+                      wait_seconds: float = 0.0,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -1034,7 +1035,29 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
 
     if _pool is not None:
         print(f"  [fetch] {len(plan)} candidate(s) to fetch, {_workers} in flight", flush=True)
+    # WAIT BETWEEN PAGE REQUESTS (curator, 2026-11-24). atreatsaffair.com served
+    # three pages directly, then timed out every direct request for the rest of
+    # the run: each page then cost a 10 s timeout plus a paid fetch (job 3163).
+    # A publisher harvest hands in its per-domain pause; it is taken before every
+    # request after the first, never after a page that came from our own cache
+    # (no request was made). Sequential runs only: with a fetch pool the requests
+    # are already in flight, and the pool is never used for a single host.
+    _wait = max(0.0, float(wait_seconds or 0.0)) if _pool is None else 0.0
+    _last_src = None
+    if _wait:
+        print(f"  [fetch] waiting {_wait:g}s between page requests "
+              f"(about {int(_wait * max(0, len(plan) - 1) / 60)} min of waiting "
+              f"for {len(plan)} page(s))", flush=True)
     for k, (i, e, _render_now) in enumerate(plan):
+        if _wait and k > 0 and _last_src != "cache":
+            _until = time.monotonic() + _wait
+            while True:
+                _left = _until - time.monotonic()
+                if _left <= 0:
+                    break
+                time.sleep(min(2.0, _left))
+                if should_cancel and should_cancel():
+                    break
         if should_cancel and should_cancel():
             _stop_prefetch()
             from input.pipeline.jobs import JobCancelled
@@ -1055,6 +1078,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             # (mark_render_required) and must keep meaning "a render RESCUED this",
             # not "we started rendered because we already knew".
             e["_rendered_upfront"] = True
+        _last_src = getattr(result, "source", None)
         if not result.ok:
             e["recipe_score"] = 0
             # The reason travels with the drop. `fetch-failed` keeps its prefix so
