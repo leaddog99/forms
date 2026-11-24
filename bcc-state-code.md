@@ -13239,3 +13239,17 @@ a scheduled job is added, name folding changes.
   CHANGED on purpose: the finder's second page is now a real second request; no sleep-and-retry on
   an empty first answer. NEEDS a restart of BCC on MARLEY (`bcc_restart.bat`) - the running service
   still has the old code in memory. A machine without the kit folder cannot start BCC now.
+* **2026-11-24 - wait between page requests (78ffebc).** New `domains.fetch_wait_seconds` (form field
+  under "Paid fetch first"); the run form sends `fetch_wait`, the harvest falls back to the stored
+  value; `_is_recipe_filter(wait_seconds=)` pauses before each request after the first, not after a
+  cache hit, cancel-aware. WHY: atreatsaffair.com served 3 pages directly, then timed out every
+  direct request (job 3163, cancelled at 9/118); 17 min later it still hung for our address while
+  robots.txt answered. NOT RUN YET: the 60 s test waits for the site to answer directly again.
+* **2026-11-24 - curator notices are HTML tables.** `alerts.alert_curator(subject, body, html=)` plus
+  `html_table` / `html_page` / `pill` helpers (inline styles, mail-safe). `dish_gaps.digest_html`
+  (recipes with no good dish / suggested dishes / standing holes) and `dish_match.flag_digest_html`
+  (held first, then moved; counts by target dish past `rematch_digest_max`). Text body unchanged:
+  it is the log banner and the fallback part. Rendered from real data, NOT seen in a mail client.
+  THE TWO EMAILS are two jobs: `dish_gap_report` (daily 09:00 UTC, has the holes) and `dish_rematch`
+  (nightly AND after each dish create/refresh: 10 mails the morning of 11-24, each repeating the
+  same 3 held moves). Merging or quieting them is undecided.

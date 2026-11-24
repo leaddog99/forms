@@ -726,3 +726,59 @@ def flag_digest(flags: list[dict]) -> tuple[str, str]:
                      f"{f['rung']} {f['from']!r} -> {f['to']!r}")
         lines += [f"    {r}" for r in f["reasons"]]
     return subject, "\n".join(lines)
+
+
+def flag_digest_html(flags: list[dict]) -> str:
+    """The same notice as `flag_digest`, as tables: held moves first (they need
+    a decision), then the moves that were made."""
+    from html import escape
+    from input.pipeline.alerts import Raw, html_page, html_table
+
+    def _held(f):
+        return f["reasons"][0].startswith("held")
+
+    def _recipe(f):
+        return Raw(f'{escape(str(f["recipe"]))}<br><span style="color:#6b7280;font-size:12px">'
+                   f'{"cookbook" if f["table"] == "recipes" else "library"} #{f["id"]}'
+                   f' · {escape(f["recipe_chapter"] or "no chapter")}</span>')
+
+    def _why(f):
+        rs = [r[5:].lstrip(": ") if r.startswith("held") else r for r in f["reasons"]]
+        return Raw("<br>".join(escape(r) for r in rs))
+
+    def _rows(fs):
+        return [[_recipe(f),
+                 "confident match" if f["rung"] == "match" else "nearest guess",
+                 f["from"] or "none", f["to"] or "none", _why(f)] for f in fs]
+
+    heads = ["Recipe", "What changed", "From", "To", "Why it is flagged"]
+    held = [f for f in flags if _held(f)]
+    moved = [f for f in flags if not _held(f)]
+    cap = _cfg_int("rematch_digest_max", 40)
+    sections = []
+    if held:
+        sections.append((f"Held, not moved: need a decision ({len(held)})",
+                         "The rematch refused these moves. They repeat in every notice until decided.",
+                         html_table(heads, _rows(held))))
+    if moved and len(flags) > cap:
+        by_dish: dict = {}
+        for f in moved:
+            by_dish.setdefault((f["to"], f["to_chapter"]), []).append(f)
+        sections.append((
+            f"Moved: worth a look ({len(moved)})",
+            "Too many to list one by one; counted by the dish they moved to. "
+            "The full list is in the dish-rematch job log.",
+            html_table(["Moved to", "Chapter", "Recipes", "Typical reason"],
+                       [[to, ch or "no chapter", len(fs), fs[0]["reasons"][0]]
+                        for (to, ch), fs in sorted(by_dish.items(), key=lambda kv: -len(kv[1]))],
+                       right=(2,))))
+    elif moved:
+        sections.append((f"Moved: worth a look ({len(moved)})",
+                         "These moves were made, but something about each is unusual.",
+                         html_table(heads, _rows(moved))))
+    return html_page(
+        f"Dish rematch: {len(flags)} move(s) to check" + (f", {len(held)} held" if held else ""),
+        "The rematch re-scores recipes against the dish catalogue: nightly, and after a dish is "
+        "created or refreshed. 'Confident match' is the recipe's dish; 'nearest guess' is where a "
+        "recipe with no confident dish is counted.",
+        sections)

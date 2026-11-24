@@ -154,6 +154,65 @@ def digest(rep: dict, *, max_rows: int = 40) -> tuple:
     return subject, "\n".join(lines)
 
 
+def digest_html(rep: dict, *, max_rows: int = 40) -> str:
+    """The same notice as `digest`, as tables (input.pipeline.alerts helpers)."""
+    from input.pipeline.alerts import Raw, html_page, html_table, pill
+    from html import escape
+    new = rep.get("new_weak") or []
+    holes = rep.get("holes") or []
+    grown = sorted((h for h in holes if h.get("new_count")),
+                   key=lambda h: (-h["new_count"], -h["count"]))
+
+    def recipe_cell(r):
+        url = (r.get("url") or "").strip()
+        name = escape(r["name"])
+        if url:
+            if not url.startswith("http"):
+                url = "https://" + url
+            name = f'<a href="{escape(url, quote=True)}" style="color:#1d4ed8">{name}</a>'
+        return Raw(f'{name}<br><span style="color:#6b7280;font-size:12px">'
+                   f'{"cookbook" if r["table"] == "recipes" else "library"} #{r["id"]}</span>')
+
+    def names_cell(r):
+        if not r.get("likely_dish"):
+            return Raw('<span style="color:#9ca3af">not stated</span>')
+        return Raw(escape(r["likely_dish"]) + (" " + pill("not in catalogue") if r.get("hole") else ""))
+
+    sections = []
+    rows = [[recipe_cell(r), names_cell(r), r["nearest"] or "", f"{r['distance']:.2f}"]
+            for r in new[:max_rows]]
+    note = (f"A distance above {rep['max_dist']} means no dish in the catalogue is a real fit. "
+            "The recipe is filed under its nearest guess until a dish exists for it.")
+    if len(new) > max_rows:
+        note += f" Showing the {max_rows} furthest off; the other {len(new) - max_rows} are in the job log."
+    sections.append((f"Recipes with no good dish ({len(new)})", note,
+                     html_table(["Recipe", "The recipe calls itself", "Filed under (nearest guess)",
+                                 "Distance"], rows, right=(3,))))
+    if grown:
+        sections.append((
+            f"Suggested new dishes ({len(grown)})",
+            "Dishes the recipes above name that the catalogue does not have. "
+            "Creating one moves every waiting recipe to it at the next rematch.",
+            html_table(["Dish to create", "New this time", "Waiting in all", "Now filed under"],
+                       [[h["likely_dish"], h["new_count"], h["count"], ", ".join(h["nearest_dishes"])]
+                        for h in grown], right=(1, 2))))
+    if holes:
+        sections.append((
+            f"Largest standing holes (top {min(10, len(holes))} of {len(holes)})",
+            f"Groups of {rep['min_group']} or more recipes naming the same missing dish, "
+            f"whenever they arrived. {rep['weak_total']} recipes in all have no good dish.",
+            html_table(["Missing dish", "Recipes", "Now filed under"],
+                       [[h["likely_dish"], h["count"], ", ".join(h["nearest_dishes"])]
+                        for h in holes[:10]], right=(1,))))
+    since = (rep.get("since") or "")[:16].replace("T", " ")
+    return html_page(
+        f"Dish match: {len(new)} recipe(s) with no good dish",
+        f"Recipes matched since {since or 'the last report'} (UTC) that no catalogue dish fits. "
+        "Sent once a day by the dish gap report, and only when there are such recipes.",
+        sections,
+        footer="Create a dish from the Dishes page (the gap report there has a + beside each hole).")
+
+
 def print_report(rep: dict, log=print) -> None:
     """Human-readable rendering into the job log."""
     log(f"[GAPS] {rep['weak_total']} weak links among {rep['scanned_unanchored']} "

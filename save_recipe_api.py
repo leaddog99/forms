@@ -9427,7 +9427,12 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
             print(f"[REMATCH] flag {f['table']} {f['id']} {f['recipe']!r}: {f['rung']} "
                   f"{f['from']!r} -> {f['to']!r} | {'; '.join(f['reasons'])}")
         _subj, _body = _dm.flag_digest(all_flags)
-        alerts.alert_curator(_subj, _body)
+        try:
+            _html = _dm.flag_digest_html(all_flags)
+        except Exception as e:  # noqa: BLE001 - the text notice still goes
+            print(f"[REMATCH] html notice failed, sending text only: {type(e).__name__}: {e}")
+            _html = None
+        alerts.alert_curator(_subj, _body, html=_html)
     # Rows moved between dishes — the stored card thumbnails may point at
     # recipes that left. Full sweep (~300ms nightly), prints what changed.
     try:
@@ -9601,7 +9606,12 @@ async def _handle_dish_gap_report_job(job: dict) -> dict:
     if rep.get("new_weak"):
         from input.pipeline import alerts
         _subj, _body = dish_gaps.digest(rep)
-        alerts.alert_curator(_subj, _body)
+        try:
+            _html = dish_gaps.digest_html(rep)
+        except Exception as e:  # noqa: BLE001 - the text notice still goes
+            print(f"[GAPS] html notice failed, sending text only: {type(e).__name__}: {e}")
+            _html = None
+        alerts.alert_curator(_subj, _body, html=_html)
     return {"weak_total": rep["weak_total"], "holes": len(rep["holes"]),
             "unmatched": rep["unmatched"], "since": rep.get("since"),
             "new_weak": len(rep.get("new_weak") or []),
