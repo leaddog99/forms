@@ -326,7 +326,8 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
     except Exception:
         cap = 40
     videos = [e for e in entries if (e.get("domain") or "").lower() in _VIDEO_HOSTS]
-    out = {"results": len(videos), "read": 0, "classes": {}, "links": [], "admitted": []}
+    out = {"results": len(videos), "read": 0, "classes": {}, "links": [], "admitted": [],
+           "link_pages": []}
     if not videos or cap <= 0:
         return out
     import json as _json
@@ -363,6 +364,15 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
         out["classes"][cls] = out["classes"].get(cls, 0) + 1
         if cls == "link" and res.links:
             out["links"].append(res.links[0])
+            # LINK CLASS (2026-11-24): the written recipe is the page the
+            # description points to. Carried back so the caller can hand it to
+            # the web lane as an ordinary candidate (_hand_linked_pages).
+            out["link_pages"].append({
+                "url": res.links[0], "title": res.title or e.get("title") or "",
+                "google_rank": e.get("google_rank"),
+                "_lines": e.get("_lines") or [], "_queries": e.get("_queries") or [],
+                "video": _ys.canonical_url(res.video_id) if getattr(res, "video_id", "") else url,
+                "channel": res.channel or None, "views_per_day": vpd})
         if cls == "description":
             # ADMITTED to the video lane (step 4, 2026-11-24): the only class
             # that carries a whole written recipe. The refresh handler seats
@@ -383,6 +393,63 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
     out["admitted"].sort(key=lambda a: (a["_video"].get("views_per_day") is None,
                                         -(a["_video"].get("views_per_day") or 0.0),
                                         a.get("google_rank") or 10_000))
+    return out
+
+
+def _hand_linked_pages(entries: list[dict], link_pages: list[dict]) -> dict:
+    """The video lane's LINK class (docs/video-recipes-lane.md 4.1): a video whose
+    description only points to the written recipe hands THAT PAGE to the web lane
+    as an ordinary candidate - it is the real recipe. From there it is treated
+    like any search result: blocked-host filter, title screen, is-recipe check,
+    Moz, the dish's own ranking, the save guards. Nothing is seated here.
+
+    A page the search already returned is not added twice; it is only stamped
+    with the video that points to it. A bare home page (no path) is not handed
+    over: it is the channel's site, not a recipe. The candidate takes the
+    video's search position and search lines, since that is how it was found,
+    and the video's title, which is what the title screen will judge.
+    Mutates `entries`. -> {handed, added, already, skipped}"""
+    out = {"handed": len(link_pages), "added": 0, "already": 0, "skipped": 0, "pages": []}
+    if not link_pages:
+        return out
+    by_norm = {(normalize_url(e["url"]) or e["url"]): e for e in entries if e.get("url")}
+    for lp in link_pages:
+        url = (lp.get("url") or "").strip()
+        path = urlparse(url).path.strip("/")
+        # A SHORT LINK (cooks.io/2HKmYIS) is followed once, free, so the candidate
+        # is the page it lands on and not the shortener's address.
+        if path and "/" not in path and "-" not in path and len(path) <= 12:
+            try:
+                import requests as _rq
+                _r = _rq.head(url, allow_redirects=True, timeout=8,
+                              headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                # no query string: a shortener lands with a tracking token on it
+                _final = (_r.url or "").split("#")[0].split("?")[0]
+                if _final.startswith(("http://", "https://")) and _final != url:
+                    print(f"      [video] short link {url} -> {_final[:120]}")
+                    url, path = _final, urlparse(_final).path.strip("/")
+            except Exception as _se:
+                print(f"      [video] short link {url} not followed ({type(_se).__name__})")
+        if not url.startswith(("http://", "https://")) or not path:
+            out["skipped"] += 1
+            print(f"      [video] link not handed on (no page path): {url}")
+            continue
+        via = {"video": lp.get("video"), "channel": lp.get("channel"),
+               "views_per_day": lp.get("views_per_day")}
+        key = normalize_url(url) or url
+        hit = by_norm.get(key)
+        if hit is not None:
+            hit.setdefault("_via_video", via)
+            out["already"] += 1
+            continue
+        e = {"url": url, "title": lp.get("title") or "", "google_rank": lp.get("google_rank"),
+             "domain": root_domain(url), "_queries": list(lp.get("_queries") or []),
+             "_lines": list(lp.get("_lines") or []), "_via_video": via}
+        entries.append(e)
+        by_norm[key] = e
+        out["added"] += 1
+        out["pages"].append(url)
+        print(f"      [video] linked page -> web lane: {url}  (from {lp.get('channel') or 'a video'})")
     return out
 
 
@@ -1976,7 +2043,16 @@ def build_batch(
         if type(_ve).__name__ == "JobCancelled":
             raise
         print(f"      [video] read skipped ({type(_ve).__name__}: {_ve})")
-        _vid = {"results": 0, "read": 0, "classes": {}, "links": [], "admitted": []}
+        _vid = {"results": 0, "read": 0, "classes": {}, "links": [], "admitted": [], "link_pages": []}
+    try:
+        _vid["linked"] = _hand_linked_pages(entries, _vid.get("link_pages") or [])
+        if _vid["linked"]["handed"]:
+            _lk = _vid["linked"]
+            print(f"      [video] {_lk['handed']} video(s) point to a recipe page: {_lk['added']} handed to "
+                  f"the web lane, {_lk['already']} already among the results"
+                  + (f", {_lk['skipped']} not a page" if _lk["skipped"] else ""))
+    except Exception as _le:
+        print(f"      [video] linked pages not handed on ({type(_le).__name__}: {_le})")
     if _vid["results"]:
         _order = ("description", "ingredients", "link", "transcript", "none", "unreadable")
         _split = ", ".join(f"{_vid['classes'][c]} {c}" for c in _order if _vid["classes"].get(c))

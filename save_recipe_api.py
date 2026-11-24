@@ -9309,6 +9309,11 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         }
         if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
             master_block["seat_line"] = _seat_line
+        # Found through a video whose description links to this page (the video
+        # lane's link class): keep which video, so the page can show it.
+        if entry.get("_via_video"):
+            master_block["via_video"] = {k: v for k, v in entry["_via_video"].items()
+                                         if v not in (None, "")}
         # Exceptionalism grade was computed in _compute_custom_ou at the
         # batch step. Stamp it onto _master so the row carries its grade
         # forever (the cohort's σ is also persisted on dish.last_ou_fit

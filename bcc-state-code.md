@@ -13289,3 +13289,10 @@ a scheduled job is added, name folding changes.
   `video_seats` (default 3). Proven on Mapo Tofu from the ledger's recorded videos (no search):
   3 seated, master rows 22465-22467, class video. NOT proven: a whole dish refresh end to end
   with the new batch key `video_lane`, and the retire on a second run.
+* **2026-11-24 - video lane: full refresh proven; LINK class built.** Mapo Tofu #3175: 15/15 web,
+  3/3 video seats, prior video rows retired and re-seated. Link class (see the video doc, step 3):
+  linked recipe pages enter the web lane as ordinary candidates; proven in #3176.
+* **2026-11-24 - five dishes created from the holes report** (curator request): Vanilla Ice Cream,
+  Fried Catfish, Ambrosia Salad, Clams Casino, Tofu Stir Fry - two default lines each, download 40,
+  keep 10, review 180. Fried Catfish tripped the duplicate gate's "look" tier against Fried Chicken
+  (4 of 4, distance 0.71) and was created anyway. One rematch (no email) then five refreshes queued.

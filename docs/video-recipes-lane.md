@@ -257,7 +257,16 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    ingredients written, 3 links, 17 spoken only. Found on the way: the
    same-path cap of 11-20 treated every `youtube.com/watch?v=` as one page and
    kept two videos per line; fixed.
-   STILL TO DO in step 3: hand `link` pages to the web lane; decide whether
+   LINK CLASS BUILT 2026-11-24: `_hand_linked_pages` adds the page a `link`
+   video points to as an ordinary web candidate (video's position, lines and
+   title; `_via_video` stamp, kept on a saved winner as `_master.via_video`).
+   Already-returned pages are only stamped; a bare home page is not handed on;
+   a short link is followed once (cooks.io/2HKmYIS -> the ATK recipe). Mapo Tofu
+   #3176: 3 link videos -> 1 already a result, 1 URL-skipped (a cookbook
+   announcement), 1 fetched, kept as a recipe, scored, cut on OU. Only the FIRST
+   qualifying link of a description is taken. `via_video` on a saved row is not
+   yet exercised.
+   STILL TO DO in step 3: decide whether
    `ingredients` is admitted (it needs the transcript for the method); stamp
    the channel's standing.
 4. **BUILT 2026-11-24 for the `description` class.** After a dish refresh saves
