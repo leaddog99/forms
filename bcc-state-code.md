@@ -13275,3 +13275,12 @@ a scheduled job is added, name folding changes.
   429). BACKFILL run on `domains.logo_url` (blank or dead only): 458 stored, 37 dead cleared to
   blank, 48 still blank; before/after in scratchpad logo_before.json / logo_after.json.
   Form NOT seen in a browser; endpoint needs the BCC restart.
+* **2026-11-24 - rematch email only from the nightly run; on-demand "Run dish check".**
+  `dish_rematch` reads `params.notify` (missing = email). The rematch enqueued by a dish CREATE now
+  carries `notify: false`: its flagged moves stay in its log. `POST /dishes/run-check`
+  (manage_dishes) enqueues ONE job: rematch with `notify`, then the holes report inline
+  (`gap_report: true` -> `_handle_dish_gap_report_job` with `adhoc`, which always emails). The
+  on-demand run is a `dish_rematch` job, so it does not move the nightly report's "since" window.
+  Dishes page: "Run dish check" + info dot under the list controls, polls the job, shows counts
+  and links. NOT run end to end yet; needs the BCC restart. Harvest wait is RANDOM (0.5x-1.5x,
+  c6deb14). Site-icon fill finished: 517 of 543 publishers have an icon (59 via the paid fetch).

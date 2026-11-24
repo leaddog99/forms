@@ -49,6 +49,13 @@
     .d-fetch .d-lost li{ padding:6px 0; border-top:1px solid var(--ed-hairline-soft); display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
     .d-fetch .d-lost .h{ font-weight:500; }
     .d-fetch .d-lost .w{ color:var(--muted); }
+    /* On-demand dish check, under the list controls */
+    .d-check{ margin:0 0 12px; flex:0 0 auto; }
+    .d-check-row{ display:flex; gap:8px; align-items:center; }
+    .d-check-row .ed-btn{ flex:1; font-size:.9em; padding:8px 11px; border-radius:8px; }
+    .d-check-row .ed-btn:disabled{ opacity:.6; cursor:default; }
+    .d-check-status{ margin-top:8px; font-size:.78em; line-height:1.4; color:var(--muted); }
+    .d-check-status a{ color:var(--accent-dark); }
     /* Sortable stat header over the winners/cohort lists */
     .t10-sorthead{ display:flex; align-items:baseline; padding:2px 11px 6px; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
     .t10-sorthead-legend{ font-size:.72rem; letter-spacing:0; text-transform:none; }
@@ -89,6 +96,17 @@
         </select>
       </div>
 
+      <!-- ON-DEMAND DISH CHECK (curator 2026-11-24): the nightly rematch + holes
+           report, now, with their emails. A catalogue-wide action, so it sits with
+           the list controls, not on one dish's record. -->
+      <div class="d-check" id="dishCheck">
+        <div class="d-check-row">
+          <button type="button" class="ed-btn" id="dishCheckBtn">Run dish check</button>
+          <button type="button" class="info-dot" data-info-title="Run dish check" data-info="Runs the two nightly dish jobs now, as one job:<br><br><b>1. Rematch</b> — re-scores every recipe against the dish catalogue and moves the ones whose best dish has changed.<br><b>2. Holes report</b> — lists the recipes no dish fits and the missing dishes they name.<br><br>Each sends its email when it finishes. Free: no search or model calls. About two minutes. The rematch that runs by itself after you create a dish does not email; this one and the nightly run do.">i</button>
+        </div>
+        <div class="d-check-status" id="dishCheckStatus" hidden></div>
+      </div>
+
       <div class="ed-legend">
         <span><i class="d ok"></i>fresh</span>
         <span><i class="d warn"></i>due / error</span>
@@ -107,6 +125,54 @@
     const $ = (s) => document.querySelector(s);
 
     LibraryShell.initNav({ currentPage: 'dishes' });
+
+    // ---- On-demand dish check: POST /dishes/run-check, then poll the job. ----
+    (function(){
+      const btn = $('#dishCheckBtn'), box = $('#dishCheckStatus');
+      if (!btn) return;
+      const say = (html) => { box.hidden = false; box.innerHTML = html; };
+      const logLink = (j) => j && j.log_filename
+        ? ` <a href="/logs/${encodeURIComponent(j.log_filename)}" target="_blank" rel="noopener">job log</a>` : '';
+      async function watch(jobId){
+        btn.disabled = true; btn.textContent = 'Checking…';
+        for (;;){
+          await new Promise(r => setTimeout(r, 4000));
+          let j = null;
+          try { const r = await fetch(`/jobs/${jobId}`); if (r.ok) j = await r.json(); } catch {}
+          if (!j) continue;
+          if (j.status === 'queued' || j.status === 'running'){
+            say(`Job #${jobId} is ${LibraryShell.escapeHtml(j.status)}: rematch first, then the holes report.`);
+            continue;
+          }
+          btn.disabled = false; btn.textContent = 'Run dish check';
+          if (j.status !== 'success'){
+            say(`Job #${jobId} ended as <b>${LibraryShell.escapeHtml(j.status)}</b>.${logLink(j)}`);
+            return;
+          }
+          let res = j.result; try { if (typeof res === 'string') res = JSON.parse(res); } catch {}
+          res = res || {}; const g = res.gap_report || {};
+          say(`Done (job #${jobId}). <b>${res.flagged_moves ?? 0}</b> move(s) to check` +
+              (res.held_moves ? `, ${res.held_moves} held` : '') +
+              ` · <b>${g.new_weak ?? 0}</b> new recipe(s) with no good dish · <b>${g.holes ?? 0}</b> hole(s). ` +
+              `The emails have been sent. <a href="/forms/dish_coverage.html">Coverage &amp; Holes</a>${logLink(j)}`);
+          return;
+        }
+      }
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const r = await fetch('/dishes/run-check', { method: 'POST' });
+          const data = await r.json().catch(() => ({}));
+          if (r.status === 409 && data.job_id){ say(`A rematch is already running (job #${data.job_id}); watching it.`); watch(data.job_id); return; }
+          if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+          say(`Started job #${data.job_id}.`);
+          watch(data.job_id);
+        } catch (e){
+          btn.disabled = false;
+          say(`Could not start: ${LibraryShell.escapeHtml(e.message || String(e))}`);
+        }
+      });
+    })();
     const nav = LibraryShell.initEditorNav({
       backButton: '#edBack', scrim: '#edScrim',
       listLabel: 'Dishes', listMode: 'docked', shellWidth: 1200,

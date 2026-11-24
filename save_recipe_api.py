@@ -3899,6 +3899,28 @@ async def dish_translate_query_endpoint(request: Request):
             "language": _tr.language_name(hl), "changed": changed}
 
 
+@app.post("/dishes/run-check")
+def dish_run_check_endpoint(request: Request):
+    """The curator's ON-DEMAND dish check (2026-11-24): the full rematch, then the
+    holes report, each with its email - what the two nightly jobs do, now, as one
+    job with one log. Free (no model or search calls). Refused while a rematch is
+    already in flight, like every other rematch door."""
+    _require_perm(request, "manage_dishes")
+    with _db() as conn:
+        existing = jobs_lib.find_in_flight_for_entity(conn, "dish-rematch:all")
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "a dish rematch is already running", "job_id": existing["id"],
+                "status": existing["status"], "status_url": f"/jobs/{existing['id']}"})
+        job_id = jobs_lib.enqueue_job(
+            conn, type="dish_rematch",
+            params={"notify": True, "gap_report": True, "log_label": "dish-check"},
+            entity_ref="dish-rematch:all")
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued", "status_url": f"/jobs/{job_id}",
+            "stream_url": f"/jobs/{job_id}/stream"}
+
+
 @app.get("/dishes/gap-report")
 def dish_gap_report_endpoint(request: Request, min_group: int = 3, limit: int = 100):
     """The weakest-link holes (input/pipeline/dish_gaps.py) for the coverage
@@ -4400,7 +4422,13 @@ async def create_dish_endpoint(request: Request):
             try:
                 existing = jobs_lib.find_in_flight_for_entity(conn, "dish-rematch:all")
                 if not existing:
-                    job_id = jobs_lib.enqueue_job(conn, type="dish_rematch", params={},
+                    # notify=False: this run's flagged moves go to its log, not to
+                    # the curator's inbox. Ten dishes created the morning of
+                    # 2026-11-24 sent ten emails, each repeating the same three
+                    # held moves. The nightly run and the Dishes page's "Run dish
+                    # check" still email.
+                    job_id = jobs_lib.enqueue_job(conn, type="dish_rematch",
+                                                  params={"notify": False},
                                                   entity_ref="dish-rematch:all")
                     _spawn_job_runner(job_id)
                     created["rematch_job_id"] = job_id
@@ -9437,12 +9465,18 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
             print(f"[REMATCH] flag {f['table']} {f['id']} {f['recipe']!r}: {f['rung']} "
                   f"{f['from']!r} -> {f['to']!r} | {'; '.join(f['reasons'])}")
         _subj, _body = _dm.flag_digest(all_flags)
-        try:
-            _html = _dm.flag_digest_html(all_flags)
-        except Exception as e:  # noqa: BLE001 - the text notice still goes
-            print(f"[REMATCH] html notice failed, sending text only: {type(e).__name__}: {e}")
-            _html = None
-        alerts.alert_curator(_subj, _body, html=_html)
+        # Email from the nightly run and the on-demand dish check only. A run
+        # started by a dish create carries notify=False (see create_dish_endpoint).
+        if (job.get("params") or {}).get("notify", True) in (False, 0, "false", "False"):
+            print(f"[REMATCH] {len(all_flags)} flagged move(s) listed above; no email "
+                  f"(this run followed a dish create - the nightly run reports them)")
+        else:
+            try:
+                _html = _dm.flag_digest_html(all_flags)
+            except Exception as e:  # noqa: BLE001 - the text notice still goes
+                print(f"[REMATCH] html notice failed, sending text only: {type(e).__name__}: {e}")
+                _html = None
+            alerts.alert_curator(_subj, _body, html=_html)
     # Rows moved between dishes — the stored card thumbnails may point at
     # recipes that left. Full sweep (~300ms nightly), prints what changed.
     try:
@@ -9468,6 +9502,14 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
         summaries["dish_story"] = {k: len(v) for k, v in _st.items()}
     except Exception as e:  # noqa: BLE001
         print(f"[REMATCH] dish story fill failed (non-fatal): {e}")
+    summaries["flagged_moves"] = len(all_flags)
+    summaries["held_moves"] = sum(1 for f in all_flags if f["reasons"][0].startswith("held"))
+    # ON-DEMAND DISH CHECK (POST /dishes/run-check): the holes report follows the
+    # rematch in the same job, so it reads the catalogue as the rematch left it.
+    if (job.get("params") or {}).get("gap_report"):
+        print("\n[DISH-CHECK] rematch done - now the holes report")
+        summaries["gap_report"] = await _handle_dish_gap_report_job(
+            {"id": job.get("id"), "params": {"adhoc": True}})
     return summaries
 
 
@@ -9613,7 +9655,9 @@ async def _handle_dish_gap_report_job(job: dict) -> dict:
     # came close enough to, and the dishes they say they are that the catalog
     # lacks. One email, only when the window has such rows; the banner lands in
     # the log either way through alert_curator.
-    if rep.get("new_weak"):
+    # An on-demand check (adhoc) always reports: the curator asked for it, and the
+    # standing holes are worth the mail even when nothing new fell short.
+    if rep.get("new_weak") or p.get("adhoc"):
         from input.pipeline import alerts
         _subj, _body = dish_gaps.digest(rep)
         try:
