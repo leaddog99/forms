@@ -1049,7 +1049,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
               f"(about {int(_wait * max(0, len(plan) - 1) / 60)} min of waiting "
               f"for {len(plan)} page(s))", flush=True)
     for k, (i, e, _render_now) in enumerate(plan):
-        if _wait and k > 0 and _last_src != "cache":
+        if _wait and k > 0 and "cache" not in (_last_src or ""):   # source is "page-cache"
             _until = time.monotonic() + _wait
             while True:
                 _left = _until - time.monotonic()

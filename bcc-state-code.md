@@ -13253,3 +13253,14 @@ a scheduled job is added, name folding changes.
   THE TWO EMAILS are two jobs: `dish_gap_report` (daily 09:00 UTC, has the holes) and `dish_rematch`
   (nightly AND after each dish create/refresh: 10 mails the morning of 11-24, each repeating the
   same 3 held moves). Merging or quieting them is undecided.
+* **2026-11-24 - form search options checked on Brave** (live, ~45 requests, script in scratchpad).
+  HOLD: `site:host`, `site:gr`, `"exact"`, `-word`, `-site:host`, `A|B`, parentheses, and every
+  country+language pair stored on dish lines except Peru. DO NOT HOLD: (1) `-youtube.com` written
+  as a bare word (Chicken Stew's line) is read as a search FOR those sites: 20/20 results on them;
+  use `-site:`. (2) country `pe` is not on Brave's list; the kit dropped the language with it -
+  FIXED in the kit (drops the country, keeps the language; 25 tests). DEPTH: a `site:` search runs
+  dry near 40 results (bostonglobe 41 of 50, smittenkitchen 38 of 100); an open dish query gave 60
+  of 60 and 120 of 200. Stored maxima (dish n=60, publisher depth 5 pages) are inside that, but
+  publisher depth above 4 pages buys nothing. NOT checked: whether country alone changes ranking
+  for an English line (gr+en: accepted, 0 of 20 on .gr). Form labels still say "Google".
+  Wait option: a page-cache hit was still waited for (source is "page-cache", not "cache") - fixed.
