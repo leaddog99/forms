@@ -57,6 +57,7 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("domain-exclude",    "is_recipe",  False),   # curator per-domain exclude
     ("aggregator-host",   "disallowed", False),   # curator: thin-wrapper index, content lives elsewhere
     ("collection-title",  "is_recipe",  False),   # it IS a roundup/listicle
+    ("recipe-card-missing", "is_recipe", False),  # the page shows a dead plugin shortcode, no recipe
     ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope (legacy)
     ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe
     ("filter-curator",    "prefilter",  False),   # candidate-filter condition, curator-authored

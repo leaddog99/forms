@@ -79,7 +79,7 @@ from input.pipeline.validators import (is_recipe, score_recipe_text,          # 
                                        score_recipe_text_lang, recipe_phrase_lang_available,
                                        lang_recipe_threshold, score_recipe_bilingual,
                                        normalize_lang, instance_base_language,
-                                       has_recipe_structure)
+                                       has_recipe_structure, dead_recipe_card)
 
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
@@ -1215,6 +1215,20 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             kept.append(e)
             lang_tag = f" [{lang_code}]" if is_non_english(lang_code) else ""
             print(f"{_dl} KEEP json-ld   {url}{lang_tag}")
+            continue
+
+        # RECIPE CARD MISSING: the page shows a recipe plugin's unrendered
+        # shortcode where the recipe should be (validators.dead_recipe_card). No
+        # structured data either (the branch above), so there is no recipe on
+        # this page to extract, whatever words the story text contains. A FACT
+        # about the page, not an inference: not offered for reconsideration.
+        _dead = dead_recipe_card(text)
+        if _dead:
+            e["recipe_score"] = 0
+            e["jsonld_recipe"] = False
+            e["_dropped_reason"] = f"recipe-card-missing: {_dead[:60]}"
+            dropped.append(e)
+            print(f"{_dl} DROP no-card  {_dead[:40]}  {url}")
             continue
 
         # No JSON-LD. Score by the EFFECTIVE language (_eff_lang: domain language for a

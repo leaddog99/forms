@@ -13296,3 +13296,14 @@ a scheduled job is added, name folding changes.
   Fried Catfish, Ambrosia Salad, Clams Casino, Tofu Stir Fry - two default lines each, download 40,
   keep 10, review 180. Fried Catfish tripped the duplicate gate's "look" tier against Fried Chicken
   (4 of 4, distance 0.71) and was created anyway. One rematch (no email) then five refreshes queued.
+* **2026-11-24 - atreatsaffair.com: the site is broken, not our extraction.** Read from our page
+  cache (no new requests): 49 of 68 pages show a dead recipe-card shortcode (`[mpprecipe-recipe:N]`)
+  and no recipe; 5 send the reader to another site; 7 hold a real recipe. The structure gate had
+  KEPT 26 dead-card pages (story text says "ingredients"/"method"). NEW CHECK
+  `validators.dead_recipe_card` + a `DROP no-card` branch in `_is_recipe_filter` (after the JSON-LD
+  keep, before the structure gate; reason `recipe-card-missing`, not overturnable). Replay: 50
+  dropped as no-card, 9 no-struct, 10 kept. False alarms on 1,500 other cached pages: 0.
+  Job 3173 cancelled at 69/118 (nothing stored). Domain added to `disallowed_domains` on the
+  curator's instruction, with a note on its record. THE WAIT TEST: 60 fresh pages in a row came
+  back direct with a 60 s wait; without it the site shut us out after 3. Wait is now random.
+* New-dish default kept winners 15 -> 10 (c6921e8). Memory: queue a batch of jobs up front.

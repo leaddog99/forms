@@ -226,6 +226,26 @@ def recipe_sections(lang: str) -> dict:
     return (data.get("sections") if data else {}) or {}
 
 
+# An UNRENDERED recipe-card placeholder in the page's visible text: the site once
+# used a recipe-card plugin, the plugin is gone, and the post now shows the
+# plugin's shortcode where the ingredients and method used to be.
+# atreatsaffair.com, 2026-11-24 (job 3173): 49 of 68 pages read carried
+# "[mpprecipe-recipe:590]" and no recipe; 26 of them passed the structure gate
+# because the story text happens to say "ingredients" and "method" somewhere.
+# Only shortcodes of known recipe-card plugins: a bracketed word in prose
+# ("[sic]", "[1]") never matches.
+_DEAD_RECIPE_CARD = re.compile(
+    r"\[\s*(?:mpprecipe-recipe|amd-zlrecipe-recipe|zlrecipe|yumprint-recipe|wprm-recipe|"
+    r"tasty-recipe|ultimate-recipe|cooked-recipe|gmc_recipe|easyrecipe|recipe-card)"
+    r"(?:\s*[:=]\s*\"?\d+\"?|\s+[^\]]{0,80})?\s*\]", re.I)
+
+
+def dead_recipe_card(text: str) -> str:
+    """The unrendered recipe-card shortcode found in `text`, or '' when there is none."""
+    m = _DEAD_RECIPE_CARD.search(text or "")
+    return m.group(0) if m else ""
+
+
 def has_recipe_structure(text: str, base_lang: str, page_lang: str = None) -> bool:
     """True when `text` has BOTH an ingredients-section marker AND a method-section marker,
     in the base language OR the page language, matched accent-insensitively. This is the
