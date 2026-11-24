@@ -13307,3 +13307,9 @@ a scheduled job is added, name folding changes.
   curator's instruction, with a note on its record. THE WAIT TEST: 60 fresh pages in a row came
   back direct with a 60 s wait; without it the site shut us out after 3. Wait is now random.
 * New-dish default kept winners 15 -> 10 (c6921e8). Memory: queue a batch of jobs up front.
+* **2026-11-24 - EXPERIMENT: Moz on video pages.** 26 YouTube watch addresses (9 from Mapo Tofu
+  #3176 + the ledger's written-recipe videos, 0 to 14,505 views a day, up to 56 M views): Moz
+  returned NO data for 24 (http_code 0) and a 302 with no score for 2 (The Stay At Home Chef, Get
+  Curried). Scored: 0 of 26. Moz cannot rank the video lane; views per day stays the order.
+  Script + raw result: scratchpad moz_videos.py / moz_videos.json. Not tried: youtu.be or channel
+  addresses.
