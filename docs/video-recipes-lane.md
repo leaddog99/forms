@@ -266,8 +266,7 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    announcement), 1 fetched, kept as a recipe, scored, cut on OU. Only the FIRST
    qualifying link of a description is taken. `via_video` on a saved row is not
    yet exercised.
-   STILL TO DO in step 3: decide whether
-   `ingredients` is admitted (it needs the transcript for the method); stamp
+   `ingredients` ADMITTED 2026-11-24 (see step 4). STILL TO DO in step 3: stamp
    the channel's standing.
 4. **BUILT 2026-11-24 for the `description` class.** After a dish refresh saves
    its web winners, `_seat_video_lane` (save_recipe_api.py) extracts and saves up
@@ -282,6 +281,24 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    video. A video already in the library under other ownership is left alone and
    takes no seat. First run, Mapo Tofu: 4 admitted, 3 seated (616, 160 and 130
    views a day), rows class `video`.
+   INGREDIENTS CLASS + FLOOR (2026-11-24). `ingredients` videos (list written,
+   method spoken) are admitted beside `description` (`_VIDEO_ADMITTED` in
+   build_query_batch.py) and share the same seats in the same views-per-day
+   order. The seat's extraction climbs the ladder with the captions (rung 1b);
+   if it lands on any other rung the video is passed over ("spoken method not
+   read"). The saved row says which kind it is: `_master.video.class` and, for a
+   spoken method, `_master.video.method_from = "captions"` (the method is our
+   reading of speech, not the creator's text). FLOOR: `video_min_views_per_day`
+   (System -> Limits, default 10; 0 = off) - a video under it, or with no views
+   stated, takes no seat; the retire rule counts only videos over the floor.
+   Why 10: of 49 recipe videos in the ledger 14 were under 10 a day and the next
+   lowest was 27. Five-video transcript probe before building: every one gave a
+   complete quantified method (English, Hindi, French auto-captions); one was
+   the wrong dish and the right-dish guard catches it (0.98 from Butter Chicken).
+   Runs: Sweet Potato Casserole seated 3/3 (two spoken at 24,102 and 1,612 a
+   day, one written at 951); Butter Chicken dropped 3 under the floor and
+   retired the two unwatched rows seated earlier that day.
+   NOT VERIFIED: any spoken method against what is actually said in the video.
    NOT BUILT in step 4: a per-dish `video_seats` control (it needs a column on
    `dishes`, the table with the vec-trigger caution); the `dish_video` ledger
    membership and the dish form's video block (the seats are visible only in the

@@ -8746,9 +8746,15 @@ def messages_endpoint(category: str, order: str = "", count: int = 0, fallback: 
 
 
 async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dict:
-    """The video lane's SEATS (docs/video-recipes-lane.md step 4, built 2026-11-24
-    for the `description` class only: videos whose description carries a whole
-    written recipe).
+    """The video lane's SEATS (docs/video-recipes-lane.md step 4, built 2026-11-24).
+    Two classes are admitted: `description` (the whole recipe is written under
+    the video) and `ingredients` (the ingredient list is written, the method is
+    spoken and is read from the captions - the saved row's `_master.video.class`
+    says which, and `method_from: "captions"` marks the second kind).
+
+    FLOOR: a video under `video_min_views_per_day` (System -> Limits, default
+    10) takes no seat, and neither does one whose page does not state its
+    views - an unwatched video is not a find. 0 turns the floor off.
 
     Runs after the web winners are saved and never competes with them: up to
     `video_seats` (System -> Limits, default 3, cap 10) admitted videos are
@@ -8757,28 +8763,45 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
     save gate and right-dish guard as a web winner; a failure backfills from the
     next admitted video. The dish's previous video rows are retired first, like
     the web lane's, but only when this run admitted at least one video - a run
-    in which the video read found nothing leaves last time's videos alone.
+    in which the video read found nothing over the floor leaves last time's
+    videos alone.
 
     A video already in the library under other ownership (a curator's save,
     another dish) is left exactly as it is and takes no seat.
-    -> {results, read, admitted, seats, seated, saved, dropped}"""
+    -> {results, read, admitted, floor, below_floor, seats, seated, saved, dropped}"""
     lane = lane or {}
     admitted = list(lane.get("admitted") or [])
     out = {"results": lane.get("results", 0), "read": lane.get("read", 0),
-           "admitted": len(admitted), "seats": 0, "seated": 0, "saved": [], "dropped": []}
+           "admitted": len(admitted), "floor": 0.0, "below_floor": 0,
+           "seats": 0, "seated": 0, "saved": [], "dropped": []}
     try:
         from input.pipeline import system_config as _vcfg
         seats = max(0, min(10, int(_vcfg.get_setting("video_seats", 3) or 0)))
+        floor = max(0.0, float(_vcfg.get_setting("video_min_views_per_day", 10) or 0))
     except Exception:
-        seats = 3
-    out["seats"] = seats
+        seats, floor = 3, 10.0
+    out["seats"], out["floor"] = seats, floor
+    if floor > 0:
+        _keep = []
+        for a in admitted:
+            _fv = (a.get("_video") or {}).get("views_per_day")
+            if _fv is not None and _fv >= floor:
+                _keep.append(a)
+                continue
+            out["below_floor"] += 1
+            _why = (f"below the floor: {_fv:.1f} views/day (floor {floor:g})" if _fv is not None
+                    else f"below the floor: views not stated (floor {floor:g})")
+            out["dropped"].append({"url": a["url"], "reason": _why})
+            print(f"[REFRESH-DISH] VIDEO DROP {_why}  {a['url']}")
+        admitted = _keep
     if not admitted or seats <= 0:
         if lane.get("results"):
             print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {lane.get('results')} video result(s), "
-                  f"{len(admitted)} with a written recipe, {seats} seat(s) - nothing to seat")
+                  f"{out['admitted']} with a recipe, {out['below_floor']} below the floor of "
+                  f"{floor:g} views/day, {seats} seat(s) - nothing to seat")
         return out
-    print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {len(admitted)} video(s) with a written "
-          f"recipe for {seats} seat(s), most views per day first")
+    print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: {len(admitted)} video(s) with a recipe "
+          f"over the floor of {floor:g} views/day for {seats} seat(s), most views per day first")
     with _db() as conn:
         retired = dishes_lib.delete_master_rows_for_dish(conn, canonical_name, kind="video")
     if retired:
@@ -8817,6 +8840,15 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         if not ok:
             _drop(a, f"skip-thin: {reason}")
             continue
+        # INGREDIENTS CLASS: the method must have come from the captions beside
+        # the written ingredient list (ladder rung 1b). When the captions could
+        # not be read the ladder falls through to another rung (a link, a bare
+        # transcript) - that is not the recipe this video was admitted for.
+        _vclass = (a.get("_video") or {}).get("class")
+        _rung = ((recipe_dict.get("_source") or {}).get("capture") or {}).get("rung")
+        if _vclass == "ingredients" and _rung not in ("description+transcript", "description"):
+            _drop(a, f"spoken method not read (the captions gave {_rung or 'nothing'})")
+            continue
         # Right-dish guard, as for a web winner: far from the dish AND never names it.
         try:
             from input.pipeline import dish_match as _vdm
@@ -8845,6 +8877,9 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
             "video": {k: v for k, v in (a.get("_video") or {}).items() if v not in (None, "")},
             "google_rank": a.get("google_rank"),
         }
+        if _rung == "description+transcript":
+            # the method is OUR reading of what was said, not the creator's written text
+            payload["_master"]["video"]["method_from"] = "captions"
         payload["_skip_auto_enrich"] = True
         try:
             await asyncio.to_thread(_save_recipe_core, payload)
@@ -8860,9 +8895,11 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         _vpd = _v.get("views_per_day")
         _vtxt2 = f"{_vpd:,.0f} views/day" if _vpd is not None else "views not stated"
         print(f"[REFRESH-DISH] VIDEO SEAT {out['seated']}/{seats}  {_vtxt2}  "
+              f"{'spoken method' if _rung == 'description+transcript' else 'written recipe'}  "
               f"{(_v.get('channel') or '?')}  {(recipe_dict.get('name') or '')[:60]!r}  {url}")
     print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: seated {out['seated']}/{seats} "
-          f"from {len(admitted)} admitted; {len(out['dropped'])} passed over")
+          f"from {out['admitted']} admitted ({out['below_floor']} below the floor); "
+          f"{len(out['dropped'])} passed over")
     return out
 
 

@@ -356,9 +356,23 @@ SYSTEM_DEFAULTS: list[dict] = [
         "category": "Limits",
         "label": "Video seats per dish",
         "description": "After a dish refresh has saved its web winners, up to this many videos "
-                       "that carry a WRITTEN recipe in their description are extracted and saved "
-                       "as video recipes for the dish, most views per day first. They never take "
-                       "a web seat. Each costs one extraction, like a web page. 0 = keep none.",
+                       "that carry a recipe are extracted and saved as video recipes for the "
+                       "dish, most views per day first. Two kinds qualify: the whole recipe is "
+                       "written under the video, or the ingredient list is written and the method "
+                       "is spoken (read from the captions). They never take a web seat. Each "
+                       "costs one extraction, like a web page. 0 = keep none.",
+    },
+    {
+        "key": "video_min_views_per_day",
+        "value": 10,
+        "type": "int",
+        "category": "Limits",
+        "label": "Video floor: views per day",
+        "description": "A video with fewer views per day than this takes no video seat, however "
+                       "good its recipe; neither does one whose page does not state its views. "
+                       "Views per day = total views divided by days since it was published. "
+                       "Of the first 49 recipe videos read, 14 were under 10 a day and the next "
+                       "lowest was 27. 0 turns the floor off.",
     },
     {
         "key": "host_giveup_after",

@@ -302,6 +302,8 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int,
 
 
 _VIDEO_HOSTS = frozenset({"youtube.com", "youtu.be"})
+# The watch-page classes the video lane admits (docs/video-recipes-lane.md 4.1).
+_VIDEO_ADMITTED = frozenset({"description", "ingredients"})
 
 
 def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
@@ -310,9 +312,10 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
     Video results stay off the web lane (youtube.com is a blocked host and
     _filter_disallowed drops them next, as before). Here each one's WATCH PAGE
     is read - no transcript, nothing paid - and classed by what it holds:
-    a written recipe (the only class the lane will admit), an ingredient list
-    with a spoken method, a link to a written recipe elsewhere, a transcript
-    only, or nothing. Every result goes to the acquisition ledger with its
+    a written recipe (admitted to the lane), an ingredient list with a spoken
+    method (admitted since 2026-11-24: the method is read from the captions
+    when the video is seated), a link to a written recipe elsewhere (that page
+    goes to the web lane), a transcript only, or nothing. Every result goes to the acquisition ledger with its
     class, admitted or not, plus the page's view count and publish date and
     the views-per-day they give, so the classes can be counted before anyone
     decides seats or rank.
@@ -357,7 +360,7 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
                  "views_per_day": vpd,
                  "views_per_day_method": _ys.VIEWS_PER_DAY_METHOD if vpd is not None else None,
                  "link": res.links[0] if (cls == "link" and res.links) else None}
-        _acq.record_video(url, cls, admitted=(cls == "description"), ms=t.ms,
+        _acq.record_video(url, cls, admitted=(cls in _VIDEO_ADMITTED), ms=t.ms,
                           notes=_json.dumps({k: v for k, v in notes.items() if v not in (None, [], "")},
                                             ensure_ascii=False))
         out["read"] += 1
@@ -373,10 +376,13 @@ def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
                 "_lines": e.get("_lines") or [], "_queries": e.get("_queries") or [],
                 "video": _ys.canonical_url(res.video_id) if getattr(res, "video_id", "") else url,
                 "channel": res.channel or None, "views_per_day": vpd})
-        if cls == "description":
-            # ADMITTED to the video lane (step 4, 2026-11-24): the only class
-            # that carries a whole written recipe. The refresh handler seats
-            # these; this function still changes no web candidate.
+        if cls in _VIDEO_ADMITTED:
+            # ADMITTED to the video lane (step 4, 2026-11-24): `description`
+            # carries a whole written recipe; `ingredients` carries the written
+            # ingredient list and a spoken method, which the seat reads from
+            # the captions (ladder rung 1b). The refresh handler seats these;
+            # this function still changes no web candidate. The class rides on
+            # `_video.class` so the saved row says which kind it is.
             # The canonical watch address: a result link can carry &t= or a
             # playlist, and the saved row must key on the video alone.
             out["admitted"].append({
@@ -2071,7 +2077,8 @@ def build_batch(
         _order = ("description", "ingredients", "link", "transcript", "none", "unreadable")
         _split = ", ".join(f"{_vid['classes'][c]} {c}" for c in _order if _vid["classes"].get(c))
         print(f"      [video] {_vid['results']} video result(s), {_vid['read']} read: {_split or 'none read'}"
-              f" - {len(_vid.get('admitted') or [])} carry a written recipe and go to the video lane")
+              f" - {len(_vid.get('admitted') or [])} carry a recipe (written, or written ingredients"
+              f" with a spoken method) and go to the video lane")
 
     print(f"\n[2/7] filter_disallowed (domain + URL-path blacklist)")
     entries, dropped_disallowed = _filter_disallowed(entries)

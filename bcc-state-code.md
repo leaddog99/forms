@@ -13313,3 +13313,21 @@ a scheduled job is added, name folding changes.
   Curried). Scored: 0 of 26. Moz cannot rank the video lane; views per day stays the order.
   Script + raw result: scratchpad moz_videos.py / moz_videos.json. Not tried: youtu.be or channel
   addresses.
+* **2026-11-24 - Butter Chicken on the new search engine (#3183): 7 video results** against 111 on
+  Google (#3070). 3 written, 1 ingredients, 2 link, 1 spoken only. Web 15/15.
+* **2026-11-24 - Transcript probe (5 ingredients-class videos, real extractor, nothing saved).** All
+  five gave a complete quantified method from auto-captions (English x3, Hindi, French): ingredients
+  named in the steps 10/11, 28/28, 19/21, 13/14, 19/19. One (bharatzkitchen, found under Butter
+  Chicken) is a garlic mushroom recipe. No step was checked against the video itself.
+* **2026-11-24 - VIDEO LANE: ingredients class admitted + views-per-day floor.**
+  `_VIDEO_ADMITTED = {description, ingredients}` (intake/build_query_batch.py); `_seat_video_lane`
+  (save_recipe_api.py) requires rung `description+transcript` for an ingredients video and stamps
+  `_master.video.method_from = "captions"`. New setting `video_min_views_per_day` (Limits, default
+  10, 0 = off): under it, or views not stated, no seat; retire rule now counts only videos over
+  the floor. Seat runs from the ledger (scratchpad video_seat_test.py): Sweet Potato Casserole 3/3
+  (rows 22572-22574: two spoken, one written); Butter Chicken 3 dropped under the floor, the two
+  unwatched rows from #3183 (22570, 22571) retired, 0 seated (its one popular video is already in
+  the library). Wrong-dish guard on the mushroom video: "off-dish: 0.98 from 'Butter Chicken'".
+  Not run: a full dish refresh through the new code; lane tests still 24 pass (no new test for the
+  floor). Needs a restart of BCC on MARLEY only for the new setting to show in the System form;
+  refresh jobs run out of process and already use it.
