@@ -8751,6 +8751,10 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       document.getElementById("template").value = r.template || "classic";
       const _src = r._source || {};
       _loadedSource = { ..._src };
+      // Carry the original capture through to the save. Without this a photo
+      // extract saved `sourceImage: []` (found 2026-11-25: four photo recipes).
+      _loadedSourceImage = Array.isArray(r.sourceImage) ? [...r.sourceImage]
+                         : (r.sourceImage ? [r.sourceImage] : []);
       document.getElementById("sourceTitle").value = _src.origin || "";
       document.getElementById("siteName").value = _src.siteName || "";
       document.getElementById("originalUrl").value = _src.originalUrl || "";
