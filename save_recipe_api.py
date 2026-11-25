@@ -14406,10 +14406,9 @@ async def extract_from_image_endpoint(
         recipe["id"] = new_recipe_id
         # Retain the ORIGINAL captured image as the recipe's sourceImage
         # (provenance + a reference to validate our extraction against — e.g.
-        # handwritten margin notes), and DEFAULT the hero to it when the recipe
-        # has none. Stored via the no-crop hero path so the whole page stays
-        # legible; the user can swap the hero later in the editor. Best-effort —
-        # a failure here must never fail the extraction.
+        # handwritten margin notes). Stored via the no-crop hero path so the
+        # whole page stays legible. Best-effort — a failure here must never
+        # fail the extraction.
         try:
             from input.pipeline.image_pipeline import standardize_and_meta
             processed, _smeta = standardize_and_meta(content, source_url=None, localized=True)
@@ -14422,8 +14421,19 @@ async def extract_from_image_endpoint(
                 src_name = f"upload_{uuid.uuid4()}{file_ext}"
                 src_url = _store().put(f"heroes/{src_name}", content)
             recipe["sourceImage"] = [src_url]
-            if not recipe.get("image"):
-                recipe["image"] = [src_url]  # hero defaults to the original; editable later
+            # The capture is a picture of the PAGE, not of the dish, so it goes
+            # in the Screenshot box and the hero is left empty for a real dish
+            # image (curator, 2026-11-25; until then the hero defaulted to it).
+            # With a source_url the image is the bookmarklet's fallback capture
+            # and the real page screenshot is taken separately, so leave that
+            # slot alone.
+            if not source_url:
+                _isrc = recipe.get("_source")
+                if not isinstance(_isrc, dict):
+                    _isrc = {}
+                    recipe["_source"] = _isrc
+                if not (_isrc.get("pageScreenshot") or "").strip():
+                    _isrc["pageScreenshot"] = src_url
         except Exception as e:
             print(f"[EXTRACT] sourceImage persist skipped: {e}")
         return _extract_response(

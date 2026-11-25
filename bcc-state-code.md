@@ -13392,3 +13392,11 @@ a scheduled job is added, name folding changes.
   other people's captions in any case.
 * **2026-11-24 - docs/research/video-recipes-white-paper-2026-11-24.md** - plain-language living paper
   on all of the above, with a change log.
+* **2026-11-25 - Photo extract: the page photo goes in the Screenshot box, not the hero (curator).**
+  `/extract-from-image` (save_recipe_api.py) no longer defaults `image` to the uploaded photo. With no
+  source_url it stamps `_source.pageScreenshot` with the stored photo (still also `sourceImage`); the
+  hero is left empty for a real dish image. With a source_url (bookmarklet fallback capture) the
+  screenshot slot is left for the real page capture. Compiled, BCC on MARLEY restarted 5:45:34 PM.
+  NOT tested with a live photo. Existing photo recipes are unchanged (hero still the page photo).
+  OPEN: multi-photo capture tray (roadmap item 3) is NOT built - one image per extract; PDF is the
+  only multi-page door. OPEN: cropping the dish photo out of the page for the hero.
