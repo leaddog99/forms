@@ -172,6 +172,18 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Higher = sharper + bigger.",
     },
     {
+        "key": "photo_dish_crop",
+        "value": True,
+        "type": "bool",
+        "category": "Images",
+        "label": "Cut the dish photo out of a photographed page",
+        "description": "When a recipe is extracted from a photo of a cookbook page, look for "
+                       "the printed photograph of the finished dish and use it as the recipe's "
+                       "main image (one extra model call per photo). A chef's portrait or a "
+                       "partly visible photo is never used. Off = the main image is left empty. "
+                       "The page photo itself always goes in the Screenshot box.",
+    },
+    {
         "key": "image_hero_max_px",
         "value": 1600,
         "type": "int",

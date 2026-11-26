@@ -29,6 +29,32 @@ read-only export script. Commands the curator runs are headed with the machine.*
    applied); the critic checks; the curator approves; the data votes afterwards (near
    ties at the judge, recurring "none" names, search demand and publisher count).
 
+## 0a. The seven calls on the draft tree (2026-11-25)
+
+The draft tree (`docs/research/soups-stews-knowledge-tree-2026-11-20.*`, Part 6) left seven
+judgement calls open. The curator delegated them on 2026-11-25 ("you make them... i trust
+your judgement"), so these are Claude's calls made on that authority, and the curator can
+overturn any of them. The dated draft files are left as they were written; these changes are
+to be applied when the tree is next built or handed to DPI. Net leaf count stays 241.
+
+1. **Noodle soups stay in this chapter** as their own group. A cook looking for pho thinks
+   "soup"; no separate Noodle Soups tree.
+2. **Turkey Chili is its own dish.** This sets the rule for the variant line: a name cooks
+   search for in its own right is a dish, even when it is strictly another dish on a
+   different protein. The same test applies to Chicken Chili and the like.
+3. **Shrimp and Corn Chowder becomes a variant of Corn Chowder** (leaf removed). It fails
+   the test Turkey Chili passes: nobody searches for it as a dish of its own.
+4. **Shrimp Gumbo and Seafood Gumbo are siblings** (Shrimp Gumbo restored as a leaf, removed
+   from Seafood Gumbo's aliases); Chicken and Sausage Gumbo stays as the third. This follows
+   the alias check of 11-19, which was made against real recipes. Of the seven, this is the
+   one that rests most on the curator's own knowledge of Louisiana cooking.
+5. **Pumpkin Soup and Butternut Squash Soup stay two dishes.** Each is searched by name; the
+   alias rule handles recipes that could be either.
+6. **Thai Red Curry moves to a Curries tree with Massaman**, but only once that tree exists.
+   Until then its 19 recipes and 22 weak leaners stay where they are.
+7. **Étouffée stays under Gumbo and Louisiana.** It is a stew by method and cooks look for
+   it beside gumbo, though it is served over rice.
+
 ## 1. What the pilot must answer
 
 The curator's question: how does a generated tree match the current dishes? Concretely:

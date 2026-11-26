@@ -132,6 +132,8 @@ _SOURCE_STATIC_SUBKEYS = frozenset({
                      # extract via input.pipeline.screenshot_pipeline.
                      # Survives claim/cache like the rest of the
                      # consent-given preview metadata.
+    "dishCrop",      # verdict of input.pipeline.dish_photo_crop on a photo
+                     # extract (found / complete / what / box / method).
     "originalLanguage", # ISO 639-1 of the source page when non-English
                      # (e.g. 'el' for Greek). Empty/absent for English
                      # pages. Set by the extraction-stage translation
@@ -444,6 +446,7 @@ class SourceInfo(BaseModel):
     # `recipe-screens/<recipe_id>-<sha8>.jpg` lets us trace files
     # back to recipes independently of the DB.
     pageScreenshot: Optional[str] = ""
+    dishCrop: Optional[dict] = None
     # === Translation provenance =====================================
     # When the source page is non-English, the recipe body fields are
     # the canonical English translation. These four keys carry the

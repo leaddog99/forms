@@ -14434,6 +14434,18 @@ async def extract_from_image_endpoint(
                     recipe["_source"] = _isrc
                 if not (_isrc.get("pageScreenshot") or "").strip():
                     _isrc["pageScreenshot"] = src_url
+                # Hero: the printed dish photograph, cut out of the page photo,
+                # when one is there and whole. Otherwise the hero stays empty.
+                from input.pipeline.system_config import get_setting as _gs
+                if not recipe.get("image") and _gs("photo_dish_crop", True):
+                    from input.pipeline.dish_photo_crop import crop_and_store
+                    _hero_url, _crop_info = await asyncio.to_thread(crop_and_store, processed or content)
+                    _isrc["dishCrop"] = {k: _crop_info.get(k) for k in
+                                         ("method", "model", "found", "complete", "what", "box", "reason")}
+                    if _hero_url:
+                        recipe["image"] = [_hero_url]
+                        if _crop_info.get("meta"):
+                            recipe["_imageMeta"] = _crop_info["meta"]
         except Exception as e:
             print(f"[EXTRACT] sourceImage persist skipped: {e}")
         return _extract_response(

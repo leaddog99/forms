@@ -13399,4 +13399,19 @@ a scheduled job is added, name folding changes.
   screenshot slot is left for the real page capture. Compiled, BCC on MARLEY restarted 5:45:34 PM.
   NOT tested with a live photo. Existing photo recipes are unchanged (hero still the page photo).
   OPEN: multi-photo capture tray (roadmap item 3) is NOT built - one image per extract; PDF is the
-  only multi-page door. OPEN: cropping the dish photo out of the page for the hero.
+  only multi-page door.
+* **2026-11-25 - DISH PHOTO CROP on photo extracts (input/pipeline/dish_photo_crop.py, new).** One
+  Opus vision call (forced tool) decides: dish photograph present? whole? where? A whole one is cut
+  out, stored as `heroes/dishcrop_*` and becomes `image`; a chef portrait, a sliver or nothing leaves
+  the hero empty. Verdict kept on `_source.dishCrop` (declared in recipe_model.py). Setting
+  `photo_dish_crop` (Images, default on). Wired into `/extract-from-image` only when there is no
+  source_url. Trial on four real pages: both models agreed on found/whole (1 whole, 1 sliver, 2 none,
+  portraits never picked); Sonnet cut the one real crop too narrow, Opus cut at the fold - ONE real
+  crop, thin evidence. NOT tested through the endpoint with a live photo.
+* **2026-11-25 - Form fix:** populateFormFromRecipe now carries `sourceImage` into the save (photo
+  extracts were saving `sourceImage: []`).
+* **2026-11-25 - Data repair, curator-approved: recipes 918, 919, 922, 925 (user 5).** Page photo
+  moved to `_source.pageScreenshot` + `sourceImage`; 925 hero = the salmon crop; 918/919/922 hero
+  emptied. Direct UPDATE of recipes.data; originals were saved to a scratch file first.
+* **2026-11-25 - Dish taxonomy: the seven Part 6 calls settled** (delegated to Claude by the curator);
+  recorded in docs/dish-taxonomy-pilot-soups-stews.md section 0a. Draft tree files not regenerated.
