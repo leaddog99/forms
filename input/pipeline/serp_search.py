@@ -683,9 +683,12 @@ def _brave(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
     title, rank}] in result order (plus `snippet`), `skip`-host rows flagged
     `blocked` and not counted toward `want`."""
     import searchkit
+    from input.pipeline import search_usage
     attempts, backoff = _serp_retry_cfg()
+    # Every request is counted (search_usage): the plan bills per request.
     cfg = searchkit.Config(api_key=_brave_key(), retries=attempts, backoff=backoff,
                            dry_pages=_serp_dry_cfg(),
+                           http_get=search_usage.counting_get("brave", searchkit.Config().http_get),
                            log=lambda line: print(line.replace("[search]", "[brave]", 1)))
     try:
         rows = searchkit.search(query, want=want, pages=pages, country=gl, lang=hl,

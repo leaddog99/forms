@@ -307,8 +307,18 @@ class _HostRun:
                       remaining URLs straight to Wayback (free, a few seconds,
                       and the only route that has ever worked on some hosts).
                       Any live success resets it.
+    unblocker_timed_out  a STATIC paid fetch of this host ran out its whole
+                      timeout. The site is not answering through the pool, and
+                      every further paid try costs the same 70 s to learn the
+                      same thing (iamgreek.nl, 2026-11-27: static, rendered and
+                      static again, 3.5 minutes on one candidate page). Paid
+                      fetches are skipped for the host for the rest of the run;
+                      a paid fetch that gets through clears it. A RENDERED
+                      fetch timing out does not set it: a render is ~3x slower
+                      and the static try after it can still get through.
     """
     unblocker_blocks: int = 0
+    unblocker_timed_out: bool = False
     rate_pauses: int = 0
     rate_spent: bool = False
     live_lost: int = 0
@@ -761,10 +771,19 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
                                 timeout=timeout, verify=False)
         except Exception as e:
             print(f"[unblocker] {provider} transport/account error for {url}: {e}")
+            if isinstance(e, requests.exceptions.Timeout) and not render:
+                st = _host_run(target)
+                with _RUN_LOCK:
+                    st.unblocker_timed_out = True
+                print(f"[unblocker] {target} timed out on a static paid fetch — skipping "
+                      f"paid fetches for this host for the rest of the run (fallback next)")
             return None, None
         if 200 <= resp.status_code < 300:
             _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
             _breaker_note(target, False, 0)     # pool works for this host → reset the breaker
+            st = _host_run(target)
+            with _RUN_LOCK:
+                st.unblocker_timed_out = False
             tag = f" (attempt {attempt + 1})" if attempt else ""
             print(f"[unblocker] {provider} fetched {url} LIVE{tag}")
             return (resp, {"source": "unblocker", "provider": provider, "render": bool(render)}), None
@@ -835,6 +854,10 @@ def _unblocker_attempt(url: str, timeout: int, render: bool):
     trip = cfg["circuit_trip"]
     if trip > 0 and _host_run(_host(url)).unblocker_blocks >= trip:
         print(f"[unblocker] circuit open for {_host(url)} — skipping unblocker, "
+              f"using fallback for {url}")
+        return None, None
+    if _host_run(_host(url)).unblocker_timed_out:
+        print(f"[unblocker] {_host(url)} timed out earlier this run — skipping unblocker, "
               f"using fallback for {url}")
         return None, None
     return _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render)

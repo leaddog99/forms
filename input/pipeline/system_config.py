@@ -371,6 +371,16 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "until the curator accepts it.",
     },
     {
+        "key": "dish_refresh_extract_workers",
+        "value": 3,
+        "type": "int",
+        "category": "Search",
+        "label": "Recipes a dish refresh extracts at the same time",
+        "description": "When a refresh saves its winners, this many pages are fetched, read and "
+                       "(for a foreign page) translated side by side. They are still judged and "
+                       "saved one at a time, in rank order. 1 = one page at a time, as before.",
+    },
+    {
         "key": "dish_title_screen",
         "value": "drop",
         "type": "string",

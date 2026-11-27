@@ -179,6 +179,14 @@ def scenarios() -> dict:
         raise requests.ConnectionError("proxy timeout")
     s["render: rendered fetch never reaches the site -> one static try"] = Sim(
         _always(403, ""), unblocker=_proxy_down, wayback=lambda u: "2026").run([(U + "a", RENDER)])
+    def _proxy_times_out(url):
+        raise requests.Timeout("read timeout=70")
+    s["a static paid fetch that times out is not paid for again this run"] = Sim(
+        _always(403, ""), unblocker=_proxy_times_out, wayback=lambda u: "2026").run(
+        [(U + "a", PAID), (U + "a", RENDER), (U + "b", PAID)])
+    s["a rendered paid fetch that times out still gets its one static try"] = Sim(
+        _always(403, ""), unblocker=_proxy_times_out, wayback=lambda u: "2026").run(
+        [(U + "a", RENDER), (U + "b", RENDER)])
     s["paid-first: unblocker returns a challenge stub"] = Sim(
         _always(429, ""), unblocker=_always(200, STUB), wayback=lambda u: "2026",
         paid_first={"site.test"}).run([(U + "a", {})])

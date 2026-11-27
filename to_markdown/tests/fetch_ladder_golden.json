@@ -446,6 +446,106 @@
    ]
   }
  ],
+ "a static paid fetch that times out is not paid for again this run": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:unblocker:lost",
+    "4:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost",
+    "2:unblocker:lost",
+    "3:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
+ "a rendered paid fetch that times out still gets its one static try": [
+  {
+   "url": "a",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "unblocker+render",
+    "unblocker",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:unblocker:lost",
+    "4:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  },
+  {
+   "url": "b",
+   "result": "returned wayback",
+   "requests": [
+    "direct:bot",
+    "direct:browser",
+    "wayback?",
+    "wayback"
+   ],
+   "ledger": [
+    "1:direct:lost:probe",
+    "2:unblocker_render:lost",
+    "3:unblocker:lost",
+    "4:wayback:ok:snapshot 2026"
+   ],
+   "slept": [
+    0
+   ]
+  }
+ ],
  "paid-first: unblocker returns a challenge stub": [
   {
    "url": "a",
