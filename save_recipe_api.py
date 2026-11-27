@@ -1483,7 +1483,20 @@ def init_db():
             # (feedback_alter_table_vec_triggers).
             for _tbl in ("master_recipes", "recipes"):
                 _fts = f"{_tbl}_fts"
-                _have = [r[1] for r in conn.execute(f"PRAGMA table_info({_fts})")]
+                # Opening a search index can fail for an instant while other
+                # processes are starting against the same file: nine dish
+                # refreshes launched together (2026-11-27) and two died right
+                # here with "vtable constructor failed: recipes_fts". Nothing is
+                # wrong with the index, so wait briefly and look again.
+                for _try in range(8):
+                    try:
+                        _have = [r[1] for r in conn.execute(f"PRAGMA table_info({_fts})")]
+                        break
+                    except sqlite3.OperationalError as _fts_e:
+                        if "vtable constructor failed" not in str(_fts_e) or _try == 7:
+                            raise
+                        print(f"[SETUP] {_fts}: busy at start ({_fts_e}); retry {_try + 1}")
+                        time.sleep(0.4 * (_try + 1))
                 if _have and _have != list(FTS_COLUMNS):
                     print(f"[SETUP] {_fts}: columns {_have} -> {list(FTS_COLUMNS)}, rebuilding")
                     conn.execute(f"DROP TABLE {_fts}")
