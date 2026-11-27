@@ -616,6 +616,12 @@ class FilterFetch(NamedTuple):
     lang: str = ""
     source: str = "direct"
     failure: Optional[str] = None
+    # The page's own title (og:title, else <title>) and its hreflang alternates
+    # {lang: url}. A SEMrush page export carries NO titles, so without the first
+    # the collection-title rule never saw a publisher harvest's pages; the second
+    # is how the harvest tells a recipe from its translation on the same site.
+    page_title: str = ""
+    alternates: Optional[dict] = None
 
     @classmethod
     def failed(cls, why: str) -> "FilterFetch":
@@ -685,8 +691,52 @@ def _fetch_for_filter(url: str, *, unblocker: bool = False,
         return FilterFetch.failed(f"parse failed — {type(ex).__name__}: {str(ex)[:100]}")
     # Carry the fetch SOURCE (direct | unblocker | wayback) so the candidate log
     # can show where each page's content actually came from.
+    try:
+        _ptitle, _alts = _page_title_and_alternates(resp.text, getattr(resp, "url", url) or url)
+    except Exception:
+        _ptitle, _alts = "", None
     return FilterFetch(ok=True, text=text, has_recipe_jsonld=jsonld,
-                       lang=lang, source=src)
+                       lang=lang, source=src, page_title=_ptitle, alternates=_alts)
+
+
+_OG_TITLE_RE = re.compile(
+    r"""<meta[^>]+property\s*=\s*["']og:title["'][^>]*>""", re.IGNORECASE)
+_META_CONTENT_RE = re.compile(r"""content\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.IGNORECASE)
+_HTML_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_ATTR_RE = re.compile(r"""([a-zA-Z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+
+
+def _page_title_and_alternates(html: str, base_url: str) -> tuple[str, Optional[dict]]:
+    """(title, {lang: absolute url}) from a page's <head>. Title is og:title when
+    present (it usually omits the site name), else <title>. Alternates are the
+    `<link rel="alternate" hreflang="..">` set: the publisher's own statement that
+    two URLs are the same page in different languages."""
+    import html as _html
+    from urllib.parse import urljoin
+    head = (html or "")[:400_000]
+    title = ""
+    m = _OG_TITLE_RE.search(head)
+    if m:
+        c = _META_CONTENT_RE.search(m.group(0))
+        if c:
+            title = c.group(1) or c.group(2) or ""
+    if not title:
+        m = _HTML_TITLE_RE.search(head)
+        if m:
+            title = m.group(1)
+    title = " ".join(_html.unescape(title or "").split())
+    alts: dict = {}
+    for tag in _LINK_TAG_RE.findall(head):
+        attrs = {k.lower(): (a or b or "") for k, a, b in _ATTR_RE.findall(tag)}
+        if "alternate" not in (attrs.get("rel") or "").lower():
+            continue
+        hl = (attrs.get("hreflang") or "").strip().lower()
+        href = (attrs.get("href") or "").strip()
+        if not hl or not href or hl == "x-default":
+            continue
+        alts.setdefault(hl[:2], urljoin(base_url, _html.unescape(href)))
+    return title, (alts or None)
 
 
 def _response_to_filter_signals(resp) -> tuple[str, bool, str]:
@@ -1284,6 +1334,16 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         _dl = f"  [{i:>2}/{len(entries)}] {src:<9}"
         e["_lang"] = lang_code
         e["_cap_text"] = text  # transient: byproduct training capture (popped before return)
+        if result.alternates:
+            e["_alternates"] = result.alternates
+        # A candidate that arrived WITHOUT a title (every SEMrush page export) takes
+        # the page's own, and gets the collection check it has so far skipped: the
+        # pre-fetch check above had nothing to read (2026-11-27, lacuisinedegeraldine.fr:
+        # "25 idees de salades composees" kept as a recipe on its structured data).
+        _title_from_page = False
+        if not (e.get("title") or "").strip() and result.page_title:
+            e["title"] = result.page_title
+            _title_from_page = True
         # Effective scoring language for THIS page: the fixed domain language (publisher
         # harvest), else the per-page detected language (dish batch / no domain), else base.
         _eff_lang = _fixed_page_lang or normalize_lang(lang_code) or _base_lang
@@ -1300,6 +1360,12 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 dropped.append(e)
                 print(f"{_dl} DROP collection [{lang_code}] {url}  (en-title: {title_en!r})")
                 continue
+        elif _title_from_page and _looks_like_recipe_collection(e.get("title", "")):
+            e["recipe_score"] = 0
+            e["_dropped_reason"] = "collection-title"
+            dropped.append(e)
+            print(f"{_dl} DROP collection {url}  (page title: {e.get('title')!r})")
+            continue
 
         if has_recipe_jsonld:
             # Author declared this a recipe via structured data. Trust it.

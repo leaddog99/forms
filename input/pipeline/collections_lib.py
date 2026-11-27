@@ -835,6 +835,73 @@ def _read_backlinks_file(domain, want, extra_dir=None):
     return out, meta
 
 
+def _twin_url_key(url: str) -> str:
+    """A URL reduced to host + path for comparing a page with its hreflang link."""
+    from urllib.parse import urlsplit
+    try:
+        p = urlsplit((url or "").strip())
+    except Exception:
+        return (url or "").strip().lower()
+    host = (p.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host + (p.path or "").rstrip("/").lower()
+
+
+def collapse_language_twins(ranked: list, alt_map: dict, lang_map: dict,
+                            base_lang: str = "en") -> tuple[list, list]:
+    """One seat per recipe when a publisher prints it in several languages.
+
+    `ranked` is the scored member list, best first. `alt_map` is {url: {lang: url}}
+    from each page's own hreflang links (the publisher's statement that two URLs
+    are one page in two languages); `lang_map` is {url: detected language}.
+
+    Members joined by those links form a group. The group keeps ONE member, in
+    the best position any of them held: the one written in the instance's base
+    language when there is one (no translation needed, and the publisher's own
+    wording beats ours), else the best-ranked. Returns (kept, dropped) where
+    dropped is [(member, kept_member)].
+
+    Born on lacuisinedegeraldine.fr (job 3347, 2026-11-27): the French and the
+    /en/ ratatouille both took a top-ten seat, as did three more /en/ pages whose
+    French originals sat just below the cut."""
+    by_key = {_twin_url_key(m["url"]): m for m in ranked}
+    parent = {id(m): m for m in ranked}
+
+    def find(m):
+        while parent[id(m)] is not m:
+            m = parent[id(m)]
+        return m
+
+    for m in ranked:
+        for _lang, alt in ((alt_map or {}).get(m["url"]) or {}).items():
+            other = by_key.get(_twin_url_key(alt))
+            if other is None or other is m:
+                continue
+            ra, rb = find(m), find(other)
+            if ra is not rb:
+                parent[id(rb)] = ra
+    groups: dict = {}
+    for m in ranked:
+        groups.setdefault(id(find(m)), []).append(m)   # each list stays in rank order
+
+    base = (base_lang or "en").lower()[:2]
+    kept, dropped, done = [], [], set()
+    for m in ranked:
+        g = groups[id(find(m))]
+        if id(g) in done:
+            continue
+        done.add(id(g))
+        if len(g) == 1:
+            kept.append(m)
+            continue
+        keeper = next((x for x in g
+                       if ((lang_map or {}).get(x["url"]) or "").lower()[:2] == base), g[0])
+        kept.append(keeper)
+        dropped.extend((x, keeper) for x in g if x is not keeper)
+    return kept, dropped
+
+
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
@@ -1053,6 +1120,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # foreign slugs. exclude_words (the curator's own taxonomy) is still honored. When
     # check_recipe is OFF (trusted/paywalled — no fetch), exclude_words is applied inline.
     recipe_pass = found
+    _alt_map: dict = {}    # {url: {lang: url}} hreflang links, from the recipe check's fetch
+    _lang_map: dict = {}   # {url: detected language}
     # R3: a publisher MEASURED as unobtainable stops being fetched. It keeps its
     # membership, its DA/PA and its place in the corpus — we simply stop paying to
     # rediscover that its recipes are not in the HTML. Degrades to the score-only
@@ -1135,6 +1204,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             wait_seconds=float(fetch_wait or 0),
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
+        _alt_map = {e["url"]: e["_alternates"] for e in kept if e.get("_alternates")}
+        _lang_map = {e["url"]: (e.get("_lang") or "") for e in kept}
         # These carry their own `_dropped_reason` (no-recipe-structure, fetch-failed,
         # collection-title, recipe-score<N …) — the same vocabulary the dish batch
         # emits, because it is the same filter. Let candidate_ledger.classify() read
@@ -1320,6 +1391,20 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # → traffic is what actually distinguishes their hero recipes. None traffic sorts last.
     scored.sort(key=lambda m: ((m.get("rank_score") is None), -(m.get("rank_score") or 0.0),
                                -(m.get("traffic") or 0.0)))
+    # ONE SEAT PER RECIPE across a publisher's language editions (see
+    # collapse_language_twins). After the sort, so the survivor takes the best
+    # position either edition earned; before ranks are assigned.
+    if _alt_map:
+        from input.pipeline.validators import instance_base_language as _ibl
+        scored, _twins = collapse_language_twins(scored, _alt_map, _lang_map, _ibl())
+        for _lost, _kept_m in _twins:
+            _drop(_lost["url"], _lost.get("title") or "",
+                  f"language-twin: {_kept_m['url']}", "rank")
+        if _twins:
+            print(f"  [harvest] {len(_twins)} page(s) are another language's edition of a "
+                  f"page already in the pool; one seat per recipe:")
+            for _lost, _kept_m in _twins:
+                print(f"      twin  {_lost['url']}\n         -> kept {_kept_m['url']}")
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):
         m["rank"] = i

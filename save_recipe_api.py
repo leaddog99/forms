@@ -14756,39 +14756,70 @@ async def extract_from_markdown_endpoint(
             # fasttext (tier 3 of detect_language). If non-English, translate
             # before extraction. JSON-LD blob from the envelope is dropped on
             # translation since its content would still be source-language.
+            _bm_foreign = ""          # source language when the capture is not English
+            _bm_md_translated = False
+
+            async def _bm_translate_markdown():
+                """Translate the captured page text (one retry). A capture that
+                cannot be translated FAILS, retryably; it is never extracted in
+                its source language."""
+                nonlocal effective_md, translation_meta_bm, _bm_md_translated
+                from intake.translate import translate_markdown_checked, TranslationFailed
+                try:
+                    xr = await asyncio.to_thread(translate_markdown_checked, effective_md, _bm_foreign)
+                except TranslationFailed as e:
+                    print(f"[XLATE] (bookmarklet) FAILED: {e}")
+                    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    extract_progress.finish(_prog, ok=False)
+                    raise HTTPException(status_code=502, detail=(
+                        f"This page is not in English and the translation did not "
+                        f"complete. Please try the extract again. ({e})")) from e
+                effective_md = xr.translated_markdown
+                _bm_md_translated = True
+                # The captured structured data is still in the source language.
+                envelope["jsonld"] = []
+                translation_meta_bm = {
+                    "originalLanguage": xr.source_language,
+                    "translated": True,
+                    "translatedAt": datetime.now(timezone.utc).isoformat(),
+                    "originalTitle": xr.original_title or effective_title or "",
+                }
+
             try:
                 from intake.translate import (
-                    is_non_english, detect_language, translate_extraction_markdown,
+                    is_non_english, detect_language, translate_recipe_jsonld,
                 )
                 page_lang_bm = detect_language("", headers=None, visible_text=effective_md)
                 if is_non_english(page_lang_bm):
+                    _bm_foreign = page_lang_bm
                     t_xlate0 = time.perf_counter()
                     extract_progress.update(_prog, "translating", 0.06)
-                    try:
-                        xr = translate_extraction_markdown(effective_md, page_lang_bm)
-                        xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
-                        if xr.plausibility_ok:
-                            effective_md = xr.translated_markdown
-                            # Drop bookmarklet-harvested JSON-LD so the
-                            # downstream fast lane doesn't reach for the
-                            # original-language structured data.
-                            if envelope.get("jsonld"):
-                                envelope["jsonld"] = []
-                            translation_meta_bm = {
-                                "originalLanguage": xr.source_language,
-                                "translated": True,
-                                "translatedAt": datetime.now(timezone.utc).isoformat(),
-                                "originalTitle": xr.original_title or effective_title or "",
-                            }
-                            timings["translate_ms"] = xlate_ms
-                            print(f"[XLATE] (bookmarklet) translated from "
-                                  f"{xr.source_language_name} ({xlate_ms}ms)")
-                        else:
-                            print(f"[XLATE] (bookmarklet) suspect "
-                                  f"({xr.plausibility_reason}); using original")
-                    except Exception as e:
-                        print(f"[XLATE] (bookmarklet) failed: "
-                              f"{type(e).__name__}: {e}; using original")
+                    # Structured lane first (2026-11-27): translate the page's own
+                    # Recipe data, a few kB, instead of the whole captured page.
+                    _bm_struct = False
+                    if envelope.get("jsonld"):
+                        try:
+                            from extract.jsonld_to_recipe import best_recipe_jsonld as _brj
+                            _blk = _brj(envelope["jsonld"])
+                            if _blk is None:
+                                _blk = envelope["jsonld"][0]
+                        except Exception:
+                            _blk = None
+                        if isinstance(_blk, dict):
+                            _t_jl, _t_meta = await asyncio.to_thread(
+                                translate_recipe_jsonld, _blk, page_lang_bm)
+                            if _t_jl is not None:
+                                envelope["jsonld"] = [_t_jl]
+                                translation_meta_bm = {k: v for k, v in _t_meta.items()
+                                                       if k != "originalLanguageName"}
+                                _bm_struct = True
+                                print(f"[XLATE] (bookmarklet) translated the structured recipe "
+                                      f"({int((time.perf_counter() - t_xlate0) * 1000)}ms)")
+                    if not _bm_struct:
+                        await _bm_translate_markdown()
+                        print(f"[XLATE] (bookmarklet) translated the page "
+                              f"({int((time.perf_counter() - t_xlate0) * 1000)}ms)")
+                    timings["translate_ms"] = int((time.perf_counter() - t_xlate0) * 1000)
             except ImportError:
                 pass
 
@@ -14819,6 +14850,11 @@ async def extract_from_markdown_endpoint(
                 except Exception as e:
                     print(f"[WARN] jsonld_to_recipe raised, will fall back to LLM: {e}")
                     recipe = None
+
+            if recipe is None and _bm_foreign and not _bm_md_translated:
+                # The translated structured data did not build a recipe, so the
+                # extraction model is next: it must read English, not the source.
+                await _bm_translate_markdown()
 
             if recipe is None:
                 path_used = "markdown-llm"
@@ -15142,11 +15178,11 @@ def extract_recipe_from_url(
     # Provenance fields below carry the original-language signal so
     # the UI can render a "Translated from X" pill + view-original link.
     translation_meta: dict | None = None
+    _needs_xlate = False
     page_lang = md_result.get("language") or "en"
     try:
         from intake.translate import (
-            is_non_english, language_name, translate_extraction_markdown,
-            detect_language,
+            is_non_english, language_name, detect_language,
         )
         # `md_result['language']` is detected on the narrowed main-content node
         # and trusts <html lang> outright, so a thin sample or a bilingual
@@ -15168,50 +15204,11 @@ def extract_recipe_from_url(
         # translates the JSON-LD (structured) and runs the fast lane instead of
         # discarding it. Language detection above still runs so page_lang is
         # accurate for enrich(). (Flag OFF: legacy translate-then-drop-jsonld.)
-        if is_non_english(page_lang) and not _USE_ENRICHMENT_API:
-            t_xlate0 = time.perf_counter()
-            try:
-                xr = translate_extraction_markdown(md_result["markdown"], page_lang)
-                xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
-                if xr.plausibility_ok:
-                    # Replace the markdown the LLM sees with translated
-                    # English; also force the LLM path (skip JSON-LD
-                    # fast lane) since the JSON-LD blob still holds
-                    # original-language strings.
-                    md_result["markdown"] = xr.translated_markdown
-                    md_result["has_jsonld"] = False
-                    md_result["jsonld"] = []
-                    # ...AND drop the pre-translation jsonld-direct recipe. It was
-                    # built above from the ORIGINAL-language JSON-LD, and the lane
-                    # selection reads `_src_rec` directly, NOT md_result — so
-                    # emptying md_result['jsonld'] alone does not stop it. Measured
-                    # 2026-08-14 on the first m.xiachufang.com harvest: 3 of 8 rows
-                    # shipped wholly in Chinese (name + ingredients + steps, 71-80%
-                    # CJK) and they were EXACTLY the 3 whose JSON-LD was rich enough
-                    # for the fast lane to accept. The better-structured the page,
-                    # the worse the result — and we paid 27-53s per page to translate
-                    # markdown that was then discarded.
-                    #
-                    # current_source_fp is deliberately NOT cleared: it is the RAW
-                    # source fingerprint for cache revalidation and must stay
-                    # source-to-source, pre-translation, or every row churns.
-                    _src_rec = None
-                    translation_meta = {
-                        "originalLanguage": xr.source_language,
-                        "originalLanguageName": xr.source_language_name,
-                        "translated": True,
-                        "translatedAt": datetime.now(timezone.utc).isoformat(),
-                        "originalTitle": xr.original_title or md_result.get("title") or "",
-                    }
-                    timings["translate_ms"] = xlate_ms
-                    print(f"[XLATE] translated from {xr.source_language_name} "
-                          f"({xlate_ms}ms) - skip jsonld fast lane")
-                else:
-                    print(f"[XLATE] suspect ({xr.plausibility_reason}); "
-                          f"using original markdown")
-            except Exception as e:
-                print(f"[XLATE] failed: {type(e).__name__}: {e}; "
-                      f"using original markdown")
+        # The translation itself runs LATER, in the cache-miss branch below
+        # (2026-11-27). It used to run here, before the cache lookup, so a
+        # cache hit on a foreign page still paid a ~70s whole-page translation
+        # whose result was then discarded.
+        _needs_xlate = bool(is_non_english(page_lang) and not _USE_ENRICHMENT_API)
     except ImportError:
         pass
 
@@ -15258,6 +15255,65 @@ def extract_recipe_from_url(
         was_incomplete = not _cache_row_complete(recipe)
     else:
         was_incomplete = False
+        if _needs_xlate:
+            # === Extraction-stage translation (cache MISS only) ===============
+            # 1. STRUCTURED LANE: the page's own Recipe data, translated field by
+            #    field (a few kB, seconds) and fed to the same fast lane an
+            #    English page takes.
+            # 2. PAGE LANE: no usable structured data -> translate the page
+            #    markdown for the extraction model (one retry).
+            # 3. Neither worked -> FAIL this URL. The recipe is NOT saved in its
+            #    source language: job 3347 (2026-11-27) saved 'Ratatouille,
+            #    recette traditionnelle' in French into the master corpus because
+            #    a cut-off translation fell back to 'using original markdown'.
+            from intake.translate import (
+                translate_recipe_jsonld, translate_markdown_checked, TranslationFailed,
+            )
+            t_xlate0 = time.perf_counter()
+            _xl_done = False
+            _jl0 = ((md_result or {}).get("jsonld") or [None])[0]
+            if _src_rec is not None and isinstance(_jl0, dict):
+                _t_jl, _t_meta = translate_recipe_jsonld(_jl0, page_lang)
+                _rec_en = None
+                if _t_jl is not None:
+                    try:
+                        _rec_en = jsonld_to_recipe(
+                            _t_jl, source_url=md_result.get("source_url", ""),
+                            title=str(_t_jl.get("name") or md_result.get("title", "")),
+                            timings=timings)
+                    except Exception as e:
+                        print(f"[XLATE] translated structured data did not build a recipe: {e}")
+                if _rec_en is not None:
+                    _src_rec = _rec_en
+                    translation_meta = _t_meta
+                    _xl_done = True
+                    print(f"[XLATE] translated the structured recipe from "
+                          f"{language_name(page_lang)} "
+                          f"({int((time.perf_counter() - t_xlate0) * 1000)}ms) - fast lane")
+            if not _xl_done:
+                # The original-language fast-lane recipe must never be used.
+                _src_rec = None
+                try:
+                    xr = translate_markdown_checked(md_result["markdown"], page_lang)
+                except TranslationFailed as e:
+                    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    print(f"[XLATE] FAILED - not saving in {language_name(page_lang)}: {e}")
+                    raise
+                md_result["markdown"] = xr.translated_markdown
+                md_result["has_jsonld"] = False
+                md_result["jsonld"] = []
+                translation_meta = {
+                    "originalLanguage": xr.source_language,
+                    "originalLanguageName": xr.source_language_name,
+                    "translated": True,
+                    "translatedAt": datetime.now(timezone.utc).isoformat(),
+                    "originalTitle": xr.original_title or md_result.get("title") or "",
+                }
+                print(f"[XLATE] translated the page from {xr.source_language_name} "
+                      f"({int((time.perf_counter() - t_xlate0) * 1000)}ms) - extraction model")
+            # current_source_fp is deliberately NOT cleared: it is the RAW source
+            # fingerprint for cache revalidation and must stay source-to-source.
+            timings["translate_ms"] = int((time.perf_counter() - t_xlate0) * 1000)
         if _USE_ENRICHMENT_API:
             # Strangler reroute: the extract step goes through the Enrichment
             # API. enrich() raises on no-recipe, so `recipe` is non-None here and

@@ -56,7 +56,18 @@ _TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 # with saltimbocca (2026-11-21) - five reserved seats went to the wrong dish.
 # A ~150-token call made a few times a day; the larger model costs nothing here.
 _QUERY_TRANSLATION_MODEL = "claude-sonnet-4-6"
-_TRANSLATION_MAX_TOKENS = 8000
+# 8000 cut long pages off mid-translation: a 58k-character French page came back
+# at 38% of its length, was judged suspect, and the recipe was saved IN FRENCH
+# (lacuisinedegeraldine.fr, job 3347, 2026-11-27). 16000 is the most the client
+# accepts without streaming. A reply that still hits the ceiling is reported as
+# `truncated`, never passed off as a translation.
+_TRANSLATION_MAX_TOKENS = 16000
+
+
+class TranslationFailed(RuntimeError):
+    """A non-English page could not be translated. Raised so the extract FAILS
+    for this URL (retryable) instead of saving the recipe in its source language
+    into an English-canonical corpus."""
 
 # fasttext-langdetect's model file (lid.176.ftz) is ~917KB, downloaded
 # once on first call and cached under ~/.cache/fasttext_langdetect.
@@ -95,6 +106,7 @@ class TranslationResult:
     original_title: Optional[str]   # for "view original" affordance
     source_language: str            # ISO 639-1
     source_language_name: str       # human-readable ("Greek")
+    truncated: bool = False         # the reply hit the output ceiling: NOT a full translation
 
 
 # === Language detection ===========================================
@@ -437,6 +449,7 @@ def translate_markdown(markdown: str, src_lang: str) -> TranslationResult:
         original_title=original_title,
         source_language=src_lang,
         source_language_name=src_name,
+        truncated=(getattr(msg, "stop_reason", None) == "max_tokens"),
     )
 
 
@@ -716,6 +729,16 @@ def translate_extraction_markdown(
     ok, why = is_translation_plausible(
         markdown_with_jsonld, tr.translated_markdown,
     )
+    if tr.truncated:
+        # Hit the output ceiling. What is lost is the END of the page (comments,
+        # related posts), so a reply that still passes the length and quantity
+        # checks is used; one that fails them says why in plain terms.
+        if ok:
+            print(f"[XLATE] reply hit the output limit; using the "
+                  f"{len(tr.translated_markdown)} characters translated "
+                  f"(of {len(markdown_with_jsonld)})")
+        else:
+            why = f"cut off at the output limit ({why})"
     return ExtractionTranslationResult(
         translated_markdown=tr.translated_markdown,
         original_title=tr.original_title,
@@ -725,3 +748,125 @@ def translate_extraction_markdown(
         plausibility_ok=ok,
         plausibility_reason=why,
     )
+
+
+# === Structured lane: translate the recipe, not the page ============
+#
+# A page that publishes schema.org/Recipe data carries the whole recipe in a
+# few kilobytes. Translating THAT instead of the page (tens of kilobytes of
+# story, navigation and reader comments) takes seconds instead of a minute and
+# cannot be cut off by the output ceiling. Only the fields a reader reads are
+# sent; everything else (images, urls, dates, ratings, author) is carried over
+# from the original untouched, so the model cannot mangle it.
+
+_JSONLD_TEXT_KEYS = (
+    "name", "headline", "description", "recipeIngredient", "recipeInstructions",
+    "recipeCategory", "recipeCuisine", "keywords", "recipeYield", "cookingMethod",
+    "tool", "supply",
+)
+
+
+def _json_object_from_reply(text: str):
+    """The JSON object in a model reply that may be fenced or prefaced."""
+    import json as _json
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", t, re.DOTALL)
+    if m:
+        t = m.group(1)
+    elif not t.startswith("{"):
+        i, j = t.find("{"), t.rfind("}")
+        if i == -1 or j <= i:
+            return None
+        t = t[i:j + 1]
+    try:
+        obj = _json.loads(t)
+    except Exception:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _count_items(v) -> int:
+    """How many entries a recipeIngredient / recipeInstructions value holds
+    (sections of steps count their steps)."""
+    if isinstance(v, list):
+        n = 0
+        for x in v:
+            if isinstance(x, dict) and isinstance(x.get("itemListElement"), list):
+                n += len(x["itemListElement"])
+            else:
+                n += 1
+        return n
+    return 1 if v else 0
+
+
+def translate_recipe_jsonld(jsonld: dict, src_lang: str, *, log=print):
+    """Translate a non-English schema.org Recipe object's readable fields to
+    English, structure preserved. Returns (translated_jsonld, translation_meta),
+    or (None, None) when the result cannot be trusted: the caller then
+    translates the page markdown instead.
+
+    Trust checks: the reply parses, was not cut off, still has a name, and has
+    the SAME number of ingredients and steps as the original (a dropped or
+    merged line is a wrong recipe, not a translation)."""
+    import json as _json
+    if not isinstance(jsonld, dict) or not is_non_english(src_lang):
+        return None, None
+    part = {k: jsonld[k] for k in _JSONLD_TEXT_KEYS if jsonld.get(k)}
+    if not part.get("recipeIngredient") or not (part.get("name") or part.get("headline")):
+        return None, None
+    try:
+        block = "```json\n" + _json.dumps(part, ensure_ascii=False, indent=2) + "\n```"
+        tr = translate_markdown(block, src_lang)
+    except Exception as e:
+        log(f"[XLATE] structured-data translation failed ({type(e).__name__}: {e})")
+        return None, None
+    if tr.truncated:
+        log("[XLATE] structured-data translation cut off at the output limit")
+        return None, None
+    out = _json_object_from_reply(tr.translated_markdown)
+    if not out or not str(out.get("name") or out.get("headline") or "").strip():
+        log("[XLATE] structured-data translation did not come back as a recipe")
+        return None, None
+    for k in ("recipeIngredient", "recipeInstructions"):
+        if _count_items(out.get(k)) != _count_items(part.get(k)):
+            log(f"[XLATE] structured-data translation changed the number of "
+                f"{k} entries ({_count_items(part.get(k))} -> {_count_items(out.get(k))})")
+            return None, None
+    merged = dict(jsonld)
+    for k in part:
+        if k in out:
+            merged[k] = out[k]
+    original_title = str(jsonld.get("name") or jsonld.get("headline") or "").strip() or None
+    from datetime import datetime, timezone
+    meta = {
+        "originalLanguage": src_lang,
+        "originalLanguageName": language_name(src_lang),
+        "translated": True,
+        "translatedAt": datetime.now(timezone.utc).isoformat(),
+        "originalTitle": original_title,
+    }
+    return merged, meta
+
+
+def translate_markdown_checked(markdown: str, src_lang: str, *, attempts: int = 2,
+                               log=print) -> ExtractionTranslationResult:
+    """Translate page markdown for the extraction model, trying again once when
+    the reply fails the plausibility checks (the length check sits near run-to-run
+    noise). Raises TranslationFailed when no attempt is usable: the caller must
+    NOT fall back to the original-language text."""
+    why = "not attempted"
+    for n in range(1, max(1, attempts) + 1):
+        try:
+            xr = translate_extraction_markdown(markdown, src_lang)
+        except Exception as e:
+            why = f"{type(e).__name__}: {e}"
+            log(f"[XLATE] attempt {n} failed: {why}")
+            continue
+        if xr.plausibility_ok:
+            return xr
+        why = xr.plausibility_reason
+        log(f"[XLATE] attempt {n} suspect ({why})")
+    raise TranslationFailed(
+        f"could not translate this {language_name(src_lang)} page to English ({why})")

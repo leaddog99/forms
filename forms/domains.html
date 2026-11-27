@@ -485,7 +485,7 @@
           <h3 class="ed-block-label">Provenance &amp; extraction</h3>
           <div class="ed-form-grid">
             ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
-            ${field('f_language', 'Language (ISO 639-1)', d.language, { select: LANG_OPTIONS })}
+            ${field('f_language', 'Site language <button type="button" class="info-dot" data-info-title="Site language" data-info="The language this publisher mostly writes in. It does <b>two</b> things:<br><br>1. On a page with no structured recipe data, the recipe check counts cooking words in this language as well as English. Leave a French site on English and its plain French pages can be dropped as &quot;not a recipe&quot;.<br>2. The titles in the harvest list are translated to English for you.<br><br>It does <b>not</b> decide whether a recipe is translated. Every page&#39;s language is detected when it is extracted, and anything not in English is translated then, whatever is set here. A site that publishes in two languages (French pages plus /en/ pages) should be set to its main language.">i</button>', d.language, { select: LANG_OPTIONS })}
             ${field('f_cuisine_focus', 'Cuisine (searchable)', d.cuisine_focus, { ph: 'Greek' })}
             ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}

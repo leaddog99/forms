@@ -238,29 +238,12 @@ def _translate_jsonld_for_fastlane(jsonld: dict, src_lang: str):
     Returns (translated_jsonld, translation_meta) or (None, None) on failure —
     caller then falls back to translating the markdown for the LLM path.
     """
+    # One implementation, shared with the inline extract path
+    # (intake.translate.translate_recipe_jsonld): readable fields only, the
+    # rest carried over untouched, and the ingredient/step counts must survive.
     try:
-        from intake.translate import translate_markdown, language_name
-    except Exception:
-        return None, None
-    try:
-        original_title = (jsonld.get("name") or "").strip() or None
-        block = "```json\n" + _json.dumps(jsonld, ensure_ascii=False, indent=2) + "\n```"
-        tr = translate_markdown(block, src_lang)
-        translated = _extract_json_block(tr.translated_markdown or "")
-        # Sanity: must still look like a recipe (name + ingredients), else the
-        # translation mangled it — fall back to markdown.
-        if not isinstance(translated, dict) or not (translated.get("name") or "").strip():
-            return None, None
-        if not (translated.get("recipeIngredient")):
-            return None, None
-        meta = {
-            "originalLanguage": src_lang,
-            "originalLanguageName": language_name(src_lang),
-            "translated": True,
-            "translatedAt": _now_iso(),
-            "originalTitle": original_title,
-        }
-        return translated, meta
+        from intake.translate import translate_recipe_jsonld
+        return translate_recipe_jsonld(jsonld, src_lang)
     except Exception as e:
         print(f"[enrich] JSON-LD translation failed ({e}); will try markdown path")
         return None, None
@@ -271,28 +254,20 @@ def _translate_markdown_for_llm(markdown: str, src_lang: str, meta):
     (when there's no usable JSON-LD). Reuses the existing extraction-stage
     translator + plausibility check. Returns (markdown, meta) — original markdown
     on suspect/failed translation (so we never feed garbage downstream)."""
-    try:
-        from intake.translate import translate_extraction_markdown, language_name
-    except Exception:
-        return markdown, meta
-    try:
-        xr = translate_extraction_markdown(markdown, src_lang)
-        if not xr.plausibility_ok:
-            print(f"[enrich] markdown translation suspect ({xr.plausibility_reason}); "
-                  f"using original")
-            return markdown, meta
-        m = dict(meta or {})
-        m.update({
-            "originalLanguage": xr.source_language,
-            "originalLanguageName": xr.source_language_name,
-            "translated": True,
-            "translatedAt": _now_iso(),
-            "originalTitle": (m.get("originalTitle") or xr.original_title or ""),
-        })
-        return xr.translated_markdown, m
-    except Exception as e:
-        print(f"[enrich] markdown translation failed ({e}); using original")
-        return markdown, meta
+    # Raises intake.translate.TranslationFailed when no attempt is usable
+    # (2026-11-27): the caller must not extract the original-language text into
+    # an English-canonical record.
+    from intake.translate import translate_markdown_checked
+    xr = translate_markdown_checked(markdown, src_lang)
+    m = dict(meta or {})
+    m.update({
+        "originalLanguage": xr.source_language,
+        "originalLanguageName": xr.source_language_name,
+        "translated": True,
+        "translatedAt": _now_iso(),
+        "originalTitle": (m.get("originalTitle") or xr.original_title or ""),
+    })
+    return xr.translated_markdown, m
 
 
 def enrich(req: EnrichmentRequest) -> EnrichmentResult:
@@ -360,6 +335,9 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
                 eff_markdown, translation_meta = _translate_markdown_for_llm(
                     eff_markdown, src_lang, translation_meta)
         except Exception as e:
+            from intake.translate import TranslationFailed
+            if isinstance(e, TranslationFailed):
+                raise
             print(f"[enrich] translation step failed ({e}); proceeding untranslated")
 
     # --- 1. Extract: JSON-LD fast lane, else the markdown LLM call. ---

@@ -60,6 +60,7 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     # review were single recipes. Overturnable since that date.
     ("collection-title",  "is_recipe",  True),
     ("recipe-card-missing", "is_recipe", False),  # the page shows a dead plugin shortcode, no recipe
+    ("language-twin",     "rank_cut",   False),   # the publisher's own hreflang link: same recipe, other language
     ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope (legacy)
     ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe
     ("filter-curator",    "prefilter",  False),   # candidate-filter condition, curator-authored

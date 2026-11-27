@@ -13471,6 +13471,32 @@ a scheduled job is added, name folding changes.
   Bourgignon"); of 135 real catalog names, 2 questioned wrongly-or-arguably (Licurdia -> Licordia,
   Chicken Marenga -> Chicken Meringue) plus the known "Seared Scallope". NOT tested: the form in a
   signed-in browser. NEEDS THE BCC RESTART. Tests: intake/tests/test_dish_name_check.py (4).
+* **2026-11-27 - FOREIGN-LANGUAGE PUBLISHERS (job 3347, lacuisinedegeraldine.fr).** Found: the
+  extract translated the WHOLE page markdown with an 8,000-token reply ceiling (~70s a page); a
+  58k-char page came back cut off (ratio 0.38), was judged suspect, and the code fell back to
+  "using original markdown" -> master 23558 saved IN FRENCH. Fixes, all NEED THE BCC RESTART:
+  (1) `intake/translate.py translate_recipe_jsonld`: structured lane, translates only the Recipe
+  data's readable fields (reviews never sent; image/urls/dates carried over untouched; ingredient
+  and step counts must survive), then the normal jsonld fast lane. Measured on the real pages: 6-9s
+  vs ~70s, English out. Shared by the URL path, the staged/bookmarklet path and enrich/api.py.
+  (2) `translate_markdown_checked` + `TranslationFailed`: page lane retries once, then the extract
+  FAILS for that URL; nothing is saved in the source language any more (URL path raises, staged
+  path answers 502 "try again"). Reply ceiling 8000 -> 16000; a cut-off reply is flagged.
+  (3) Translation moved AFTER the extract-cache lookup (a cache hit on a foreign page used to pay
+  the full translation and discard it). (4) `collections_lib.collapse_language_twins`: one seat per
+  recipe across a publisher's language editions, joined by the pages' own hreflang links
+  (FilterFetch.alternates); keeps the base-language edition in the group's best position; ledger
+  reason `language-twin` (fact). On 3347's pool: 2 twins dropped in the top 30. (5) Title-less
+  candidates (every SEMrush page export has NO title column) now take the page's og:title and get
+  the collection-title check they had always skipped ("25 idees de salades composees" was kept on
+  its Recipe data). Title translation varies run to run, so this catch is not guaranteed.
+  (6) Log wording: the English phrase check said "rejected (proceeding anyway)"; it is advisory.
+  (7) domains.html: "Language (ISO 639-1)" -> "Site language" with an info dot; the field feeds the
+  recipe check's word list and the harvest-list title translation, NOT whether a recipe is
+  translated (that is detected per page). Scan of saved rows: 19 master + 3 user recipes are still
+  in a foreign language (el 9, fr 6, it 3, ja 2, es 1, ko 1); NOT repaired. Target language is an
+  instance setting (env BCC_TARGET_LANGUAGE); the translator can only target English today.
+  Tests: intake/tests/test_foreign_sites.py (6). NOT tested: a full harvest on the new code.
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched
