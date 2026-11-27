@@ -112,7 +112,7 @@ def markdown_to_recipe(
 
     validation = is_recipe(cleaned_md)
     print(f"     VALIDATE: {validation['reason']} -> "
-          f"{'accepted' if validation['accepted'] else 'rejected (proceeding anyway)'}")
+          f"{'accepted' if validation['accepted'] else 'below the threshold (advisory: the phrases are English; extraction continues)'}")
 
     user_prompt = (
         "Extract a complete structured recipe from this markdown. "

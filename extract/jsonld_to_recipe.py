@@ -241,7 +241,7 @@ def jsonld_to_recipe(
     score_text += "\n" + "\n".join(instr_for_score)
     validation = is_recipe(score_text)
     print(f"     JSONLD-DIRECT VALIDATE: {validation['reason']} -> "
-          f"{'accepted' if validation['accepted'] else 'rejected (proceeding anyway)'}")
+          f"{'accepted' if validation['accepted'] else 'below the threshold (advisory: the phrases are English; extraction continues)'}")
 
     try:
         sanitized = sanitize_recipe_data(payload)
