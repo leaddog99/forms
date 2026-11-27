@@ -269,6 +269,44 @@
           + `</span>`;
       }).join('');
     }
+    /* DESCRIPTION RETRY (2026-11-27). The description is what the dish's matching
+       profile is built from, so the curator should not have to compose it. Retry
+       asks the server for a considered rewrite (top-tier model, grounded in the
+       recipes filed under the dish, steered by the Curator notes box) and puts it
+       in the box. It saves nothing: Save does, and Save rebuilds the profile. */
+    function initDescRetry(d){
+      const btn = $('#descRetryBtn'), box = $('#f_description'), note = $('#descRetryNote');
+      if (!btn || !box) return;
+      let before = null;
+      btn.addEventListener('click', async () => {
+        if (btn.dataset.undo === '1'){            // second role: put the old text back
+          box.value = before ?? ''; btn.dataset.undo = ''; btn.textContent = 'Retry';
+          note.textContent = 'Put back.';
+          box.dispatchEvent(new Event('input', {bubbles: true}));
+          return;
+        }
+        btn.disabled = true; note.textContent = 'Reading this dish\u2019s recipes\u2026';
+        try {
+          const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/describe`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ previous: box.value.trim(), notes: ($('#f_notes')?.value ?? '').trim() }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error((j.detail && (j.detail.message || j.detail)) || ('HTTP ' + r.status));
+          before = box.value;
+          box.value = j.description;
+          const n = j.recipes_used || 0;
+          note.textContent = (n ? `Rewritten from ${n} of this dish\u2019s recipes.` : 'Rewritten from the name and your notes (no recipes filed yet).')
+            + ' Review it, then Save.';
+          btn.textContent = 'Undo'; btn.dataset.undo = '1';
+          box.dispatchEvent(new Event('input', {bubbles: true}));
+        } catch (e){
+          note.textContent = 'Could not rewrite: ' + e.message;
+        } finally { btn.disabled = false; }
+      });
+      // Typing after a rewrite ends the Undo offer: the box is the curator's again.
+      box.addEventListener('keydown', () => { if (btn.dataset.undo === '1'){ btn.dataset.undo = ''; btn.textContent = 'Retry'; } });
+    }
+
     function initAliasChips(d){
       const box = $('#aliasChips'), inp = $('#f_aliases');
       if (!box || !inp) return;
@@ -504,8 +542,10 @@
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
           <div class="ed-field full" style="margin:14px 0 0">
-            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>To try again</b>, clear the box and Save. A new description is written from the dish name.">i</button></label>
-            <textarea id="f_description" class="ed-notes" style="min-height:64px" placeholder="Leave blank and Save to have it written for you">${escapeHtml(d.description || '')}</textarea>
+            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>Retry</b> has it rewritten for you by our strongest model, which reads the recipes filed under this dish and your curator notes instead of guessing from the name. Put anything it should know in Curator notes first (for example: not a brown sauce). Nothing is stored until you Save.">i</button>
+              <button type="button" class="ed-btn" id="descRetryBtn" style="padding:3px 11px;margin-left:8px;text-transform:none;letter-spacing:0">Retry</button>
+              <span id="descRetryNote" style="text-transform:none;letter-spacing:0;color:var(--muted);margin-left:8px"></span></label>
+            <textarea id="f_description" class="ed-notes" style="min-height:64px" placeholder="Press Retry to have it written for you">${escapeHtml(d.description || '')}</textarea>
           </div>
         </section>
 
@@ -691,6 +731,7 @@
       initQueryRows('qrows_edit', d.query_rows);
       paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
       initAliasChips(d);
+      initDescRetry(d);
       $('#saveBtn').addEventListener('click', () => doSave(d));
       $('#refreshBtn').addEventListener('click', () => doRefresh(d));
       $('#deleteBtn').addEventListener('click', () => doDelete(d));

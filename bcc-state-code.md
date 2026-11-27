@@ -13521,6 +13521,15 @@ a scheduled job is added, name folding changes.
   the identity card, which the embedding refresh rebuilds from the new words (the card prompt
   already reads "Curator description"); a CLEARED description is rewritten from the dish name
   (the try-again). The box is live; the card rebuild NEEDS A BCC RESTART.
+  **RETRY button** (same day; curator: "leaving it to me sounds dangerous"): `POST
+  /dishes/{name}/describe` -> `extract/dish_signal.compose_dish_description` (method
+  `dish_description_retry_v1`, claude-opus-4-8): rewrites the description from the recipes filed
+  under the dish (up to 8: title, ingredients, first steps) + the Curator notes box + the previous
+  text; saves nothing, fills the box (Undo offered), Save rebuilds the card. Measured read-only:
+  Sauce Jean Vignard "brown sauce with red wine, shallots, mushrooms" -> "cream sauce built on dry
+  white wine reduced with tomato paste and Dijon mustard" (its 2 recipes); Melopita lost a wrong
+  "layers of crispy phyllo". ~2s a call. NOT tested through the page (needs a signed-in session).
+  NEEDS A BCC RESTART. Tests: intake/tests/test_dish_description_retry.py (2).
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched

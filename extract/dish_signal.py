@@ -169,3 +169,79 @@ def generate_dish_signal_for_dish(name: str, queries: Optional[list] = None,
 
     return _generate("\n".join(lines), usage_log=usage_log,
                      operation="dish_signal_dish")
+
+
+# === Retry: a considered description, grounded in the dish's own recipes ===
+#
+# The automatic description above is ONE small-model guess from the dish NAME.
+# For a well-known dish that is enough. For an obscure one it can be plainly
+# wrong ("Sauce Jean Vignard" described as a brown sauce, 2026-11-27), and the
+# description is what the dish's matching profile is built from. The Retry
+# button on the dish editor calls this instead: a top-tier model, shown the
+# recipes the dish actually holds, told what the previous attempt said.
+
+RETRY_METHOD_ID = "dish_description_retry_v1"
+RETRY_MODEL = "claude-opus-4-8"
+
+_RETRY_RULES = (
+    "\n\nYou are REWRITING a dish description a curator judged wrong or weak. "
+    "You are given the dish's name, its other names, the curator's notes, the "
+    "previous description, and the recipes currently filed under this dish.\n"
+    "  - The recipes are the evidence. Describe the dish they have in common: "
+    "its cuisine, its defining ingredients and its technique. Where the "
+    "previous description contradicts the recipes, the recipes win.\n"
+    "  - The curator's notes outrank everything, including the recipes.\n"
+    "  - Ignore a recipe that is plainly a different dish filed here by mistake.\n"
+    "  - With no recipes, use what is reliably known about the dish; if it is "
+    "not a dish you know, describe only what the name itself states and do not "
+    "invent a cuisine, a colour or a technique.\n"
+    "  - Do not repeat the previous description's wording unless it was right.\n"
+    "Output ONLY the one sentence, starting with the dish name and a colon."
+)
+
+
+def compose_dish_description(name: str, *, alternates: Optional[list] = None,
+                             recipes: Optional[list] = None, notes: str = "",
+                             previous: str = "", create=None) -> dict:
+    """One considered description for the Retry button. `recipes` is a list of
+    {name, cuisine, ingredients:[...], method} taken from the dish's saved
+    recipes. Returns {description, method, model, recipes_used}; description is
+    '' when the call fails (the editor then leaves the box as it was)."""
+    name = (name or "").strip()
+    if not name:
+        return {"description": "", "method": RETRY_METHOD_ID, "model": RETRY_MODEL, "recipes_used": 0}
+    lines = [f"Dish name: {name}"]
+    alts = [str(a).strip() for a in (alternates or []) if str(a).strip()
+            and str(a).strip().lower() != name.lower()]
+    if alts:
+        lines.append("Other names and search phrases: " + ", ".join(dict.fromkeys(alts)))
+    if (notes or "").strip():
+        lines.append("Curator's notes: " + notes.strip()[:1200])
+    if (previous or "").strip():
+        lines.append("Previous description (judged wrong or weak): " + previous.strip()[:400])
+    used = 0
+    for r in (recipes or [])[:8]:
+        ings = [str(i).strip() for i in (r.get("ingredients") or []) if str(i).strip()][:14]
+        if not ings:
+            continue
+        used += 1
+        lines.append(f"\nRecipe {used}: {str(r.get('name') or '').strip()[:90]}"
+                     + (f" [{r['cuisine']}]" if r.get("cuisine") else ""))
+        lines.append("  ingredients: " + "; ".join(ings))
+        if (r.get("method") or "").strip():
+            lines.append("  method: " + str(r["method"]).strip()[:420])
+    if not used:
+        lines.append("\n(No recipes are filed under this dish yet.)")
+    try:
+        response = (create or llm.create)(
+            operation="dish_description_retry", model=RETRY_MODEL, max_tokens=300,
+            system=_SYSTEM_PROMPT + _RETRY_RULES,
+            messages=[{"role": "user", "content": "\n".join(lines)}])
+        text = " ".join(b.text for b in response.content
+                        if getattr(b, "type", "") == "text").strip()
+    except Exception as e:
+        print(f"[WARN] dish description retry failed: {type(e).__name__}: {e}")
+        text = ""
+    text = " ".join(text.split()).strip('"').strip("'").strip()
+    return {"description": text, "method": RETRY_METHOD_ID, "model": RETRY_MODEL,
+            "recipes_used": used}

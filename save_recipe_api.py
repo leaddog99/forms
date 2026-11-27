@@ -4472,6 +4472,53 @@ async def create_dish_endpoint(request: Request):
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+@app.post("/dishes/{name}/describe")
+async def describe_dish_endpoint(name: str, request: Request):
+    """The dish editor's Retry button: PROPOSE a new description, written by a
+    top-tier model from the recipes this dish actually holds (2026-11-27). Saves
+    NOTHING: the editor puts the text in the Description box and the curator
+    Saves, which is what rebuilds the matching profile. Body (all optional):
+    {"previous": the text now in the box, "notes": the curator notes box}."""
+    _require_perm(request, "manage_dishes")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    with _db() as conn:
+        dish = dishes_lib.get_dish(conn, name)
+        if dish is None:
+            raise HTTPException(status_code=404, detail="Dish not found")
+        rows = conn.execute(
+            "SELECT data FROM master_recipes WHERE json_extract(data, '$._master.dish') = ? "
+            "ORDER BY id LIMIT 12", (dish["name"],)).fetchall()
+    recipes = []
+    for (data,) in rows:
+        try:
+            d = json.loads(data)
+        except Exception:
+            continue
+        _t = lambda x: x if isinstance(x, str) else str((x or {}).get("text") or (x or {}).get("name") or "") if isinstance(x, dict) else ""  # noqa: E731
+        recipes.append({
+            "name": d.get("name"),
+            "cuisine": d.get("recipeCuisine") or (d.get("_identity") or {}).get("cuisine") or "",
+            "ingredients": [_t(i) for i in (d.get("recipeIngredient") or [])],
+            "method": " ".join(_t(s) for s in (d.get("recipeInstructions") or [])[:3]),
+        })
+    label = (dish.get("display_name") or "").strip() or dish["name"]
+    alternates = list(dish.get("aliases") or []) + [str(q) for q in (dish.get("queries") or [])]
+    if label != dish["name"]:
+        # The key can carry a typo the display name corrected; never show it as a name.
+        alternates = [a for a in alternates if dish["name"].lower() not in str(a).lower()]
+    from extract.dish_signal import compose_dish_description
+    out = await asyncio.to_thread(
+        compose_dish_description, label, alternates=alternates, recipes=recipes,
+        notes=str(body.get("notes") if "notes" in body else (dish.get("notes") or "")),
+        previous=str(body.get("previous") if "previous" in body else (dish.get("description") or "")))
+    if not out.get("description"):
+        raise HTTPException(status_code=502, detail="The description could not be written just now. Try again.")
+    return out
+
+
 @app.patch("/dishes/{name}")
 async def update_dish_endpoint(name: str, request: Request):
     _require_perm(request, "manage_dishes")
