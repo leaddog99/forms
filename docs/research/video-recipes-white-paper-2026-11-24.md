@@ -103,7 +103,7 @@ So a personal save of a video recipe is never refused. When the recipe is questi
 - **How long caption access will be refused,** and what the paid route costs at volume (about three paid requests per video).
 - **How the personal-save warning reads on screen.** It has been tested behind the scenes, not yet by a person saving a recipe.
 - **Whether three places per dish is right,** and whether popular dishes deserve more.
-- **Whether one channel should be able to take every place.** Places go to the most-watched videos, so a prolific channel can fill all three. In the first Shrimp Stir Fry run, five of the eight eligible videos came from a single channel and were also the most watched. A rule of one place per channel is noted as a to-do and deliberately not built until we have seen more dishes.
+- **Whether one channel should be able to take every place.** Places go to the most-watched videos, so a prolific channel can fill all three. In the first Shrimp Stir Fry run, five of the eight eligible videos came from a single channel and were also the most watched. A rule of one place per channel is noted as a to-do and deliberately not built until we have seen more dishes. That same run then gave all three places to the one channel, at 4,601, 4,288 and 2,013 views a day; a one-per-channel rule would have replaced two of them with videos at 64 and 28. Seeing that, the curator is leaning towards leaving the rule out: three heavily watched videos are worth more than two fill-ins hardly anyone watches.
 - **How the sample holds up.** 152 videos across 23 dishes is enough to see the shape, not to trust every percentage.
 
 ## Change log

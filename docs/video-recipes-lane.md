@@ -333,6 +333,10 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    CHANNEL rule. Seats go to the most views per day, so one prolific channel can
    take all of them (Shrimp Stir Fry #3345: 5 of 8 eligible videos from one
    channel, also the three most watched). Not built; watch how often it happens.
+   That run seated all three from the one channel (4,601 / 4,288 / 2,013 views a
+   day); the alternatives were at 64 and 28. Curator the same day: leaning to
+   leave the rule OUT, since three heavily watched videos beat two fill-ins
+   hardly anyone watches. Popularity stays the order.
    TO DO (curator asked for this note): (1) HUMAN CALIBRATION - watch about 10
    judged videos, passes and fails, and compare with the verdicts; the judge
    reads captions, not the video. (2) Run the five-question version on real
