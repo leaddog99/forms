@@ -56,7 +56,9 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("disallowed-path",   "disallowed", False),   # curator blocklist
     ("domain-exclude",    "is_recipe",  False),   # curator per-domain exclude
     ("aggregator-host",   "disallowed", False),   # curator: thin-wrapper index, content lives elsewhere
-    ("collection-title",  "is_recipe",  False),   # it IS a roundup/listicle
+    # A read of the TITLE alone, so an inference: 4 of 5 drops in the 2026-11-27
+    # review were single recipes. Overturnable since that date.
+    ("collection-title",  "is_recipe",  True),
     ("recipe-card-missing", "is_recipe", False),  # the page shows a dead plugin shortcode, no recipe
     ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope (legacy)
     ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe

@@ -1079,7 +1079,8 @@
         const STATUSES = ['new','recovered','skipped','unreachable'];
         wrap.innerHTML = rejects.map(x => {
           const q = qual(x);
-          const antibot = /anti-bot|fetch-fail/i.test(x.reason || '');
+          // A page that is simply gone (404) is a fetch-fail but not an anti-bot wall.
+          const antibot = /anti-bot|fetch-fail/i.test(x.reason || '') && !/page is gone/i.test(x.reason || '');
           const host = hostOf(x.url);
           const sel = `<select class="rej-status" data-id="${x.id}" title="${escapeHtml(x.notes || 'triage this reject')}"
               style="flex:0 0 auto;padding:1px 2px;font:inherit;font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:5px;background:transparent">

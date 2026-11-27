@@ -643,6 +643,40 @@ def _brave_key() -> str | None:
     return os.getenv("BRAVE_KEY") or os.getenv("BRAVE_API_KEY") or os.getenv("BRAVE_SEARCH_API_KEY")
 
 
+def _unwrap_translate_rows(rows: list[dict], skip) -> list[dict]:
+    """translate.google.com/translate?u=<page> and google.com/url?q=<page> rows
+    become the publisher page they wrap (no request: the page is in the query
+    string). The Google providers do this in _collect_page; Brave results did
+    not pass through it, so Dosa #3328 (2026-11-27) carried two translate.google
+    rows to Moz, which has never crawled them. A wrapper with no page behind it,
+    or one whose page is already in the results, is dropped."""
+    from urllib.parse import urlsplit
+    from input.pipeline.url_utils import root_domain
+    out, seen, n = [], {r.get("link") for r in rows}, 0
+    for r in rows:
+        link = r.get("link") or ""
+        sp = urlsplit(link) if is_google_wrapper(link) else None
+        if sp is None or not (sp.path.rstrip("/").endswith("/url")
+                              or sp.netloc.lower().startswith("translate.google.")):
+            out.append(r)
+            continue
+        n += 1
+        real = unwrap_google_redirect(link)
+        if not real or real in seen:
+            continue
+        seen.add(real)
+        r = dict(r, link=real)
+        if skip and (root_domain(real) or "").lower() in skip:
+            r["blocked"] = True
+        out.append(r)
+    if n:
+        print(f"  [brave] {n} result(s) came wrapped in a Google translate/redirect link - "
+              f"{n - (len(rows) - len(out))} unwrapped to the publisher page")
+        for i, r in enumerate(out, 1):
+            r["rank"] = i
+    return out
+
+
 def _brave(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
            should_cancel=None) -> list[dict]:
     """Brave, through searchkit. Same contract as the other providers: [{link,
@@ -654,9 +688,10 @@ def _brave(query, pages, want, gl, hl, timeout, skip: set[str] = frozenset(),
                            dry_pages=_serp_dry_cfg(),
                            log=lambda line: print(line.replace("[search]", "[brave]", 1)))
     try:
-        return searchkit.search(query, want=want, pages=pages, country=gl, lang=hl,
+        rows = searchkit.search(query, want=want, pages=pages, country=gl, lang=hl,
                                 skip_hosts=skip, timeout=timeout,
                                 should_cancel=should_cancel, config=cfg)
+        return _unwrap_translate_rows(rows, skip)
     except searchkit.SearchCancelled as e:
         from input.pipeline.jobs import JobCancelled
         raise JobCancelled(str(e)) from None

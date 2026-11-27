@@ -300,19 +300,52 @@ def is_recipe_host(host: str) -> bool:
     return not (_SHOP_HOST_RE.search(h) or _CREDIT_HOST_RE.search(h))
 
 
-def recipe_links(text: str) -> list[str]:
+# A link whose LAST path segment is one of these is a section of the creator's
+# site, not a recipe page (jamieoliver.com/nutrition and
+# profoodhomemade.com/recipes were handed to the web lane as "the recipe",
+# jobs 3326/3328, 2026-11-27). Such a link goes last, never first.
+_INDEX_SEGMENTS = frozenset({
+    "", "recipes", "recipe", "nutrition", "about", "about-us", "contact", "shop", "store", "books",
+    "book", "cookbook", "cookbooks", "subscribe", "newsletter", "membership", "members", "join",
+    "blog", "home", "index", "videos", "courses", "classes", "merch", "links", "faq", "press",
+})
+_WORD_RE = re.compile(r"[a-z]{3,}")
+_TITLE_NOISE = frozenset({"the", "and", "for", "with", "how", "make", "recipe", "recipes", "best", "easy",
+                          "you", "your", "this", "that", "from", "video", "ever", "home", "homemade"})
+
+
+def _link_rank(u: str, about_words: frozenset) -> tuple:
+    """Sort key, likeliest recipe page first: a page that names what the video
+    is about, then one that says 'recipe', then any deep page; a bare section
+    of the site (see _INDEX_SEGMENTS) last."""
+    path = re.sub(r"^https?://[^/?#]+", "", u).split("?")[0].split("#")[0]
+    last = path.rstrip("/").rsplit("/", 1)[-1].lower()
+    is_index = last in _INDEX_SEGMENTS
+    overlap = len(about_words & set(_WORD_RE.findall(path.lower()))) if about_words else 0
+    return (1 if is_index else 0, -overlap, 0 if "recipe" in u.lower() else 1,
+            0 if len(u.split("/")) > 4 else 1)
+
+
+def recipe_links(text: str, about: str = "") -> list[str]:
     """Outbound links in a description that could be a written recipe, the
-    likeliest first (a URL that says 'recipe' outranks the channel homepage)."""
+    likeliest first. `about` is the video's title: a link whose address shares
+    its words (…/classic-toad-in-the-hole under "Toad in the Hole") outranks
+    one that only says 'recipe', and a section page (/nutrition, /recipes)
+    goes last. The order is stable, so equal links keep the description's."""
     seen, out = set(), []
     for m in _URL_RE.finditer(text or ""):
         u = m.group(0).rstrip(".,;:!?)")
-        if not is_recipe_host(_host(u)):
+        h = _host(u)
+        # every Amazon storefront, whatever the country (amazon.in/shop/... was
+        # taken as HomeCookingShow's recipe link, job 3328)
+        if not is_recipe_host(h) or re.search(r"(?:^|\.)(?:amazon|amzn)\.", h):
             continue
         if u in seen:
             continue
         seen.add(u)
         out.append(u)
-    out.sort(key=lambda u: (0 if "recipe" in u.lower() else 1, 0 if len(u.split("/")) > 4 else 1))
+    words = frozenset(_WORD_RE.findall((about or "").lower())) - _TITLE_NOISE
+    out.sort(key=lambda u: _link_rank(u, words))
     return out
 
 
@@ -563,6 +596,13 @@ class LadderResult:
     published: str = ""                     # the page's publish date; "" = not stated
     written: str = "none"                   # recipe | ingredients | link | none
     has_captions: bool = False              # a caption track exists (a transcript could be read)
+    # How many method steps are WRITTEN under the video. A "description" rung
+    # can be reached on a method HEADING with no step lines under it; the
+    # extractor then takes the steps from the captions that ride along as
+    # corroboration (Dosa 0xyV0q49WrA, 2026-11-27: 15 ingredient lines, 0 step
+    # lines, saved with 14 steps). The seat reads this to know the method is
+    # really spoken and must pass the method check. None = not counted.
+    written_steps: Optional[int] = None
 
     @property
     def watch_class(self) -> str:
@@ -592,6 +632,7 @@ class LadderResult:
                 "transcript_words": self.transcript_words or None,
                 "caption_language": self.caption_language or None,
                 "links": self.links or None, "reject": self.reject,
+                "written_steps": self.written_steps,
                 "fallback_rung": self.fallback_rung}
 
 
@@ -690,7 +731,7 @@ def ladder(url: str, *, description: Optional[str] = None, comments: Optional[li
     desc = (info.description if info and info.description else (description or "")).strip()
     comments = [c.strip() for c in (comments or []) if (c or "").strip()][:3]
     sig = recipe_signal(desc)
-    links = recipe_links(desc)
+    links = recipe_links(desc, about=(info.title if info else "") or "")
     comment_hits = [c for c in comments if recipe_signal(c).has_recipe]
     has_captions = bool(info.caption_tracks) if info else True   # unknown → try
     transcript = ft(vid, log=log) if (want_transcript and has_captions) else None
@@ -709,6 +750,7 @@ def ladder(url: str, *, description: Optional[str] = None, comments: Optional[li
                 caption_language=transcript.language if transcript else "", length_s=length_s,
                 readable=info is not None, has_captions=bool(info.caption_tracks) if info else False,
                 views=info.views if info else None, published=(info.published if info else "") or "",
+                written_steps=sig.step_lines,
                 written=("recipe" if sig.has_recipe
                          else "ingredients" if (sig.has_ingredient_list
                                                 and not (links and sig.points_elsewhere))

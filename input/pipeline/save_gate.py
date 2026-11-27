@@ -43,6 +43,21 @@ SINGLE_STEP_MIN_CJK_CHARS = 40
 RICH_INGREDIENT_MIN_INGS = 5
 RICH_INGREDIENT_MIN_STEPS = 1
 
+# THE MIRROR CASE: a dish that genuinely has TWO ingredients (yogurt = milk +
+# starter, preserved lemons = lemons + salt, whipped cream, cooked quinoa, jam,
+# lemonade). The ingredient floor exists to stop paywall stubs and wrong-node
+# extractions, and those are short on METHOD too; a two-ingredient page with a
+# real, multi-step method is none of them. Found 2026-11-27 (job 3324 refused
+# rainbowplantlife's preserved lemons, rank 3, grade A-); see the replay figures
+# in bcc-state-code.md for that date. One ingredient stays refused.
+TWO_INGREDIENT_INGS = 2
+TWO_INGREDIENT_MIN_STEPS = 2
+TWO_INGREDIENT_MIN_PROSE = 150   # the same floor SINGLE_STEP_MIN_CHARS uses
+# Replay 2026-11-27 over all 59 historical "fewer than 3 ingredients (2)"
+# rejects, 58 still in llm_extract_cache: 57 flip, every one a real page
+# (yogurt x16, jams x10, tagliatelle x5, quinoa, whipped cream, preserved
+# lemons, lemonade ...), 0 junk; the one that stays has a single step.
+
 # A PLACEHOLDER STEP IS NOT A STEP. Aggregator pages (punchfork.com, job 1911,
 # 2026-09-10) carry the ingredient list and a single line pointing at the real
 # publisher — "See full directions at allrecipes.com/…", "For complete
@@ -81,10 +96,17 @@ def is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tupl
         return False, "no name"
     ings = recipe.get("recipeIngredient") or []
     real_ings = sum(1 for i in ings if str(i).strip())
-    if real_ings < min_ings:
-        return False, f"fewer than {min_ings} ingredients ({real_ings})"
     steps = recipe.get("recipeInstructions") or []
     real_steps = real_instruction_count(recipe)
+    if real_ings < min_ings:
+        # TWO INGREDIENTS AND A REAL METHOD IS A RECIPE (see TWO_INGREDIENT_*).
+        if real_ings == TWO_INGREDIENT_INGS and min_ings > TWO_INGREDIENT_INGS:
+            _prose = sum(len(str((s.get("text") if isinstance(s, dict) else s) or "").strip())
+                         for s in steps if not is_placeholder_step(s.get("text") if isinstance(s, dict) else s))
+            if real_steps >= TWO_INGREDIENT_MIN_STEPS and _prose >= TWO_INGREDIENT_MIN_PROSE:
+                return True, (f"ok (2 ingredients, {real_steps} steps, {_prose} chars of method "
+                              "- a genuinely two-ingredient dish)")
+        return False, f"fewer than {min_ings} ingredients ({real_ings})"
     if real_steps == 0 and any(is_placeholder_step(s.get("text") if isinstance(s, dict) else s)
                                for s in steps):
         return False, "only a placeholder step — directions live elsewhere (aggregator/teaser)"

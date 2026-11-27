@@ -13420,6 +13420,36 @@ a scheduled job is added, name folding changes.
   split into two photos merged ingredients (page 1) and steps 2-6 (page 2) correctly. NOT tested:
   the upload through the endpoint (needs the restart + a signed-in session), a phone camera.
   The Screenshot box shows page 1 only.
+* **2026-11-27 - REVIEW OF DISH REFRESHES 3324-3339 and its fixes.** No errors in the ten; the
+  faults were wrong rejections and a silent video lane. Fixed (all need the BCC restart):
+  - VIDEO SEARCH (`_video_search`, intake/build_query_batch.py): when the web results hold fewer
+    than `video_search_below` (5) videos, one extra query "<dish> recipe site:youtube.com"
+    (`video_search`, `video_search_results` 10; Limits). The lane now also prints "0 video results".
+    Live: Mung Bean Soup and Seared Scallops, 0 videos before, 10 each from the search.
+  - COLLECTION TITLE: separators "－ / » › ~ ‒ ―" added; "steps/stages/layers" are not listicle
+    nouns; ledger reason `collection-title` is now OVERTURNABLE.
+  - TWO-INGREDIENT RECIPES (input/pipeline/save_gate.py `TWO_INGREDIENT_*`): 2 ingredients pass
+    with >= 2 real steps and >= 150 chars of method. Replay of all 59 historical "(2)" rejects:
+    58 in the extract cache, 57 now pass, all genuine (yogurt x16, jams, tagliatelle ...), 0 junk.
+  - URL PRE-FILTER skipped for a result the title screen read as "the dish" (`_title_verdict`).
+  - MOZ: a failed URL with a query string is scored once more without it (not when the query
+    looks like the page id); Brave rows wrapped in translate.google / google.com/url are unwrapped
+    (`_unwrap_translate_rows`, serp_search.py). NOT fixed: pages Moz simply has no data for
+    (bbc.co.uk/food duck stir fry) are still dropped - that is a ranking-policy question.
+  - LINK VIDEOS (`recipe_links(text, about=title)`): the link that names the dish first, section
+    pages (/nutrition, /recipes) last, every Amazon storefront excluded.
+  - SPOKEN METHOD behind a "description" rung: `written_steps` on the capture; fewer than 2 written
+    steps with captions present = spoken, so the method check runs (`_spoken` in _seat_video_lane).
+  - REJECT TEXT: a 404/410 fetch-fail says "the page is gone", and dishes_v2.html no longer tags
+    it "anti-bot?".
+  - DATA (curator-approved): dish key `Seared Scallope` kept (join key across 12 tables, vec
+    included); display_name "Seared Scallops", query lines corrected, aliases added.
+  - Tests: intake/tests/test_dish_review_fixes.py (5).
+  NOT FIXED: Washington Post (7 rejects "0 instructions"): the page's own JSON-LD carries
+  `recipeInstructions: []` and the method is not in the fetched HTML; a rendered paid fetch came
+  back empty on 2 of 3 tries. OPEN: Shrimp Stir Fry not yet created/re-run; no typo guard at dish
+  creation; the YouTube hero-image report (cannot reproduce: the 3 saved user rows and both Dosa
+  rows carry the right still; importing.html derives it from the video id since 10-17).
 * **2026-11-25 - Form fix:** populateFormFromRecipe now carries `sourceImage` into the save (photo
   extracts were saving `sourceImage: []`).
 * **2026-11-25 - Data repair, curator-approved: recipes 918, 919, 922, 925 (user 5).** Page photo

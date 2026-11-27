@@ -399,6 +399,33 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "day of rapid reading. 0 = no wait.",
     },
     {
+        "key": "video_search",
+        "value": True,
+        "type": "bool",
+        "category": "Limits",
+        "label": "Run a video search for each dish",
+        "description": "When a dish's web results hold few videos, run one extra search limited "
+                       "to YouTube so the video lane has something to read. Off = the lane sees "
+                       "only the videos the web searches happen to return (often none).",
+    },
+    {
+        "key": "video_search_results",
+        "value": 10,
+        "type": "int",
+        "category": "Limits",
+        "label": "Video search: results to ask for",
+        "description": "How many results the per-dish video search asks for (one page).",
+    },
+    {
+        "key": "video_search_below",
+        "value": 5,
+        "type": "int",
+        "category": "Limits",
+        "label": "Video search: run when the web results hold fewer videos than this",
+        "description": "The video search is skipped when the web searches already returned at "
+                       "least this many videos.",
+    },
+    {
         "key": "caption_paid_fallback",
         "value": True,
         "type": "bool",

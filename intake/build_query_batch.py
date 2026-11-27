@@ -306,6 +306,61 @@ _VIDEO_HOSTS = frozenset({"youtube.com", "youtu.be"})
 _VIDEO_ADMITTED = frozenset({"description", "ingredients"})
 
 
+def _video_search(dish: str, entries: list[dict], should_cancel=None) -> dict:
+    """The video lane's OWN search (2026-11-27).
+
+    Until now the lane lived on whatever videos the web queries happened to
+    return, and a recipe-worded web query often returns none: 31 of 74 refreshes
+    had zero video results and the lane said nothing (review of jobs 3324-3339).
+    When the web results hold fewer than `video_search_below` videos, one extra
+    query - "<dish> recipe site:youtube.com" - is run and its videos are added
+    to `entries` (they are still dropped from the web lane by the blocked-host
+    filter, exactly like the ones the web queries found).
+
+    Settings: `video_search` (on/off), `video_search_results` (how many to ask
+    for), `video_search_below`. Returns {ran, query, found, added, have}."""
+    out = {"ran": False, "query": "", "found": 0, "added": 0,
+           "have": sum(1 for e in entries if (e.get("domain") or "").lower() in _VIDEO_HOSTS)}
+    try:
+        from input.pipeline.system_config import get_setting as _gs
+        if not _gs("video_search", True) or int(_gs("video_seats", 3) or 0) <= 0:
+            return out
+        want = int(_gs("video_search_results", 10) or 0)
+        below = int(_gs("video_search_below", 5) or 0)
+    except Exception:
+        want, below = 10, 5
+    if want <= 0 or out["have"] >= below or not (dish or "").strip():
+        return out
+    if should_cancel and should_cancel():
+        from input.pipeline.jobs import JobCancelled
+        raise JobCancelled("cancelled before the video search")
+    from input.pipeline.serp_search import serp_search
+    query = f"{dish.strip()} recipe site:youtube.com"
+    out.update(ran=True, query=query)
+    # skip_hosts is EMPTY on purpose: youtube.com is a blocked host for the web
+    # lane, and with it skipped the provider would page on looking for "usable"
+    # results that this query can never return.
+    results = serp_search(query, pages=1, want=want, gl="us", hl="en",
+                          skip_hosts=frozenset(), should_cancel=should_cancel)
+    seen = {normalize_url(e["url"]) or e["url"] for e in entries}
+    for r in results:
+        url = r.get("link")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            continue
+        if (root_domain(url) or "").lower() not in _VIDEO_HOSTS:
+            continue
+        out["found"] += 1
+        key = normalize_url(url) or url
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append({"url": url, "title": r.get("title") or "", "google_rank": r.get("rank"),
+                        "domain": root_domain(url), "_queries": [query], "_hls": ["en"],
+                        "_lines": [], "_video_search": True})
+        out["added"] += 1
+    return out
+
+
 def _read_video_results(entries: list[dict], should_cancel=None) -> dict:
     """The video lane's ADMISSION READ (docs/video-recipes-lane.md 4.1, step 3).
 
@@ -676,7 +731,10 @@ _JSONLD_PASS_SCORE = 100
 #     would nuke real recipes.
 # This is a HARD reject that overrides even a JSON-LD pass: a collection page can embed
 # Recipe JSON-LD (that's exactly the leak), so the title verdict wins.
-_TITLE_SEP_RE = re.compile(r"\s+(?:[|–—:•·]|-)\s+")
+# 2026-11-27: "－" (full-width dash, Tesco), "/" (Fresh Eggs Daily), "»", "›", "~", "‒",
+# "―" added — each dropped a single recipe as a collection because the SITE NAME
+# ("… Recipes") was read as part of the title. All still need whitespace on both sides.
+_TITLE_SEP_RE = re.compile(r"\s+(?:[|–—:•·－/»›~‒―]|-)\s+")
 _PLURAL_RECIPES_RE = re.compile(r"\brecipes\b", re.IGNORECASE)
 
 # Listicle signature: a COUNT (number) followed — within a couple of adjective words —
@@ -696,6 +754,9 @@ _LISTICLE_UNIT_STOP = {
     "servings", "calories", "grams", "kg", "cups", "tablespoons", "tbsps", "teaspoons",
     "tsps", "ounces", "oz", "pounds", "lbs", "ml", "liters", "litres", "pieces", "slices",
     "portions", "ingredients", "calorie", "carbs", "macros",
+    # method counts: "Toad in the hole in 4 easy steps" is ONE recipe (BBC Good Food,
+    # dropped as a listicle in job 3326, 2026-11-27).
+    "steps", "stages", "layers",
 }
 
 
@@ -1057,7 +1118,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         # fetch. Non-latin-script paths are also let through inside the function.
         _foreign_line = any((h or "en")[:2].lower() != _base_lang
                             for h in (e.get("_hls") or []))
-        if url_prefilter and not _foreign_line:
+        # A result the TITLE SCREEN just read as "the dish" is not pre-filtered on
+        # its URL words: the title is the stronger evidence. Jobs 3324/3339
+        # (2026-11-27) never fetched davidlebovitz.com/moroccan-preser-1,
+        # feastingathome.com/how-to-preserve-lemons ("Easy Preserved Lemons
+        # Recipe") or a "Mung Bean Soup" page for want of a food word in the path.
+        _title_says_dish = e.get("_title_verdict") == "same"
+        if url_prefilter and not _foreign_line and not _title_says_dish:
             from input.pipeline.url_word_lists import url_lacks_recipe_signal
             # subject_words = what this run is FOR. A dish refresh must never
             # pre-filter away the word it searched for: Tiramisu dropped 48 of 94
@@ -1442,6 +1509,31 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     # One batched lookup for the whole survivor set (≤50 targets per Moz call) —
     # identical per-URL decision to score_url_via_moz, 10-25x fewer HTTP calls.
     _batch = _us.score_urls_via_moz([e["url"] for e in entries])
+    # SECOND TRY WITHOUT THE QUERY STRING. Moz indexes a page under its clean
+    # address; a result link carrying a display switch missed it and a top
+    # publisher was dropped (cooking.nytimes.com/recipes/10203-toad-in-the-hole
+    # ?eafs_enabled=false, rank 7, job 3326, 2026-11-27). Only for a failed URL
+    # with a real path whose query does not look like the page's own id - there
+    # the bare path would be some other page (?recipeId=42, ?p=123).
+    _bare: dict[str, str] = {}
+    for e in entries:
+        u = e["url"]
+        if _batch.get(u) or "?" not in u:
+            continue
+        from urllib.parse import urlsplit, urlunsplit, parse_qs
+        sp = urlsplit(u)
+        if len(sp.path.strip("/")) < 3:
+            continue
+        if any(re.fullmatch(r"(p|id|v|page_id|post|recipe|recipeid|recipe_id|article|item|sku)", k, re.I)
+               for k in parse_qs(sp.query, keep_blank_values=True)):
+            continue
+        _bare[u] = urlunsplit((sp.scheme, sp.netloc, sp.path, "", ""))
+    if _bare:
+        _again = _us.score_urls_via_moz(sorted(set(_bare.values())))
+        for u, b in _bare.items():
+            if _again.get(b):
+                _batch[u] = _again[b]
+                print(f"      [moz] scored without its query string: {u}")
     for i, e in enumerate(entries, start=1):
         url = e["url"]
         scores = _batch.get(url)
@@ -2066,6 +2158,16 @@ def build_batch(
               f"term, or relax quotes) if you want more.")
 
     # Video lane, admission read (ledger first - counts, seats nothing).
+    _cc("the video search")
+    try:
+        _vs = _video_search(dish, entries, should_cancel=should_cancel)
+        if _vs["ran"]:
+            print(f"      [video] the web results held {_vs['have']} video(s); video search {_vs['query']!r} "
+                  f"found {_vs['found']}, {_vs['added']} new")
+    except Exception as _vse:
+        if type(_vse).__name__ == "JobCancelled":
+            raise
+        print(f"      [video] video search skipped ({type(_vse).__name__}: {_vse})")
     _cc("the video read")
     try:
         _vid = _read_video_results(entries, should_cancel=should_cancel)
@@ -2090,6 +2192,9 @@ def build_batch(
         print(f"      [video] {_vid['results']} video result(s), {_vid['read']} read: {_split or 'none read'}"
               f" - {len(_vid.get('admitted') or [])} carry a recipe (written, or written ingredients"
               f" with a spoken method) and go to the video lane")
+    else:
+        # Say so. A silent lane read as "the lane did not run" (review 2026-11-27).
+        print("      [video] 0 video results for this dish - the video lane has nothing to read")
 
     print(f"\n[2/7] filter_disallowed (domain + URL-path blacklist)")
     entries, dropped_disallowed = _filter_disallowed(entries)
@@ -2289,6 +2394,8 @@ def build_batch(
                 "url": e["url"], "da": float(da), "pa": float(pa),
                 "ou": round(float(ou), 3) if isinstance(ou, (int, float)) else None,
                 "would_qualify": bool(would_qualify),
+                # what the fetch actually saw ("gone:404", "blocked - thin body ...")
+                "why": str(e.get("_dropped_reason") or "")[len("fetch-failed"):].lstrip(": ").strip(),
             })
         n_qual = sum(1 for c in fetch_fail_candidates if c["would_qualify"])
         print(f"\n[Phase A] {len(fetch_fail_candidates)} fetch-fail(s) authority-scored "

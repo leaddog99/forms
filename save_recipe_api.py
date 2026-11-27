@@ -8930,7 +8930,16 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         # not be read the ladder falls through to another rung (a link, a bare
         # transcript) - that is not the recipe this video was admitted for.
         _vclass = (a.get("_video") or {}).get("class")
-        _rung = ((recipe_dict.get("_source") or {}).get("capture") or {}).get("rung")
+        _vcap = ((recipe_dict.get("_source") or {}).get("capture") or {})
+        _rung = _vcap.get("rung")
+        # SPOKEN METHOD: rung 1b, or a "description" rung reached on a method
+        # heading with fewer than two written step lines while captions rode
+        # along - there the extractor took the steps from the captions too, and
+        # the method check must see it (Dosa 0xyV0q49WrA, 2026-11-27).
+        _ws = _vcap.get("written_steps")
+        _spoken = (_rung == "description+transcript"
+                   or (_rung == "description" and isinstance(_ws, int) and _ws < 2
+                       and bool(_vcap.get("transcript_words"))))
         if _vclass == "ingredients" and _rung not in ("description+transcript", "description"):
             _drop(a, f"spoken method not read (the captions gave {_rung or 'nothing'})")
             continue
@@ -8955,7 +8964,7 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         # then four on the method). A fail takes no seat; so does a check that
         # could not be run - an unchecked spoken method is not seated.
         _mcheck = None
-        if _rung == "description+transcript" and check_mode in ("drop", "report"):
+        if _spoken and check_mode in ("drop", "report"):
             try:
                 from intake import youtube_source as _vys
                 from input.pipeline import video_method_check as _vmc
@@ -8993,7 +9002,7 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
             "video": {k: v for k, v in (a.get("_video") or {}).items() if v not in (None, "")},
             "google_rank": a.get("google_rank"),
         }
-        if _rung == "description+transcript":
+        if _spoken:
             # the method is OUR reading of what was said, not the creator's written text
             payload["_master"]["video"]["method_from"] = "captions"
         if _mcheck:
@@ -9014,7 +9023,7 @@ async def _seat_video_lane(canonical_name: str, lane: dict, now_iso: str) -> dic
         _vpd = _v.get("views_per_day")
         _vtxt2 = f"{_vpd:,.0f} views/day" if _vpd is not None else "views not stated"
         print(f"[REFRESH-DISH] VIDEO SEAT {out['seated']}/{seats}  {_vtxt2}  "
-              f"{'spoken method' if _rung == 'description+transcript' else 'written recipe'}  "
+              f"{'spoken method' if _spoken else 'written recipe'}  "
               f"{(_v.get('channel') or '?')}  {(recipe_dict.get('name') or '')[:60]!r}  {url}")
     print(f"[REFRESH-DISH] VIDEO LANE {canonical_name!r}: seated {out['seated']}/{seats} "
           f"from {out['admitted']} admitted ({out['below_floor']} below the floor); "
@@ -9589,9 +9598,15 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     for c in batch_result.get("fetch_fail_candidates", []):
         if c.get("rescued"):
             continue
+        # Say what the fetch SAW. A page that is simply gone (404/410) is not an
+        # anti-bot wall and no browser will recover it (jamieoliver.com, job 3326).
+        _why = str(c.get("why") or "")
+        _gone = bool(re.search(r"\b(404|410)\b|\bgone\b|not found", _why, re.I))
         rejects.append({
             "url": c.get("url"),
-            "reason": "fetch-failed (likely anti-bot — recover via Playwright/bookmarklet)",
+            "reason": (f"fetch-failed (the page is gone: {_why})" if _gone else
+                       "fetch-failed (likely anti-bot — recover via Playwright/bookmarklet)"
+                       + (f": {_why}" if _why else "")),
             "title": "",
             "da": c.get("da"), "pa": c.get("pa"), "ou": c.get("ou"),
             "rank": None, "exc_score": None, "exc_grade": None,
