@@ -349,6 +349,28 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "create the name as typed. Foreign and regional names are left alone.",
     },
     {
+        "key": "dish_description_search",
+        "value": True,
+        "type": "bool",
+        "category": "Search",
+        "label": "Search the web before describing a new dish",
+        "description": "A dish's one-line description is what its matching profile is built from. "
+                       "With this on, a new dish's first search line is run once (one results page) "
+                       "and the description is written from what the results say, instead of from "
+                       "the dish name alone. Off = the older name-only description.",
+    },
+    {
+        "key": "dish_description_check",
+        "value": True,
+        "type": "bool",
+        "category": "Search",
+        "label": "Check a dish's description against its recipes after a refresh",
+        "description": "After a refresh, one model call compares the dish's description with the "
+                       "recipes it now holds. A real disagreement (wrong cuisine, ingredient or "
+                       "technique) is shown on the dish page as a suggestion. Nothing is changed "
+                       "until the curator accepts it.",
+    },
+    {
         "key": "dish_title_screen",
         "value": "drop",
         "type": "string",

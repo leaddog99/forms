@@ -184,32 +184,31 @@ RETRY_METHOD_ID = "dish_description_retry_v1"
 RETRY_MODEL = "claude-opus-4-8"
 
 _RETRY_RULES = (
-    "\n\nYou are REWRITING a dish description a curator judged wrong or weak. "
-    "You are given the dish's name, its other names, the curator's notes, the "
-    "previous description, and the recipes currently filed under this dish.\n"
-    "  - The recipes are the evidence. Describe the dish they have in common: "
-    "its cuisine, its defining ingredients and its technique. Where the "
-    "previous description contradicts the recipes, the recipes win.\n"
-    "  - The curator's notes outrank everything, including the recipes.\n"
-    "  - Ignore a recipe that is plainly a different dish filed here by mistake.\n"
-    "  - With no recipes, use what is reliably known about the dish; if it is "
-    "not a dish you know, describe only what the name itself states and do not "
-    "invent a cuisine, a colour or a technique.\n"
-    "  - Do not repeat the previous description's wording unless it was right.\n"
+    "\n\nYou are WRITING a dish description from evidence, not from memory. You "
+    "may be given: the dish's name and other names, the curator's notes, a "
+    "previous description, web search results for the dish (titles and "
+    "snippets), and the recipes currently filed under this dish.\n"
+    "  - Describe the CANONICAL dish: its cuisine, its defining ingredients "
+    "and its technique.\n"
+    "  - The curator's notes outrank everything else.\n"
+    "  - Search results say what the dish is generally understood to be. Use "
+    "the ones about this dish; ignore results about something else that "
+    "shares the name (a person, a restaurant, a product).\n"
+    "  - Filed recipes show the dish in practice. Use what they have in "
+    "common; ignore one that is plainly a different dish filed by mistake, "
+    "and do not promote one recipe's shortcut into the definition.\n"
+    "  - Where a previous description contradicts the evidence, the evidence "
+    "wins. Do not repeat its wording unless it was right.\n"
+    "  - With no usable evidence, use what is reliably known about the dish; "
+    "if it is not a dish you know, describe only what the name itself states "
+    "and do not invent a cuisine, a colour or a technique.\n"
     "Output ONLY the one sentence, starting with the dish name and a colon."
 )
 
 
-def compose_dish_description(name: str, *, alternates: Optional[list] = None,
-                             recipes: Optional[list] = None, notes: str = "",
-                             previous: str = "", create=None) -> dict:
-    """One considered description for the Retry button. `recipes` is a list of
-    {name, cuisine, ingredients:[...], method} taken from the dish's saved
-    recipes. Returns {description, method, model, recipes_used}; description is
-    '' when the call fails (the editor then leaves the box as it was)."""
-    name = (name or "").strip()
-    if not name:
-        return {"description": "", "method": RETRY_METHOD_ID, "model": RETRY_MODEL, "recipes_used": 0}
+def _evidence_lines(name: str, alternates, recipes, notes: str, previous: str,
+                    search_results) -> tuple:
+    """The shared user message: (lines, recipes_used, results_used)."""
     lines = [f"Dish name: {name}"]
     alts = [str(a).strip() for a in (alternates or []) if str(a).strip()
             and str(a).strip().lower() != name.lower()]
@@ -218,20 +217,99 @@ def compose_dish_description(name: str, *, alternates: Optional[list] = None,
     if (notes or "").strip():
         lines.append("Curator's notes: " + notes.strip()[:1200])
     if (previous or "").strip():
-        lines.append("Previous description (judged wrong or weak): " + previous.strip()[:400])
+        lines.append("Previous description: " + previous.strip()[:400])
+    n_res = 0
+    for r in (search_results or [])[:10]:
+        title, snip = str(r.get("title") or "").strip(), str(r.get("snippet") or "").strip()
+        if not (title or snip):
+            continue
+        n_res += 1
+        if n_res == 1:
+            lines.append("\nWeb search results for this dish:")
+        lines.append(f"  {n_res}. {title}" + (f" ({r['host']})" if r.get("host") else "")
+                     + (f" - {snip}" if snip else ""))
     used = 0
     for r in (recipes or [])[:8]:
         ings = [str(i).strip() for i in (r.get("ingredients") or []) if str(i).strip()][:14]
         if not ings:
             continue
         used += 1
-        lines.append(f"\nRecipe {used}: {str(r.get('name') or '').strip()[:90]}"
+        lines.append(f"\nFiled recipe {used}: {str(r.get('name') or '').strip()[:90]}"
                      + (f" [{r['cuisine']}]" if r.get("cuisine") else ""))
         lines.append("  ingredients: " + "; ".join(ings))
         if (r.get("method") or "").strip():
             lines.append("  method: " + str(r["method"]).strip()[:420])
-    if not used:
+    if not used and not n_res:
+        lines.append("\n(No search results and no recipes are available for this dish.)")
+    elif not used:
         lines.append("\n(No recipes are filed under this dish yet.)")
+    return lines, used, n_res
+
+
+JUDGE_METHOD_ID = "dish_description_check_v1"
+_JUDGE_TOOL = {
+    "name": "description_verdict",
+    "description": "Report whether the stored description fits the dish's filed recipes.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "agrees": {"type": "boolean", "description":
+                       "true when the stored description names the same dish the recipes are: "
+                       "same cuisine, same defining ingredients, same technique. Differences of "
+                       "wording, emphasis or optional ingredients are agreement."},
+            "why": {"type": "string", "description":
+                    "When agrees is false: one short plain sentence naming what is wrong "
+                    "(for example: it says brown sauce; every recipe is a white-wine cream sauce)."},
+            "description": {"type": "string", "description":
+                            "When agrees is false: the corrected one-sentence description."},
+        },
+        "required": ["agrees"],
+    },
+}
+
+
+def judge_dish_description(name: str, *, description: str, recipes: list,
+                           alternates: Optional[list] = None, notes: str = "",
+                           create=None) -> Optional[dict]:
+    """Does the stored description fit the recipes now filed under the dish?
+    Returns {agrees, why, description, recipes_used, method, model}, or None
+    when the call fails (no verdict is not a verdict)."""
+    lines, used, _ = _evidence_lines(name, alternates, recipes, notes, "", None)
+    lines.insert(1, "Stored description to judge: " + (description or "").strip()[:400])
+    try:
+        response = (create or llm.create)(
+            operation="dish_description_check", model=RETRY_MODEL, max_tokens=400,
+            system=(_SYSTEM_PROMPT + _RETRY_RULES +
+                    "\n\nHERE you are a CHECKER. Decide whether the stored description "
+                    "materially misdescribes the dish the filed recipes are. Be slow to "
+                    "disagree: only a wrong cuisine, wrong defining ingredient or wrong "
+                    "technique counts. Report with the tool."),
+            tools=[_JUDGE_TOOL], tool_choice={"type": "tool", "name": "description_verdict"},
+            messages=[{"role": "user", "content": "\n".join(lines)}])
+        ti = next((b.input for b in response.content if getattr(b, "type", "") == "tool_use"), None)
+    except Exception as e:
+        print(f"[WARN] dish description check failed: {type(e).__name__}: {e}")
+        return None
+    if not isinstance(ti, dict) or "agrees" not in ti:
+        return None
+    return {"agrees": bool(ti["agrees"]), "why": " ".join(str(ti.get("why") or "").split()),
+            "description": " ".join(str(ti.get("description") or "").split()),
+            "recipes_used": used, "method": JUDGE_METHOD_ID, "model": RETRY_MODEL}
+
+
+def compose_dish_description(name: str, *, alternates: Optional[list] = None,
+                             recipes: Optional[list] = None, notes: str = "",
+                             previous: str = "", search_results: Optional[list] = None,
+                             create=None) -> dict:
+    """One considered description for the Retry button. `recipes` is a list of
+    {name, cuisine, ingredients:[...], method} taken from the dish's saved
+    recipes. Returns {description, method, model, recipes_used}; description is
+    '' when the call fails (the editor then leaves the box as it was)."""
+    name = (name or "").strip()
+    if not name:
+        return {"description": "", "method": RETRY_METHOD_ID, "model": RETRY_MODEL, "recipes_used": 0}
+    lines, used, n_res = _evidence_lines(name, alternates, recipes, notes, previous,
+                                         search_results)
     try:
         response = (create or llm.create)(
             operation="dish_description_retry", model=RETRY_MODEL, max_tokens=300,
@@ -244,4 +322,4 @@ def compose_dish_description(name: str, *, alternates: Optional[list] = None,
         text = ""
     text = " ".join(text.split()).strip('"').strip("'").strip()
     return {"description": text, "method": RETRY_METHOD_ID, "model": RETRY_MODEL,
-            "recipes_used": used}
+            "recipes_used": used, "results_used": n_res}

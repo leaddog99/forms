@@ -4357,6 +4357,13 @@ def get_dish_endpoint(name: str):
             d = dishes_lib.get_dish(conn, name)
             if d is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
+            # An open "this description disagrees with its recipes" suggestion
+            # from the after-refresh check, for the editor to show.
+            try:
+                from input.pipeline import dish_describe
+                d["description_suggestion"] = dish_describe.get_suggestion(conn, d)
+            except Exception:
+                d["description_suggestion"] = None
             return d
     except HTTPException:
         raise
@@ -4484,39 +4491,35 @@ async def describe_dish_endpoint(name: str, request: Request):
         body = await request.json()
     except Exception:
         body = {}
+    from input.pipeline import dish_describe
+    from extract.dish_signal import compose_dish_description
     with _db() as conn:
         dish = dishes_lib.get_dish(conn, name)
         if dish is None:
             raise HTTPException(status_code=404, detail="Dish not found")
-        rows = conn.execute(
-            "SELECT data FROM master_recipes WHERE json_extract(data, '$._master.dish') = ? "
-            "ORDER BY id LIMIT 12", (dish["name"],)).fetchall()
-    recipes = []
-    for (data,) in rows:
-        try:
-            d = json.loads(data)
-        except Exception:
-            continue
-        _t = lambda x: x if isinstance(x, str) else str((x or {}).get("text") or (x or {}).get("name") or "") if isinstance(x, dict) else ""  # noqa: E731
-        recipes.append({
-            "name": d.get("name"),
-            "cuisine": d.get("recipeCuisine") or (d.get("_identity") or {}).get("cuisine") or "",
-            "ingredients": [_t(i) for i in (d.get("recipeIngredient") or [])],
-            "method": " ".join(_t(s) for s in (d.get("recipeInstructions") or [])[:3]),
-        })
-    label = (dish.get("display_name") or "").strip() or dish["name"]
-    alternates = list(dish.get("aliases") or []) + [str(q) for q in (dish.get("queries") or [])]
-    if label != dish["name"]:
-        # The key can carry a typo the display name corrected; never show it as a name.
-        alternates = [a for a in alternates if dish["name"].lower() not in str(a).lower()]
-    from extract.dish_signal import compose_dish_description
+        recipes = dish_describe.recipes_evidence(conn, dish["name"])
+    # Search first, then describe: the search says what the dish is generally
+    # understood to be, which keeps a rewrite from drifting toward whatever
+    # happens to be filed under the dish.
+    results = await asyncio.to_thread(dish_describe.search_evidence, dish)
     out = await asyncio.to_thread(
-        compose_dish_description, label, alternates=alternates, recipes=recipes,
+        compose_dish_description, dish_describe._label(dish),
+        alternates=dish_describe._alternates(dish), recipes=recipes, search_results=results,
         notes=str(body.get("notes") if "notes" in body else (dish.get("notes") or "")),
         previous=str(body.get("previous") if "previous" in body else (dish.get("description") or "")))
     if not out.get("description"):
         raise HTTPException(status_code=502, detail="The description could not be written just now. Try again.")
     return out
+
+
+@app.post("/dishes/{name}/describe-suggestion/dismiss")
+def dismiss_dish_description_suggestion(name: str, request: Request):
+    """The curator read the after-refresh suggestion and kept their description.
+    It is not raised again for this wording."""
+    _require_perm(request, "manage_dishes")
+    from input.pipeline import dish_describe
+    with _db() as conn:
+        return {"dismissed": dish_describe.dismiss(conn, name)}
 
 
 @app.patch("/dishes/{name}")
@@ -9744,6 +9747,17 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             dishes_lib.refresh_preview_images(conn, only_dish=canonical_name)
     except Exception as e:  # noqa: BLE001
         print(f"[REFRESH-DISH] preview_image refresh failed (non-fatal): {e}")
+
+    # The cohort was just rebuilt: does the dish's DESCRIPTION still fit the
+    # recipes it holds? A material disagreement is filed as a suggestion for the
+    # curator (dish page); nothing is overwritten. One model call. Never fatal.
+    if saved_count > 0:
+        try:
+            from input.pipeline import dish_describe
+            with _db() as conn:
+                dish_describe.check_after_refresh(conn, canonical_name)
+        except Exception as e:  # noqa: BLE001
+            print(f"[REFRESH-DISH] description check failed (non-fatal): {type(e).__name__}: {e}")
 
     # The cohort was just rebuilt: fill the dish's BLANK editorial fields
     # (story / ethnicity / region / cook's notes) from it — one grounded Sonnet

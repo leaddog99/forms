@@ -297,7 +297,17 @@ def ensure_dish_description(conn: sqlite3.Connection, dish_row: dict) -> Optiona
     # "Chicken Marenga" was described as a Filipino soy-and-vinegar braise
     # (2026-11-27), and that wrong card became the dish's matching text.
     label = (dish_row.get("display_name") or "").strip() or name
-    signal = existing_desc or generate_dish_signal_for_dish(label, dish_row.get("queries"))
+    # SEARCH FIRST, THEN DESCRIBE (input/pipeline/dish_describe.py): the name-only
+    # call below is the fallback for a failed search or model call.
+    signal = existing_desc
+    if not signal:
+        try:
+            from input.pipeline import dish_describe
+            signal = dish_describe.describe_new(dish_row)
+        except Exception as e:
+            print(f"[EMBED] evidence-based description failed ({type(e).__name__}: {e}); "
+                  f"falling back to the name")
+    signal = signal or generate_dish_signal_for_dish(label, dish_row.get("queries"))
     chapter = existing_chapter or classify_chapter(label)
     if not has_card:
         # Pass the freshly-derived description in so the card LLM has

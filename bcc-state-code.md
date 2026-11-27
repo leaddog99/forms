@@ -13530,6 +13530,25 @@ a scheduled job is added, name folding changes.
   white wine reduced with tomato paste and Dijon mustard" (its 2 recipes); Melopita lost a wrong
   "layers of crispy phyllo". ~2s a call. NOT tested through the page (needs a signed-in session).
   NEEDS A BCC RESTART. Tests: intake/tests/test_dish_description_retry.py (2).
+  **SEARCH FIRST, THEN DESCRIBE (input/pipeline/dish_describe.py, new; same day).** Curator: a web
+  search described Jean Vignard perfectly, ours "missed spectacularly" - because the search summary
+  READ pages and our creation-time description was a small model writing from the NAME. Now:
+  (1) a dish with no description (creation, or one the curator cleared) runs its first search line
+  once (1 page, titles + snippets) and the description is written from that
+  (`describe_new`, called from embeddings.ensure_dish_description; the name-only Haiku call is the
+  fallback); (2) Retry also runs the search, so a rewrite is not pulled toward whatever is filed
+  under the dish; (3) AFTER A REFRESH `check_after_refresh` judges the stored description against
+  the dish's recipes (forced tool, `dish_description_check_v1`) and files a SUGGESTION in new table
+  `dish_description_suggestions` (basis/suggestion/why/status) only on a material disagreement;
+  the dish page shows it with "Use suggestion" / "Keep mine" (POST
+  /dishes/{name}/describe-suggestion/dismiss); nothing is overwritten, and a wording already
+  judged is not judged again. Settings `dish_description_search`, `dish_description_check`
+  (Search, default on). Measured read-only, name-only vs search-first: Licurdia "Sardinian pasta
+  dish with ragu" -> "Calabrian onion soup"; Ployes "crepes filled with mashed potatoes" ->
+  "Acadian buckwheat flatbread"; Jean Vignard brown sauce -> white wine/cream/mustard sauce. Check:
+  Melopita flagged (says phyllo; recipes are a custard pie), Licurdia/Gyros/Moussaka agree. Cost:
+  one search per new dish and per Retry, one top-model call per refresh. NOT tested: a real
+  creation or refresh on the new code; the suggestion banner. NEEDS A BCC RESTART. Tests: 5 total.
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched

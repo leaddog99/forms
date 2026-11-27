@@ -277,6 +277,23 @@
     function initDescRetry(d){
       const btn = $('#descRetryBtn'), box = $('#f_description'), note = $('#descRetryNote');
       if (!btn || !box) return;
+      // The after-refresh suggestion: Use puts it in the box (Save stores it and
+      // rebuilds the profile); Keep mine records that this wording was reviewed.
+      const sug = d.description_suggestion;
+      if (sug && $('#descSuggest')){
+        $('#descSuggestUse').addEventListener('click', () => {
+          box.value = sug.suggestion; $('#descSuggest').remove();
+          note.textContent = 'Suggestion placed. Review it, then Save.';
+          box.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        $('#descSuggestDismiss').addEventListener('click', async () => {
+          try {
+            const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/describe-suggestion/dismiss`, { method: 'POST' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            $('#descSuggest').remove(); d.description_suggestion = null;
+          } catch (e){ note.textContent = 'Could not dismiss: ' + e.message; }
+        });
+      }
       let before = null;
       btn.addEventListener('click', async () => {
         if (btn.dataset.undo === '1'){            // second role: put the old text back
@@ -294,8 +311,9 @@
           if (!r.ok) throw new Error((j.detail && (j.detail.message || j.detail)) || ('HTTP ' + r.status));
           before = box.value;
           box.value = j.description;
-          const n = j.recipes_used || 0;
-          note.textContent = (n ? `Rewritten from ${n} of this dish\u2019s recipes.` : 'Rewritten from the name and your notes (no recipes filed yet).')
+          const n = j.recipes_used || 0, w = j.results_used || 0;
+          const from = [w ? `${w} web search results` : '', n ? `${n} of this dish\u2019s recipes` : ''].filter(Boolean).join(' and ');
+          note.textContent = (from ? `Rewritten from ${from}.` : 'Rewritten from the name and your notes only (the search found nothing and no recipes are filed).')
             + ' Review it, then Save.';
           btn.textContent = 'Undo'; btn.dataset.undo = '1';
           box.dispatchEvent(new Event('input', {bubbles: true}));
@@ -542,10 +560,17 @@
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
           <div class="ed-field full" style="margin:14px 0 0">
-            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>Retry</b> has it rewritten for you by our strongest model, which reads the recipes filed under this dish and your curator notes instead of guessing from the name. Put anything it should know in Curator notes first (for example: not a brown sauce). Nothing is stored until you Save.">i</button>
+            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>Retry</b> has it rewritten for you by our strongest model. It runs this dish\u2019s first search line and reads the results, the recipes filed under this dish and your curator notes, instead of guessing from the name. Put anything it should know in Curator notes first (for example: not a brown sauce). Nothing is stored until you Save.">i</button>
               <button type="button" class="ed-btn" id="descRetryBtn" style="padding:3px 11px;margin-left:8px;text-transform:none;letter-spacing:0">Retry</button>
               <span id="descRetryNote" style="text-transform:none;letter-spacing:0;color:var(--muted);margin-left:8px"></span></label>
             <textarea id="f_description" class="ed-notes" style="min-height:64px" placeholder="Press Retry to have it written for you">${escapeHtml(d.description || '')}</textarea>
+            ${d.description_suggestion ? `<div id="descSuggest" style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;background:var(--card)">
+              <div style="font-weight:600;margin-bottom:4px">After the last refresh, this description does not match the dish\u2019s ${d.description_suggestion.recipes || ''} recipes.</div>
+              ${d.description_suggestion.why ? `<div style="color:var(--muted);margin-bottom:6px">${escapeHtml(d.description_suggestion.why)}</div>` : ''}
+              <div style="margin-bottom:8px"><span style="color:var(--muted)">Suggested:</span> ${escapeHtml(d.description_suggestion.suggestion)}</div>
+              <button type="button" class="ed-btn" id="descSuggestUse" style="padding:3px 11px">Use suggestion</button>
+              <button type="button" class="ed-btn" id="descSuggestDismiss" style="padding:3px 11px;margin-left:6px">Keep mine</button>
+            </div>` : ''}
           </div>
         </section>
 
