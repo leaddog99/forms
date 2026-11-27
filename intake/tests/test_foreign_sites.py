@@ -55,6 +55,40 @@ def test_structured_lane_refuses_a_changed_ingredient_count_or_a_cut_off_reply(m
     assert T.translate_recipe_jsonld(FR, "fr", log=quiet) == (None, None)
 
 
+def test_structured_lane_refuses_an_echo(monkeypatch):
+    echo = {"name": "Ratatouille", "recipeIngredient": list(FR["recipeIngredient"]),
+            "recipeInstructions": FR["recipeInstructions"]}
+    monkeypatch.setattr(T, "translate_markdown", _reply(echo))
+    assert T.translate_recipe_jsonld(FR, "fr", log=quiet) == (None, None)
+
+
+def _page_ok(markdown, src_lang):
+    return T.ExtractionTranslationResult("# Ratatouille\n- 1 eggplant", "Ratatouille, recette", src_lang, "French")
+
+
+def test_extraction_takes_the_structured_lane_when_the_translated_data_builds(monkeypatch):
+    en = {"name": "Ratatouille", "recipeIngredient": ["oil", "eggplant"],
+          "recipeInstructions": FR["recipeInstructions"]}
+    monkeypatch.setattr(T, "translate_markdown", _reply(en))
+    monkeypatch.setattr(T, "translate_extraction_markdown",
+                        lambda *_a: (_ for _ in ()).throw(AssertionError("page lane must not run")))
+    x = T.translate_for_extraction("# page", FR, "fr", build_recipe=lambda j: {"built": j["name"]}, log=quiet)
+    assert (x.lane, x.recipe, x.markdown) == ("structured", {"built": "Ratatouille"}, None)
+    assert x.meta["originalTitle"] == "Ratatouille, recette traditionnelle" and x.meta["originalLanguage"] == "fr"
+
+
+def test_extraction_falls_to_the_page_lane_when_the_data_is_missing_or_does_not_build(monkeypatch):
+    en = {"name": "Ratatouille", "recipeIngredient": ["oil", "eggplant"],
+          "recipeInstructions": FR["recipeInstructions"]}
+    monkeypatch.setattr(T, "translate_markdown", _reply(en))
+    monkeypatch.setattr(T, "translate_extraction_markdown", _page_ok)
+    for jsonld, build in ((FR, lambda j: None), (None, lambda j: {"x": 1})):
+        x = T.translate_for_extraction("# page", jsonld, "fr", build_recipe=build,
+                                       fallback_title="Titre de la page", log=quiet)
+        assert (x.lane, x.recipe) == ("page", None) and x.markdown.startswith("# Ratatouille")
+        assert x.meta["originalTitle"] == "Ratatouille, recette" and x.meta["translated"] is True
+
+
 def test_a_failed_page_translation_raises_instead_of_returning_the_original(monkeypatch):
     calls = []
 

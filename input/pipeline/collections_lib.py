@@ -24,7 +24,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import requests
 
@@ -837,7 +837,6 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 
 def _twin_url_key(url: str) -> str:
     """A URL reduced to host + path for comparing a page with its hreflang link."""
-    from urllib.parse import urlsplit
     try:
         p = urlsplit((url or "").strip())
     except Exception:
@@ -1399,7 +1398,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         scored, _twins = collapse_language_twins(scored, _alt_map, _lang_map, _ibl())
         for _lost, _kept_m in _twins:
             _drop(_lost["url"], _lost.get("title") or "",
-                  f"language-twin: {_kept_m['url']}", "rank")
+                  f"language-twin: {_kept_m['url']}", "rank_cut")
         if _twins:
             print(f"  [harvest] {len(_twins)} page(s) are another language's edition of a "
                   f"page already in the pool; one seat per recipe:")

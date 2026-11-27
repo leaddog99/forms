@@ -171,23 +171,32 @@ def generate_dish_signal_for_dish(name: str, queries: Optional[list] = None,
                      operation="dish_signal_dish")
 
 
-# === Retry: a considered description, grounded in the dish's own recipes ===
+# === Evidence-based description ==============================================
 #
-# The automatic description above is ONE small-model guess from the dish NAME.
-# For a well-known dish that is enough. For an obscure one it can be plainly
-# wrong ("Sauce Jean Vignard" described as a brown sauce, 2026-11-27), and the
-# description is what the dish's matching profile is built from. The Retry
-# button on the dish editor calls this instead: a top-tier model, shown the
-# recipes the dish actually holds, told what the previous attempt said.
+# `generate_dish_signal_for_dish` above is ONE small-model guess from the dish
+# NAME. For a well-known dish that is enough. For an obscure one it can be
+# plainly wrong ("Sauce Jean Vignard", a white-wine and cream sauce, described
+# as a brown sauce, 2026-11-27), and the description is what the dish's
+# matching profile is built from.
+#
+# The two functions below write and check a description from EVIDENCE instead:
+# web search results for the dish, the recipes filed under it, the curator's
+# notes. input/pipeline/dish_describe.py gathers that evidence and decides when
+# each runs (dish creation, the editor's Retry button, after a refresh); this
+# module only owns the prompts and the model calls.
 
-RETRY_METHOD_ID = "dish_description_retry_v1"
-RETRY_MODEL = "claude-opus-4-8"
+DESCRIBE_MODEL = "claude-opus-4-8"
+DESCRIBE_METHOD_ID = "dish_description_evidence_v1"
+CHECK_METHOD_ID = "dish_description_check_v1"
 
-_RETRY_RULES = (
-    "\n\nYou are WRITING a dish description from evidence, not from memory. You "
-    "may be given: the dish's name and other names, the curator's notes, a "
-    "previous description, web search results for the dish (titles and "
-    "snippets), and the recipes currently filed under this dish.\n"
+MAX_SEARCH_RESULTS = 10
+MAX_RECIPES = 8
+
+_EVIDENCE_RULES = (
+    "\n\nYou are working from evidence, not from memory. You may be given: the "
+    "dish's name and other names, the curator's notes, a previous description, "
+    "web search results for the dish (titles and snippets), and the recipes "
+    "currently filed under this dish.\n"
     "  - Describe the CANONICAL dish: its cuisine, its defining ingredients "
     "and its technique.\n"
     "  - The curator's notes outrank everything else.\n"
@@ -202,61 +211,25 @@ _RETRY_RULES = (
     "  - With no usable evidence, use what is reliably known about the dish; "
     "if it is not a dish you know, describe only what the name itself states "
     "and do not invent a cuisine, a colour or a technique.\n"
-    "Output ONLY the one sentence, starting with the dish name and a colon."
+    "The sentence starts with the dish name and a colon."
 )
 
+_CHECK_RULES = (
+    "\n\nHERE you are a CHECKER, and you answer with the tool instead of a bare "
+    "sentence. Decide whether the stored description materially misdescribes "
+    "the dish the filed recipes are. Be slow to disagree: only a wrong cuisine, "
+    "a wrong defining ingredient or a wrong technique counts; wording, emphasis "
+    "and optional ingredients do not."
+)
 
-def _evidence_lines(name: str, alternates, recipes, notes: str, previous: str,
-                    search_results) -> tuple:
-    """The shared user message: (lines, recipes_used, results_used)."""
-    lines = [f"Dish name: {name}"]
-    alts = [str(a).strip() for a in (alternates or []) if str(a).strip()
-            and str(a).strip().lower() != name.lower()]
-    if alts:
-        lines.append("Other names and search phrases: " + ", ".join(dict.fromkeys(alts)))
-    if (notes or "").strip():
-        lines.append("Curator's notes: " + notes.strip()[:1200])
-    if (previous or "").strip():
-        lines.append("Previous description: " + previous.strip()[:400])
-    n_res = 0
-    for r in (search_results or [])[:10]:
-        title, snip = str(r.get("title") or "").strip(), str(r.get("snippet") or "").strip()
-        if not (title or snip):
-            continue
-        n_res += 1
-        if n_res == 1:
-            lines.append("\nWeb search results for this dish:")
-        lines.append(f"  {n_res}. {title}" + (f" ({r['host']})" if r.get("host") else "")
-                     + (f" - {snip}" if snip else ""))
-    used = 0
-    for r in (recipes or [])[:8]:
-        ings = [str(i).strip() for i in (r.get("ingredients") or []) if str(i).strip()][:14]
-        if not ings:
-            continue
-        used += 1
-        lines.append(f"\nFiled recipe {used}: {str(r.get('name') or '').strip()[:90]}"
-                     + (f" [{r['cuisine']}]" if r.get("cuisine") else ""))
-        lines.append("  ingredients: " + "; ".join(ings))
-        if (r.get("method") or "").strip():
-            lines.append("  method: " + str(r["method"]).strip()[:420])
-    if not used and not n_res:
-        lines.append("\n(No search results and no recipes are available for this dish.)")
-    elif not used:
-        lines.append("\n(No recipes are filed under this dish yet.)")
-    return lines, used, n_res
-
-
-JUDGE_METHOD_ID = "dish_description_check_v1"
-_JUDGE_TOOL = {
+_CHECK_TOOL = {
     "name": "description_verdict",
     "description": "Report whether the stored description fits the dish's filed recipes.",
     "input_schema": {
         "type": "object",
         "properties": {
             "agrees": {"type": "boolean", "description":
-                       "true when the stored description names the same dish the recipes are: "
-                       "same cuisine, same defining ingredients, same technique. Differences of "
-                       "wording, emphasis or optional ingredients are agreement."},
+                       "true when the stored description names the same dish the recipes are."},
             "why": {"type": "string", "description":
                     "When agrees is false: one short plain sentence naming what is wrong "
                     "(for example: it says brown sauce; every recipe is a white-wine cream sauce)."},
@@ -268,58 +241,105 @@ _JUDGE_TOOL = {
 }
 
 
+def _one_line(text) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _evidence_message(name: str, *, alternates=None, notes: str = "", previous: str = "",
+                      stored: str = "", search_results=None, recipes=None) -> tuple:
+    """The user message both calls share: (text, recipes_used, results_used)."""
+    lines = [f"Dish name: {name}"]
+    if stored.strip():
+        lines.append("Stored description to judge: " + stored.strip()[:400])
+    alts = list(dict.fromkeys(a for a in (_one_line(x) for x in (alternates or []))
+                              if a and a.lower() != name.lower()))
+    if alts:
+        lines.append("Other names and search phrases: " + ", ".join(alts))
+    if notes.strip():
+        lines.append("Curator's notes: " + notes.strip()[:1200])
+    if previous.strip():
+        lines.append("Previous description: " + previous.strip()[:400])
+    n_results = 0
+    for r in (search_results or [])[:MAX_SEARCH_RESULTS]:
+        title, snippet = _one_line(r.get("title")), _one_line(r.get("snippet"))
+        if not (title or snippet):
+            continue
+        n_results += 1
+        if n_results == 1:
+            lines.append("\nWeb search results for this dish:")
+        lines.append(f"  {n_results}. {title}" + (f" ({r['host']})" if r.get("host") else "")
+                     + (f" - {snippet}" if snippet else ""))
+    n_recipes = 0
+    for r in recipes or []:
+        ingredients = [i for i in (_one_line(x) for x in (r.get("ingredients") or [])) if i][:14]
+        if not ingredients:
+            continue
+        n_recipes += 1
+        lines.append(f"\nFiled recipe {n_recipes}: {_one_line(r.get('name'))[:90]}"
+                     + (f" [{r['cuisine']}]" if r.get("cuisine") else ""))
+        lines.append("  ingredients: " + "; ".join(ingredients))
+        if _one_line(r.get("method")):
+            lines.append("  method: " + _one_line(r["method"])[:420])
+        if n_recipes >= MAX_RECIPES:
+            break
+    if not n_recipes and not n_results:
+        lines.append("\n(No search results and no recipes are available for this dish.)")
+    elif not n_recipes:
+        lines.append("\n(No recipes are filed under this dish yet.)")
+    return "\n".join(lines), n_recipes, n_results
+
+
+def compose_dish_description(name: str, *, alternates: Optional[list] = None,
+                             recipes: Optional[list] = None, notes: str = "",
+                             previous: str = "", search_results: Optional[list] = None,
+                             operation: str = "dish_description", create=None) -> dict:
+    """Write the dish's one-sentence description from the evidence given.
+    `recipes` = [{name, cuisine, ingredients:[...], method}]; `search_results`
+    = [{title, snippet, host}]. Returns {description, method, model,
+    recipes_used, results_used}; description is '' when the call fails."""
+    name = (name or "").strip()
+    out = {"description": "", "method": DESCRIBE_METHOD_ID, "model": DESCRIBE_MODEL,
+           "recipes_used": 0, "results_used": 0}
+    if not name:
+        return out
+    message, out["recipes_used"], out["results_used"] = _evidence_message(
+        name, alternates=alternates, notes=notes or "", previous=previous or "",
+        search_results=search_results, recipes=recipes)
+    try:
+        response = (create or llm.create)(
+            operation=operation, model=DESCRIBE_MODEL, max_tokens=300,
+            system=_SYSTEM_PROMPT + _EVIDENCE_RULES,
+            messages=[{"role": "user", "content": message}])
+        text = " ".join(b.text for b in response.content if getattr(b, "type", "") == "text")
+    except Exception as e:
+        print(f"[WARN] dish description call failed: {type(e).__name__}: {e}")
+        return out
+    out["description"] = _one_line(text).strip('"').strip("'").strip()
+    return out
+
+
 def judge_dish_description(name: str, *, description: str, recipes: list,
                            alternates: Optional[list] = None, notes: str = "",
                            create=None) -> Optional[dict]:
     """Does the stored description fit the recipes now filed under the dish?
     Returns {agrees, why, description, recipes_used, method, model}, or None
     when the call fails (no verdict is not a verdict)."""
-    lines, used, _ = _evidence_lines(name, alternates, recipes, notes, "", None)
-    lines.insert(1, "Stored description to judge: " + (description or "").strip()[:400])
+    message, n_recipes, _ = _evidence_message(
+        (name or "").strip(), alternates=alternates, notes=notes or "",
+        stored=description or "", recipes=recipes)
     try:
         response = (create or llm.create)(
-            operation="dish_description_check", model=RETRY_MODEL, max_tokens=400,
-            system=(_SYSTEM_PROMPT + _RETRY_RULES +
-                    "\n\nHERE you are a CHECKER. Decide whether the stored description "
-                    "materially misdescribes the dish the filed recipes are. Be slow to "
-                    "disagree: only a wrong cuisine, wrong defining ingredient or wrong "
-                    "technique counts. Report with the tool."),
-            tools=[_JUDGE_TOOL], tool_choice={"type": "tool", "name": "description_verdict"},
-            messages=[{"role": "user", "content": "\n".join(lines)}])
-        ti = next((b.input for b in response.content if getattr(b, "type", "") == "tool_use"), None)
+            operation="dish_description_check", model=DESCRIBE_MODEL, max_tokens=400,
+            system=_SYSTEM_PROMPT + _EVIDENCE_RULES + _CHECK_RULES,
+            tools=[_CHECK_TOOL], tool_choice={"type": "tool", "name": _CHECK_TOOL["name"]},
+            messages=[{"role": "user", "content": message}])
+        verdict = next((b.input for b in response.content
+                        if getattr(b, "type", "") == "tool_use"), None)
     except Exception as e:
         print(f"[WARN] dish description check failed: {type(e).__name__}: {e}")
         return None
-    if not isinstance(ti, dict) or "agrees" not in ti:
+    if not isinstance(verdict, dict) or "agrees" not in verdict:
         return None
-    return {"agrees": bool(ti["agrees"]), "why": " ".join(str(ti.get("why") or "").split()),
-            "description": " ".join(str(ti.get("description") or "").split()),
-            "recipes_used": used, "method": JUDGE_METHOD_ID, "model": RETRY_MODEL}
-
-
-def compose_dish_description(name: str, *, alternates: Optional[list] = None,
-                             recipes: Optional[list] = None, notes: str = "",
-                             previous: str = "", search_results: Optional[list] = None,
-                             create=None) -> dict:
-    """One considered description for the Retry button. `recipes` is a list of
-    {name, cuisine, ingredients:[...], method} taken from the dish's saved
-    recipes. Returns {description, method, model, recipes_used}; description is
-    '' when the call fails (the editor then leaves the box as it was)."""
-    name = (name or "").strip()
-    if not name:
-        return {"description": "", "method": RETRY_METHOD_ID, "model": RETRY_MODEL, "recipes_used": 0}
-    lines, used, n_res = _evidence_lines(name, alternates, recipes, notes, previous,
-                                         search_results)
-    try:
-        response = (create or llm.create)(
-            operation="dish_description_retry", model=RETRY_MODEL, max_tokens=300,
-            system=_SYSTEM_PROMPT + _RETRY_RULES,
-            messages=[{"role": "user", "content": "\n".join(lines)}])
-        text = " ".join(b.text for b in response.content
-                        if getattr(b, "type", "") == "text").strip()
-    except Exception as e:
-        print(f"[WARN] dish description retry failed: {type(e).__name__}: {e}")
-        text = ""
-    text = " ".join(text.split()).strip('"').strip("'").strip()
-    return {"description": text, "method": RETRY_METHOD_ID, "model": RETRY_MODEL,
-            "recipes_used": used, "results_used": n_res}
+    return {"agrees": bool(verdict["agrees"]), "why": _one_line(verdict.get("why")),
+            "description": _one_line(verdict.get("description")),
+            "recipes_used": n_recipes, "method": CHECK_METHOD_ID, "model": DESCRIBE_MODEL}

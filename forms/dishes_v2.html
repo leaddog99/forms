@@ -235,8 +235,8 @@
        gets a chip instead: one click adds it as a search line. An alias that
        shares no word with the dish's own name is marked as a different name,
        the kind that finds pages the main name misses. */
-    const _aliasFold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .toLowerCase().replace(/[^a-z0-9Ͱ-￿]+/g, ' ').trim();
+    const _aliasFold = (s) => String(s || '').normalize('NFD').replace(/\p{M}/gu, '')
+      .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
     function _aliasIsDifferentName(alias, d){
       const own = new Set(_aliasFold(`${d.name} ${d.display_name || ''}`).split(' ').filter(w => w.length > 2));
       const words = _aliasFold(alias).split(' ').filter(w => w.length > 2);
@@ -269,11 +269,28 @@
           + `</span>`;
       }).join('');
     }
-    /* DESCRIPTION RETRY (2026-11-27). The description is what the dish's matching
-       profile is built from, so the curator should not have to compose it. Retry
-       asks the server for a considered rewrite (top-tier model, grounded in the
-       recipes filed under the dish, steered by the Curator notes box) and puts it
-       in the box. It saves nothing: Save does, and Save rebuilds the profile. */
+    function initAliasChips(d){
+      const box = $('#aliasChips'), inp = $('#f_aliases');
+      if (!box || !inp) return;
+      paintAliasChips(d);
+      inp.addEventListener('input', () => paintAliasChips(d));
+      $('#qrows_edit').addEventListener('input', () => paintAliasChips(d));
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('.alias-search'); if (!b) return;
+        const row = QueryRows.addLine('qrows_edit', b.dataset.alias);
+        paintAliasChips(d);
+        if (row) row.scrollIntoView({behavior: 'smooth', block: 'center'});
+      });
+    }
+
+    /* DESCRIPTION RETRY + SUGGESTION (2026-11-27). The description is what the
+       dish's matching profile is built from, so the curator should not have to
+       compose it. Retry asks the server for a rewrite from evidence (a web
+       search for the dish, the recipes filed under it, the Curator notes box)
+       and puts it in the box. The suggestion panel is the same idea arriving on
+       its own: after a refresh the server found the description disagreeing
+       with the dish's recipes. Neither saves anything: Save does, and Save
+       rebuilds the profile. */
     function initDescRetry(d){
       const btn = $('#descRetryBtn'), box = $('#f_description'), note = $('#descRetryNote');
       if (!btn || !box) return;
@@ -302,7 +319,7 @@
           box.dispatchEvent(new Event('input', {bubbles: true}));
           return;
         }
-        btn.disabled = true; note.textContent = 'Reading this dish\u2019s recipes\u2026';
+        btn.disabled = true; note.textContent = 'Searching, and reading this dish\u2019s recipes\u2026';
         try {
           const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/describe`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -323,20 +340,6 @@
       });
       // Typing after a rewrite ends the Undo offer: the box is the curator's again.
       box.addEventListener('keydown', () => { if (btn.dataset.undo === '1'){ btn.dataset.undo = ''; btn.textContent = 'Retry'; } });
-    }
-
-    function initAliasChips(d){
-      const box = $('#aliasChips'), inp = $('#f_aliases');
-      if (!box || !inp) return;
-      paintAliasChips(d);
-      inp.addEventListener('input', () => paintAliasChips(d));
-      $('#qrows_edit').addEventListener('input', () => paintAliasChips(d));
-      box.addEventListener('click', (e) => {
-        const b = e.target.closest('.alias-search'); if (!b) return;
-        const row = QueryRows.addLine('qrows_edit', b.dataset.alias);
-        paintAliasChips(d);
-        if (row) row.scrollIntoView({behavior: 'smooth', block: 'center'});
-      });
     }
 
     /* ----------------------------- derivations ----------------------------- */
@@ -560,10 +563,12 @@
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
           <div class="ed-field full" style="margin:14px 0 0">
-            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>Retry</b> has it rewritten for you by our strongest model. It runs this dish\u2019s first search line and reads the results, the recipes filed under this dish and your curator notes, instead of guessing from the name. Put anything it should know in Curator notes first (for example: not a brown sauce). Nothing is stored until you Save.">i</button>
-              <button type="button" class="ed-btn" id="descRetryBtn" style="padding:3px 11px;margin-left:8px;text-transform:none;letter-spacing:0">Retry</button>
-              <span id="descRetryNote" style="text-transform:none;letter-spacing:0;color:var(--muted);margin-left:8px"></span></label>
+            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically and can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>Retry</b> has it rewritten for you by our strongest model. It runs this dish\u2019s first search line and reads the results, the recipes filed under this dish and your curator notes, instead of guessing from the name. Put anything it should know in Curator notes first (for example: not a brown sauce). Nothing is stored until you Save.">i</button></label>
             <textarea id="f_description" class="ed-notes" style="min-height:64px" placeholder="Press Retry to have it written for you">${escapeHtml(d.description || '')}</textarea>
+            <div style="margin-top:6px">
+              <button type="button" class="ed-btn" id="descRetryBtn" style="padding:3px 11px">Retry</button>
+              <span id="descRetryNote" style="color:var(--muted);margin-left:8px"></span>
+            </div>
             ${d.description_suggestion ? `<div id="descSuggest" style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;background:var(--card)">
               <div style="font-weight:600;margin-bottom:4px">After the last refresh, this description does not match the dish\u2019s ${d.description_suggestion.recipes || ''} recipes.</div>
               ${d.description_suggestion.why ? `<div style="color:var(--muted);margin-bottom:6px">${escapeHtml(d.description_suggestion.why)}</div>` : ''}
@@ -1845,12 +1850,11 @@
         top_n_final: final,
         refresh_ttl_days: $('#n_ttl').value.trim() === '' ? null : parseInt($('#n_ttl').value, 10),
       };
-      // Second click on an armed "Create anyway" overrides the duplicate gate.
-      // An armed "Create as typed" accepts the spelling only - the duplicate
-      // gate still gets its say afterwards.
-      if (btn.dataset.armedFor === name && btn.dataset.armedKind === 'typo') body.spelling_ok = true;
-      else if (btn.dataset.armedFor === name) body.force = true;
+      // Two armed second clicks. "Create as typed" accepts the SPELLING only (it
+      // is remembered for this name, so the duplicate gate can still have its
+      // say next); "Create anyway" overrides the duplicate gate.
       if (btn.dataset.spellingOkFor === name) body.spelling_ok = true;
+      if (btn.dataset.armedFor === name && btn.dataset.armedKind === 'dup') body.force = true;
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const r = await fetch('/dishes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

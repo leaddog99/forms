@@ -13549,6 +13549,31 @@ a scheduled job is added, name folding changes.
   Melopita flagged (says phyllo; recipes are a custard pie), Licurdia/Gyros/Moussaka agree. Cost:
   one search per new dish and per Retry, one top-model call per refresh. NOT tested: a real
   creation or refresh on the new code; the suggestion banner. NEEDS A BCC RESTART. Tests: 5 total.
+* **2026-11-27 - AUDIT of the day's changes (curator-requested), behaviour unchanged except where
+  noted.** (a) Translation: the URL path and the staged/bookmarklet path each hand-rolled the
+  "structured lane -> page lane -> fail" sequence; both now call ONE function,
+  `intake.translate.translate_for_extraction(markdown, jsonld, lang, build_recipe=...)` ->
+  `ExtractionTranslation(lane, meta, recipe|markdown)`; the staged path's nested closure,
+  `nonlocal` and second-chance block are gone. `translation_meta()` replaces four hand-built
+  provenance dicts; enrich/api.py's duplicate JSON parser removed. NEW check: a structured
+  translation whose ingredient list comes back unchanged is refused (an echo is not a
+  translation). (b) Description: `dish_describe.describe()` is the one way a description is
+  written (creation, cleared, Retry); helpers made public (`label`, `alternates`); constants
+  renamed DESCRIBE_* (method id now `dish_description_evidence_v1`); the judge prompt no longer
+  contradicts its forced tool. FIXED: an AGREEING description was re-judged but an open
+  disagreement never was; now every refresh judges unless the curator DISMISSED that exact
+  wording. `get_suggestion` no longer creates the table on a page load. (c) FIXED: language-twin
+  drops were ledgered under a stage named "rank", which is not a stage (now "rank_cut").
+  (d) Page: Retry button moved out of the <label> (a label may hold only its own control); raw
+  combining characters in a regex replaced by \p{M}/\p{L}; create-button override logic reduced
+  from three overlapping statements to two; texts updated to say Retry searches. (e) stale
+  docstrings/comments corrected; inline imports hoisted. VERIFIED live after the restructure:
+  structured lane 8.5s (ratatouille, English out); page lane on the 194k-char croissant page now
+  PASSES (6.5k chars English, 7 ings / 11 steps) where it failed before the length-check fix;
+  search-first description; judge flags Melopita and agrees with Moussaka + the four new Greek
+  dishes; dish page loads with no script errors. Runtime check of the curator's Sauce Jean Vignard
+  save (19:22Z): description, identity card, embedding text, vector and dishes_vec row all rebuilt
+  and consistent. Tests 58. NEEDS A BCC RESTART.
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched

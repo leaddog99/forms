@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, Callable, Optional
 
 METHOD_ID = "dish_name_spellcheck_v1"
@@ -46,6 +47,12 @@ _SYSTEM = (
 )
 
 _cache: dict[str, dict] = {}
+
+
+def _bare(s: str) -> str:
+    """Letters and digits only, accents folded: what a spelling change must alter."""
+    s = unicodedata.normalize("NFKD", s)
+    return re.sub(r"[^a-z0-9]+", "", "".join(c for c in s if not unicodedata.combining(c)).lower())
 
 
 def enabled() -> bool:
@@ -83,10 +90,6 @@ def check(name: str, *, create: Optional[Callable[..., Any]] = None,
     out: dict = {}
     sug = str(data.get("suggestion") or "").strip()
     # A "correction" that only changes case, accents or punctuation is not a typo.
-    def _bare(s: str) -> str:
-        import unicodedata
-        s = unicodedata.normalize("NFKD", s)
-        return re.sub(r"[^a-z0-9]+", "", "".join(c for c in s if not unicodedata.combining(c)).lower())
     if data.get("typo") is True and sug and _bare(sug) != _bare(name) and len(sug) <= len(name) + 12:
         out = {"suggestion": sug, "method": METHOD_ID, "model": MODEL}
         log(f"[DISH-NAME] {name!r} looks misspelled; suggested {sug!r}")

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import contextvars
+import html as html_lib
 import json
 import os
 import random
@@ -47,7 +48,7 @@ import sys
 import time
 from pathlib import Path
 from typing import NamedTuple, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import numpy as np
 from bs4 import BeautifulSoup
@@ -712,8 +713,6 @@ def _page_title_and_alternates(html: str, base_url: str) -> tuple[str, Optional[
     present (it usually omits the site name), else <title>. Alternates are the
     `<link rel="alternate" hreflang="..">` set: the publisher's own statement that
     two URLs are the same page in different languages."""
-    import html as _html
-    from urllib.parse import urljoin
     head = (html or "")[:400_000]
     title = ""
     m = _OG_TITLE_RE.search(head)
@@ -725,7 +724,7 @@ def _page_title_and_alternates(html: str, base_url: str) -> tuple[str, Optional[
         m = _HTML_TITLE_RE.search(head)
         if m:
             title = m.group(1)
-    title = " ".join(_html.unescape(title or "").split())
+    title = " ".join(html_lib.unescape(title or "").split())
     alts: dict = {}
     for tag in _LINK_TAG_RE.findall(head):
         attrs = {k.lower(): (a or b or "") for k, a, b in _ATTR_RE.findall(tag)}
@@ -735,7 +734,7 @@ def _page_title_and_alternates(html: str, base_url: str) -> tuple[str, Optional[
         href = (attrs.get("href") or "").strip()
         if not hl or not href or hl == "x-default":
             continue
-        alts.setdefault(hl[:2], urljoin(base_url, _html.unescape(href)))
+        alts.setdefault(hl[:2], urljoin(base_url, html_lib.unescape(href)))
     return title, (alts or None)
 
 

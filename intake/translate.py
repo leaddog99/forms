@@ -31,13 +31,19 @@ Pipeline shape:
         |
         v
     caller continues with translated markdown
+
+The EXTRACT step uses `translate_for_extraction` (bottom of this file) instead:
+the page's structured recipe data is translated first, the whole page only when
+there is none, and a failure raises `TranslationFailed` - a recipe is never
+extracted in its source language.
 """
 from __future__ import annotations
 
-import os
+import json
 import re
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Callable, Optional
 
 import anthropic
 
@@ -58,16 +64,10 @@ _TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 _QUERY_TRANSLATION_MODEL = "claude-sonnet-4-6"
 # 8000 cut long pages off mid-translation: a 58k-character French page came back
 # at 38% of its length, was judged suspect, and the recipe was saved IN FRENCH
-# (lacuisinedegeraldine.fr, job 3347, 2026-11-27). 16000 is the most the client
-# accepts without streaming. A reply that still hits the ceiling is reported as
-# `truncated`, never passed off as a translation.
+# (lacuisinedegeraldine.fr, job 3347, 2026-11-27). 16000 stays inside what the
+# client will send as a single non-streamed request. A reply that still hits
+# the ceiling is reported as `truncated`, never passed off as a translation.
 _TRANSLATION_MAX_TOKENS = 16000
-
-
-class TranslationFailed(RuntimeError):
-    """A non-English page could not be translated. Raised so the extract FAILS
-    for this URL (retryable) instead of saving the recipe in its source language
-    into an English-canonical corpus."""
 
 # fasttext-langdetect's model file (lid.176.ftz) is ~917KB, downloaded
 # once on first call and cached under ~/.cache/fasttext_langdetect.
@@ -95,6 +95,12 @@ _LANG_NAMES = {
     "vi": "Vietnamese",
     "hi": "Hindi",
 }
+
+
+class TranslationFailed(RuntimeError):
+    """A non-English page could not be translated. Raised so the extract FAILS
+    for this URL (retryable) instead of saving the recipe in its source language
+    into an English-canonical corpus."""
 
 
 @dataclass
@@ -591,16 +597,15 @@ def is_translation_plausible(original: str, translated: str, *, min_length_ratio
     # and was thrown away at ratio 0.02 (2026-11-27; 6 of 9 whole-page translations
     # in that day's repair run failed this way). So a finished reply of real size
     # skips the floor and is judged on the checks below.
-    if complete and orig_len > 200 and len(translated) >= 800:
-        pass
-    elif orig_len > 200:
+    finished_and_substantial = complete and len(translated) >= 800
+    if orig_len > 200 and not finished_and_substantial:
         floor = min_length_ratio
         if script_language(original):
             floor = min(min_length_ratio, _NON_LATIN_MIN_LENGTH_RATIO)
         ratio = len(translated) / orig_len
         if ratio < floor:
             return False, f"length ratio {ratio:.2f} < {floor}"
-    else:
+    elif orig_len <= 200:
         # Tiny source — a near-empty fetch (paywall / JS-only / anti-bot stub) or a
         # bare title. The recipe-aware translator INVENTS a full recipe body when
         # handed almost nothing, and the resulting fabrication has quantities +
@@ -732,9 +737,10 @@ def translate_extraction_markdown(
     and gets English; `jsonld_to_recipe` would read from the parsed
     dict and get Greek, so we skip it.
 
-    Caller checks `plausibility_ok` before using; on failure or
-    on translation API exception, caller falls back to the original
-    markdown and does not stamp translation provenance.
+    One attempt, no judgement: `plausibility_ok` says whether the reply
+    is usable. Callers go through `translate_markdown_checked`, which
+    retries and raises `TranslationFailed`; nothing falls back to the
+    original-language markdown any more.
     """
     tr = translate_markdown(markdown_with_jsonld, src_lang)
     ok, why = is_translation_plausible(
@@ -761,14 +767,15 @@ def translate_extraction_markdown(
     )
 
 
-# === Structured lane: translate the recipe, not the page ============
+# === Extraction-stage translation: one entry point ===================
 #
 # A page that publishes schema.org/Recipe data carries the whole recipe in a
 # few kilobytes. Translating THAT instead of the page (tens of kilobytes of
 # story, navigation and reader comments) takes seconds instead of a minute and
-# cannot be cut off by the output ceiling. Only the fields a reader reads are
-# sent; everything else (images, urls, dates, ratings, author) is carried over
-# from the original untouched, so the model cannot mangle it.
+# cannot be cut off by the output ceiling. So `translate_for_extraction` tries
+# the STRUCTURED lane first and the PAGE lane only when there is no usable
+# structured data. Both extract paths (URL and staged capture) and the
+# enrichment module call it; none of them falls back to the source language.
 
 _JSONLD_TEXT_KEYS = (
     "name", "headline", "description", "recipeIngredient", "recipeInstructions",
@@ -777,9 +784,20 @@ _JSONLD_TEXT_KEYS = (
 )
 
 
-def _json_object_from_reply(text: str):
+def translation_meta(src_lang: str, original_title: Optional[str]) -> dict:
+    """The `_source` provenance for a translated recipe (stamped by
+    save_recipe_api._stamp_translation_provenance)."""
+    return {
+        "originalLanguage": src_lang,
+        "originalLanguageName": language_name(src_lang),
+        "translated": True,
+        "translatedAt": datetime.now(timezone.utc).isoformat(),
+        "originalTitle": (original_title or "").strip(),
+    }
+
+
+def json_object_from_reply(text: str) -> Optional[dict]:
     """The JSON object in a model reply that may be fenced or prefaced."""
-    import json as _json
     t = (text or "").strip()
     if not t:
         return None
@@ -792,7 +810,7 @@ def _json_object_from_reply(text: str):
             return None
         t = t[i:j + 1]
     try:
-        obj = _json.loads(t)
+        obj = json.loads(t)
     except Exception:
         return None
     return obj if isinstance(obj, dict) else None
@@ -802,33 +820,30 @@ def _count_items(v) -> int:
     """How many entries a recipeIngredient / recipeInstructions value holds
     (sections of steps count their steps)."""
     if isinstance(v, list):
-        n = 0
-        for x in v:
-            if isinstance(x, dict) and isinstance(x.get("itemListElement"), list):
-                n += len(x["itemListElement"])
-            else:
-                n += 1
-        return n
+        return sum(len(x["itemListElement"])
+                   if isinstance(x, dict) and isinstance(x.get("itemListElement"), list) else 1
+                   for x in v)
     return 1 if v else 0
 
 
 def translate_recipe_jsonld(jsonld: dict, src_lang: str, *, log=print):
-    """Translate a non-English schema.org Recipe object's readable fields to
-    English, structure preserved. Returns (translated_jsonld, translation_meta),
-    or (None, None) when the result cannot be trusted: the caller then
-    translates the page markdown instead.
+    """STRUCTURED LANE. Translate a non-English schema.org Recipe object's
+    readable fields to English, structure preserved. Only those fields are sent
+    (reader reviews never are); everything else (images, urls, dates, ratings,
+    author) is carried over from the original, so the model cannot mangle it.
 
-    Trust checks: the reply parses, was not cut off, still has a name, and has
-    the SAME number of ingredients and steps as the original (a dropped or
-    merged line is a wrong recipe, not a translation)."""
-    import json as _json
+    Returns (translated_jsonld, translation_meta), or (None, None) when the
+    result cannot be trusted. Trust checks: the reply parses, was not cut off,
+    still has a name, has the SAME number of ingredients and steps as the
+    original (a dropped or merged line is a wrong recipe, not a translation),
+    and the ingredient list actually changed (an echo is not a translation)."""
     if not isinstance(jsonld, dict) or not is_non_english(src_lang):
         return None, None
     part = {k: jsonld[k] for k in _JSONLD_TEXT_KEYS if jsonld.get(k)}
     if not part.get("recipeIngredient") or not (part.get("name") or part.get("headline")):
         return None, None
     try:
-        block = "```json\n" + _json.dumps(part, ensure_ascii=False, indent=2) + "\n```"
+        block = "```json\n" + json.dumps(part, ensure_ascii=False, indent=2) + "\n```"
         tr = translate_markdown(block, src_lang)
     except Exception as e:
         log(f"[XLATE] structured-data translation failed ({type(e).__name__}: {e})")
@@ -836,7 +851,7 @@ def translate_recipe_jsonld(jsonld: dict, src_lang: str, *, log=print):
     if tr.truncated:
         log("[XLATE] structured-data translation cut off at the output limit")
         return None, None
-    out = _json_object_from_reply(tr.translated_markdown)
+    out = json_object_from_reply(tr.translated_markdown)
     if not out or not str(out.get("name") or out.get("headline") or "").strip():
         log("[XLATE] structured-data translation did not come back as a recipe")
         return None, None
@@ -845,28 +860,19 @@ def translate_recipe_jsonld(jsonld: dict, src_lang: str, *, log=print):
             log(f"[XLATE] structured-data translation changed the number of "
                 f"{k} entries ({_count_items(part.get(k))} -> {_count_items(out.get(k))})")
             return None, None
+    if out.get("recipeIngredient") == part["recipeIngredient"]:
+        log("[XLATE] structured-data translation came back unchanged")
+        return None, None
     merged = dict(jsonld)
-    for k in part:
-        if k in out:
-            merged[k] = out[k]
-    original_title = str(jsonld.get("name") or jsonld.get("headline") or "").strip() or None
-    from datetime import datetime, timezone
-    meta = {
-        "originalLanguage": src_lang,
-        "originalLanguageName": language_name(src_lang),
-        "translated": True,
-        "translatedAt": datetime.now(timezone.utc).isoformat(),
-        "originalTitle": original_title,
-    }
-    return merged, meta
+    merged.update({k: out[k] for k in part if k in out})
+    return merged, translation_meta(src_lang, str(jsonld.get("name") or jsonld.get("headline") or ""))
 
 
 def translate_markdown_checked(markdown: str, src_lang: str, *, attempts: int = 2,
                                log=print) -> ExtractionTranslationResult:
-    """Translate page markdown for the extraction model, trying again once when
-    the reply fails the plausibility checks (the length check sits near run-to-run
-    noise). Raises TranslationFailed when no attempt is usable: the caller must
-    NOT fall back to the original-language text."""
+    """PAGE LANE. Translate page markdown for the extraction model, trying
+    again once when the reply is unusable. Raises TranslationFailed when no
+    attempt is usable."""
     why = "not attempted"
     for n in range(1, max(1, attempts) + 1):
         try:
@@ -881,3 +887,39 @@ def translate_markdown_checked(markdown: str, src_lang: str, *, attempts: int = 
         log(f"[XLATE] attempt {n} suspect ({why})")
     raise TranslationFailed(
         f"could not translate this {language_name(src_lang)} page to English ({why})")
+
+
+@dataclass
+class ExtractionTranslation:
+    """What `translate_for_extraction` hands the extract step."""
+    lane: str                 # "structured" | "page"
+    meta: dict                # translation_meta(...)
+    recipe: Optional[dict] = None    # structured lane: built from the translated data
+    markdown: Optional[str] = None   # page lane: the page in English
+
+
+def translate_for_extraction(markdown: str, jsonld: Optional[dict], src_lang: str, *,
+                             build_recipe: Optional[Callable[[dict], Optional[dict]]] = None,
+                             fallback_title: str = "", log=print) -> ExtractionTranslation:
+    """Bring a non-English page into English for extraction.
+
+    `jsonld` is the page's Recipe object when the caller has a usable one, else
+    None. `build_recipe(translated_jsonld)` is the caller's fast lane; the
+    structured lane counts only if it returns a recipe, so "translated but did
+    not build" falls through to the page lane instead of leaving the caller
+    with a recipe-less result. Raises TranslationFailed when neither lane works.
+    """
+    if isinstance(jsonld, dict) and build_recipe is not None:
+        translated, meta = translate_recipe_jsonld(jsonld, src_lang, log=log)
+        if translated is not None:
+            try:
+                recipe = build_recipe(translated)
+            except Exception as e:
+                log(f"[XLATE] translated structured data did not build a recipe: {e}")
+                recipe = None
+            if recipe is not None:
+                return ExtractionTranslation("structured", meta, recipe=recipe)
+    xr = translate_markdown_checked(markdown, src_lang, log=log)
+    return ExtractionTranslation(
+        "page", translation_meta(src_lang, xr.original_title or fallback_title),
+        markdown=xr.translated_markdown)

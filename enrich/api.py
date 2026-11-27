@@ -39,8 +39,6 @@ cost during build-up. The identical logic is exposed over HTTP in `service.py`
 """
 from __future__ import annotations
 
-import json as _json
-import re as _re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -209,25 +207,6 @@ def _log_fastlane_validation_errors(jsonld: dict, source_url: str) -> None:
         print(f"[enrich] (fast-lane diagnostic skipped: {type(diag_err).__name__})")
 
 
-def _extract_json_block(text: str) -> Optional[dict]:
-    """Pull a JSON object out of an LLM reply that may be fenced or prefaced."""
-    if not text:
-        return None
-    t = text.strip()
-    m = _re.search(r"```(?:json)?\s*(\{.*\})\s*```", t, _re.DOTALL)
-    if m:
-        t = m.group(1)
-    elif not t.startswith("{"):
-        i, j = t.find("{"), t.rfind("}")
-        if i != -1 and j != -1 and j > i:
-            t = t[i:j + 1]
-    try:
-        obj = _json.loads(t)
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        return None
-
-
 def _translate_jsonld_for_fastlane(jsonld: dict, src_lang: str):
     """Translate a non-English JSON-LD Recipe's STRING VALUES to English while
     preserving structure, so the fast lane can run on it — instead of discarding
@@ -252,22 +231,14 @@ def _translate_jsonld_for_fastlane(jsonld: dict, src_lang: str):
 def _translate_markdown_for_llm(markdown: str, src_lang: str, meta):
     """Fallback: translate the markdown to English for the LLM extract path
     (when there's no usable JSON-LD). Reuses the existing extraction-stage
-    translator + plausibility check. Returns (markdown, meta) — original markdown
-    on suspect/failed translation (so we never feed garbage downstream)."""
-    # Raises intake.translate.TranslationFailed when no attempt is usable
-    # (2026-11-27): the caller must not extract the original-language text into
-    # an English-canonical record.
-    from intake.translate import translate_markdown_checked
+    translator + plausibility check. Returns (markdown, meta). Raises
+    intake.translate.TranslationFailed when no attempt is usable (2026-11-27):
+    the caller must not extract the original-language text into an
+    English-canonical record."""
+    from intake.translate import translate_markdown_checked, translation_meta
     xr = translate_markdown_checked(markdown, src_lang)
-    m = dict(meta or {})
-    m.update({
-        "originalLanguage": xr.source_language,
-        "originalLanguageName": xr.source_language_name,
-        "translated": True,
-        "translatedAt": _now_iso(),
-        "originalTitle": (m.get("originalTitle") or xr.original_title or ""),
-    })
-    return xr.translated_markdown, m
+    return xr.translated_markdown, translation_meta(
+        src_lang, (meta or {}).get("originalTitle") or xr.original_title)
 
 
 def enrich(req: EnrichmentRequest) -> EnrichmentResult:
