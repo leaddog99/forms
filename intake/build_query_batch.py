@@ -1095,7 +1095,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             if is_non_english(lang2):
                 try:
                     tr = translate_markdown(text2, lang2)
-                    if is_translation_plausible(text2, tr.translated_markdown)[0]:
+                    if is_translation_plausible(text2, tr.translated_markdown,
+                                                complete=not tr.truncated)[0]:
                         scored = tr.translated_markdown.lower()
                         used_translation = True
                 except Exception:
@@ -1470,7 +1471,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         xtext = text[:_xlate_max] if (_xlate_max and len(text) > _xlate_max) else text
         try:
             tr = translate_markdown(xtext, _eff_lang)
-            ok, why = is_translation_plausible(xtext, tr.translated_markdown)
+            ok, why = is_translation_plausible(xtext, tr.translated_markdown,
+                                               complete=not tr.truncated)
             if not ok:
                 e["_dropped_reason"] = f"translation-suspect:{why}"
                 dropped.append(e)

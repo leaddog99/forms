@@ -13497,6 +13497,30 @@ a scheduled job is added, name folding changes.
   in a foreign language (el 9, fr 6, it 3, ja 2, es 1, ko 1); NOT repaired. Target language is an
   instance setting (env BCC_TARGET_LANGUAGE); the translator can only target English today.
   Tests: intake/tests/test_foreign_sites.py (6). NOT tested: a full harvest on the new code.
+* **2026-11-27 - Foreign follow-up (after the BCC restart at 13:35).** Harvest re-run job 3348:
+  0 saved in French, 6 language twins collapsed, 4 round-ups dropped, winner stage 47s (was ~10
+  min). Repair of the 21 other untranslated rows (curator-approved; originals in a scratch backup):
+  20 fixed (11 re-extracted via structured data, 4 via the page lane, 6 translated in place from
+  the stored recipe after the page lane failed), 1 NOT fixed (master 20370, mizkan.co.jp page no
+  longer fetchable, still Japanese). FOUND: the page lane's length floor rejected 6 of 9 whole-page
+  translations that were in fact complete - the translator leaves out comments/navigation (a
+  194k-char page -> a clean 4.9k recipe, ratio 0.02). FIX: `is_translation_plausible(complete=)`:
+  a reply that FINISHED (stop_reason != max_tokens) and is >= 800 chars skips the floor and is
+  judged on quantities + structure; passed by the extract path and both filter-stage callers.
+  NEEDS A BCC RESTART.
+* **2026-11-27 - Greek coverage scan + four dishes created.** Of a 20-dish Greek canon (Claude's
+  list, not a published ranking) 17 were in the catalog; created Gyros, Dolmades, Stifado and
+  Tiropita directly through dishes_lib (curator: "cant you just create the database records and
+  launch the job"), same typo + duplicate gates as the Create button; Tiropita was flagged "look at
+  Melopita" and created anyway (different dish). EN + EN Recipe + Greek line (n 20, gr/el, keep 5),
+  40 candidates, 15 winners, 180 days. Rematch 3351 + refreshes 3352-3355 via `jobs drain`.
+  Noted, not acted on: Revithia and "Greek Chickpea Soup" look like one dish.
+* **2026-11-27 - DISH DESCRIPTION IS EDITABLE (dishes_v2.html `f_description`, dishes.update_dish).**
+  It was shown read-only ("Auto description"). Curator: Sauce Jean Vignard was described as a brown
+  sauce and could not be corrected. Now a text box with an info dot; a CHANGED description drops
+  the identity card, which the embedding refresh rebuilds from the new words (the card prompt
+  already reads "Curator description"); a CLEARED description is rewritten from the dish name
+  (the try-again). The box is live; the card rebuild NEEDS A BCC RESTART.
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched

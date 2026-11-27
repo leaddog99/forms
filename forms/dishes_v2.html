@@ -503,7 +503,10 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" style="min-height:90px" placeholder="Scope, query tuning rationale, known issues…">${escapeHtml(d.notes || '')}</textarea>
-          ${d.description ? `<p class="ed-notes-help" style="margin-top:10px">Auto description: ${escapeHtml(d.description)}</p>` : ''}
+          <div class="ed-field full" style="margin:14px 0 0">
+            <label for="f_description">Description <button type="button" class="info-dot" data-info-title="Dish description" data-info="One line saying what this dish is. It was written automatically from the dish name, and it can be wrong.<br><br><b>It matters:</b> recipes are matched to this dish using a profile (cuisine, main ingredients, technique) that is built from this description.<br><br><b>To correct it</b>, rewrite it in your own words and Save. The profile is rebuilt from what you wrote.<br><b>To try again</b>, clear the box and Save. A new description is written from the dish name.">i</button></label>
+            <textarea id="f_description" class="ed-notes" style="min-height:64px" placeholder="Leave blank and Save to have it written for you">${escapeHtml(d.description || '')}</textarea>
+          </div>
         </section>
 
         <header class="d-group" id="g_search"><h2>Search</h2><p>Where a run looks for this dish. Saved with the Save button.</p></header>
@@ -1388,6 +1391,7 @@
         query_rows: qr.rows, top_n_serpapi: serp, top_n_final: final,
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#f_notes').value.trim(),
+        description: ($('#f_description') ? $('#f_description').value.trim() : (d.description || '')) || null,
         display_name: ($('#f_display') ? $('#f_display').value.trim() : '') || null,
         aliases: ($('#f_aliases') ? $('#f_aliases').value.trim() : '') || null,
         // '' (not null) is meaningful: it clears a stated locale and hands the

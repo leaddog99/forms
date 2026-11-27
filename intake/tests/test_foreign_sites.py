@@ -69,6 +69,15 @@ def test_a_failed_page_translation_raises_instead_of_returning_the_original(monk
     assert len(calls) == 2 and "0.38" in str(ei.value)
 
 
+def test_a_finished_short_reply_is_not_a_cut_off_one():
+    page = "# Croissants\n" + ("commentaire de lecteur. " * 8000)          # ~190k chars of comments
+    recipe = "# Croissants\n\n## Ingredients\n- 500 g flour\n- 20 g yeast\n\n## Method\n" + "Fold the dough. " * 60
+    assert T.is_translation_plausible(page, recipe)[0] is False               # unknown: floor applies
+    assert T.is_translation_plausible(page, recipe, complete=True)[0] is True  # finished: judged on content
+    # A finished reply with no recipe in it still fails.
+    assert T.is_translation_plausible(page, "I cannot translate this page. " * 40, complete=True)[0] is False
+
+
 def test_page_title_and_hreflang_links():
     html = ('<html><head><title>25 idées de salades - La cuisine</title>'
             '<meta property="og:title" content="25 id&eacute;es de salades compos&eacute;es">'

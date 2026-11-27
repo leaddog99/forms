@@ -553,7 +553,8 @@ _INTEGER_RE = re.compile(r"\b\d{1,3}\b")
 _NON_LATIN_MIN_LENGTH_RATIO = 0.22
 
 
-def is_translation_plausible(original: str, translated: str, *, min_length_ratio: float = 0.4) -> tuple[bool, str]:
+def is_translation_plausible(original: str, translated: str, *, min_length_ratio: float = 0.4,
+                             complete: bool = False) -> tuple[bool, str]:
     """Return (ok, reason). Used as a safety net BEFORE handing the
     translated markdown to the is_recipe LLM check — prefer dropping a
     URL with "translation suspect" over poisoning OU/extraction with
@@ -582,7 +583,17 @@ def is_translation_plausible(original: str, translated: str, *, min_length_ratio
     #    _NON_LATIN_MIN_LENGTH_RATIO. Detected from the SOURCE, so an English
     #    page is never affected.
     orig_len = len(original or "")
-    if orig_len > 200:
+    # `complete` = the model FINISHED its reply (it did not hit the output ceiling).
+    # The length floor exists to catch a cut-off reply, and that is now known
+    # directly. A finished reply much shorter than the page is the translator
+    # leaving out the page's bulk (reader comments, navigation, cookie text): a
+    # 194,000-character croissant page came back as a clean 4,900-character recipe
+    # and was thrown away at ratio 0.02 (2026-11-27; 6 of 9 whole-page translations
+    # in that day's repair run failed this way). So a finished reply of real size
+    # skips the floor and is judged on the checks below.
+    if complete and orig_len > 200 and len(translated) >= 800:
+        pass
+    elif orig_len > 200:
         floor = min_length_ratio
         if script_language(original):
             floor = min(min_length_ratio, _NON_LATIN_MIN_LENGTH_RATIO)
@@ -727,7 +738,7 @@ def translate_extraction_markdown(
     """
     tr = translate_markdown(markdown_with_jsonld, src_lang)
     ok, why = is_translation_plausible(
-        markdown_with_jsonld, tr.translated_markdown,
+        markdown_with_jsonld, tr.translated_markdown, complete=not tr.truncated,
     )
     if tr.truncated:
         # Hit the output ceiling. What is lost is the END of the page (comments,

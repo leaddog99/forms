@@ -1312,6 +1312,16 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("description = NULL")
+        # THE DESCRIPTION DRIVES THE IDENTITY CARD (2026-11-27). The card is what a
+        # recipe is matched against, and it is generated from the description
+        # ("Curator description: ..."). A curator who corrects the description
+        # ("Sauce Jean Vignard is not a brown sauce") must get a card that agrees,
+        # so a changed description drops the card; the embedding refresh at the
+        # end of this function regenerates it from the new words. A CLEARED
+        # description is regenerated too, which is the "try again" button.
+        _new_desc = (d or "").strip() if isinstance(d, str) else ""
+        if _new_desc != (existing.get("description") or "").strip():
+            sets.append("identity_card = NULL")
 
     if "display_name" in patch:
         dn = patch["display_name"]
