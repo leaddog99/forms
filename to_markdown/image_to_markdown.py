@@ -195,6 +195,57 @@ def image_to_markdown(image_path: str, *, model: str = "claude-sonnet-4-6",
     return content.strip()
 
 
+MAX_PAGES = 8   # photographed pages of ONE recipe in a single read
+
+PAGES_TO_MARKDOWN_PROMPT = IMAGE_TO_MARKDOWN_PROMPT + """
+
+SEVERAL PHOTOS FOLLOW, IN READING ORDER. They are consecutive pages (or overlapping shots) of ONE recipe — for example a cookbook recipe that starts on one page and finishes on the next. Produce ONE markdown document for that single recipe:
+- Join them: an ingredient list or a step that breaks off at the bottom of one photo continues at the top of the next. Write it once, whole.
+- Where two photos overlap and show the same lines, write those lines once.
+- Keep the steps in the order they are printed across the pages, numbered straight through.
+- If a photo also shows part of a DIFFERENT recipe (the end of the previous one, the start of the next), leave that other recipe out.
+- A sidebar, tip or note belonging to this recipe goes under Notes whichever page it is on.""".rstrip()
+
+
+def images_to_markdown(image_paths: list, *, model: str = "claude-sonnet-4-6",
+                       timings: Optional[dict] = None,
+                       usage_log: Optional[list] = None) -> str:
+    """Vision-OCR several photos of ONE recipe, in order, into one markdown
+    document (the multi-page photo tray, 2026-11-27). One call, like the PDF
+    reader. A single path is handed to image_to_markdown unchanged."""
+    paths = [p for p in (image_paths or []) if p]
+    if len(paths) == 1:
+        return image_to_markdown(paths[0], model=model, timings=timings, usage_log=usage_log)
+    if not paths:
+        return ""
+    if len(paths) > MAX_PAGES:
+        raise ValueError(f"Too many pages ({len(paths)}); the limit is {MAX_PAGES}.")
+    t0 = time.perf_counter()
+    content: list = []
+    for n, p in enumerate(paths, 1):
+        media_type, b64 = image_to_base64(p)
+        content.append({"type": "text", "text": f"Photo {n} of {len(paths)}:"})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
+    content.append({"type": "text", "text": f"These {len(paths)} photos are one recipe, in reading order. "
+                                             "Convert it into a single markdown document."})
+    t_encode = time.perf_counter()
+    if timings is not None:
+        timings["encode_ms"] = int((t_encode - t0) * 1000)
+        timings["pages"] = len(paths)
+    with llm.stream(
+        operation="image_to_markdown", model=model,
+        max_tokens=8192,
+        temperature=0.2,
+        system=PAGES_TO_MARKDOWN_PROMPT,
+        messages=[{"role": "user", "content": content}],
+    ) as stream:
+        response = stream.get_final_message()
+    if timings is not None:
+        timings["vision_llm_ms"] = int((time.perf_counter() - t_encode) * 1000)
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    return text.strip()
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:

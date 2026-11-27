@@ -13408,6 +13408,18 @@ a scheduled job is added, name folding changes.
   source_url. Trial on four real pages: both models agreed on found/whole (1 whole, 1 sliver, 2 none,
   portraits never picked); Sonnet cut the one real crop too narrow, Opus cut at the fold - ONE real
   crop, thin evidence. NOT tested through the endpoint with a live photo.
+* **2026-11-27 - MULTI-PAGE PHOTO TRAY (image roadmap item 3).** Form (recipe_form_styled.html):
+  tray under the drop zone (`#pageTray`; link "Recipe runs over more than one page?"), opens by
+  itself when several images are dropped/picked at once; while open, any dropped/picked/pasted
+  image is ADDED as a page; thumbnails numbered, reorder / remove, max 8; `extractFromImage(file,
+  url, title, morePages)`. Server: `/extract-from-image` takes `more_images` (same endpoint, one
+  path); `to_markdown.image_to_markdown.images_to_markdown` reads all pages in ONE vision call
+  (`PAGES_TO_MARKDOWN_PROMPT`, `MAX_PAGES` 8). Every page is stored in `sourceImage`; page 1 is the
+  Screenshot box; the dish crop tries pages in order and stops at the first whole dish photo.
+  Tested: tray logic in a browser (add, reorder, remove, cancel); the reader on a two-page recipe
+  split into two photos merged ingredients (page 1) and steps 2-6 (page 2) correctly. NOT tested:
+  the upload through the endpoint (needs the restart + a signed-in session), a phone camera.
+  The Screenshot box shows page 1 only.
 * **2026-11-25 - Form fix:** populateFormFromRecipe now carries `sourceImage` into the save (photo
   extracts were saving `sourceImage: []`).
 * **2026-11-25 - Data repair, curator-approved: recipes 918, 919, 922, 925 (user 5).** Page photo

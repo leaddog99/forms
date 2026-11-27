@@ -87,7 +87,9 @@ except Exception as e:
 
 try:
     from to_markdown.html_to_markdown import html_to_markdown
-    from to_markdown.image_to_markdown import image_to_markdown, IMAGE_TO_MARKDOWN_PROMPT
+    from to_markdown.image_to_markdown import (image_to_markdown, images_to_markdown,  # noqa: F401
+                                               IMAGE_TO_MARKDOWN_PROMPT, PAGES_TO_MARKDOWN_PROMPT,
+                                               MAX_PAGES as _PHOTO_MAX_PAGES)
     from to_markdown.markdown_passthrough import markdown_passthrough
     from to_markdown.pdf_to_markdown import pdf_url_to_markdown, PDF_TO_MARKDOWN_PROMPT
     from extract.markdown_to_recipe import markdown_to_recipe, SYSTEM_PROMPT as _MD_PROMPT
@@ -14302,6 +14304,9 @@ async def extract_from_image_endpoint(
     source_url: str = Form(""),
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
+    # The multi-page photo tray (2026-11-27): pages 2..n of the SAME recipe, in
+    # reading order after `image`. All pages are read in one vision call.
+    more_images: Optional[list[UploadFile]] = File(None),
 ):
     # PAID WORK — an authenticated caller only. These endpoints each spend
     # real LLM money, and until 2026-07-30 every one of them was reachable
@@ -14329,6 +14334,23 @@ async def extract_from_image_endpoint(
         with open(temp_path, "wb") as f:
             f.write(content)
 
+        # pages = every photo of this recipe, in order: [(bytes, temp path, ext)]
+        pages = [(content, temp_path, file_ext)]
+        for extra in (more_images or []):
+            if not extra.content_type or not extra.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail="Every page must be an image")
+            _ext = Path(extra.filename).suffix.lower() if extra.filename else ".jpg"
+            _p = temp_dir / f"extract_{uuid.uuid4()}{_ext}"
+            _b = await extra.read()
+            with open(_p, "wb") as f:
+                f.write(_b)
+            pages.append((_b, _p, _ext))
+        if len(pages) > _PHOTO_MAX_PAGES:
+            raise HTTPException(status_code=400,
+                                detail=f"Too many pages ({len(pages)}). The limit is {_PHOTO_MAX_PAGES} photos for one recipe.")
+        if len(pages) > 1:
+            print(f"[EXTRACT] {len(pages)} pages of one recipe")
+
         print(f"[EXTRACT] Running canonical image -> markdown -> recipe chain (source_url={source_url!r})")
         # Mint the recipe UUID now so token-journal entries (and any future
         # ledger writes) can reference the eventual recipe before save.
@@ -14352,7 +14374,7 @@ async def extract_from_image_endpoint(
 
         if recipe is None:
             try:
-                md = await asyncio.to_thread(image_to_markdown, str(temp_path),
+                md = await asyncio.to_thread(images_to_markdown, [str(p[1]) for p in pages],
                                              timings=timings, usage_log=usage_log)
             except Exception as e:
                 print(f"[ERROR] image_to_markdown failed: {e}")
@@ -14368,7 +14390,7 @@ async def extract_from_image_endpoint(
             # sub-key to avoid colliding with markdown_to_recipe's prompts.
             prompts["vision"] = {
                 "model": "claude-sonnet-4-6",
-                "system_prompt": IMAGE_TO_MARKDOWN_PROMPT,
+                "system_prompt": PAGES_TO_MARKDOWN_PROMPT if len(pages) > 1 else IMAGE_TO_MARKDOWN_PROMPT,
             }
 
             try:
@@ -14411,16 +14433,20 @@ async def extract_from_image_endpoint(
         # fail the extraction.
         try:
             from input.pipeline.image_pipeline import standardize_and_meta
-            processed, _smeta = standardize_and_meta(content, source_url=None, localized=True)
             from input.pipeline.image_store import get_image_store as _store
-            if processed:
-                src_name = f"upload_{uuid.uuid4()}.{_smeta.get('format') or 'webp'}"
-                src_url = _store().put(f"heroes/{src_name}", processed,
-                                       content_type=f"image/{_smeta.get('format') or 'webp'}")
-            else:
-                src_name = f"upload_{uuid.uuid4()}{file_ext}"
-                src_url = _store().put(f"heroes/{src_name}", content)
-            recipe["sourceImage"] = [src_url]
+            _stored = []   # [(url, bytes to look at)] one per page, in order
+            for _pbytes, _ppath, _pext in pages:
+                _proc, _smeta = standardize_and_meta(_pbytes, source_url=None, localized=True)
+                if _proc:
+                    src_name = f"upload_{uuid.uuid4()}.{_smeta.get('format') or 'webp'}"
+                    _u = _store().put(f"heroes/{src_name}", _proc,
+                                      content_type=f"image/{_smeta.get('format') or 'webp'}")
+                else:
+                    src_name = f"upload_{uuid.uuid4()}{_pext}"
+                    _u = _store().put(f"heroes/{src_name}", _pbytes)
+                _stored.append((_u, _proc or _pbytes))
+            src_url = _stored[0][0]
+            recipe["sourceImage"] = [u for u, _ in _stored]
             # The capture is a picture of the PAGE, not of the dish, so it goes
             # in the Screenshot box and the hero is left empty for a real dish
             # image (curator, 2026-11-25; until then the hero defaulted to it).
@@ -14439,9 +14465,15 @@ async def extract_from_image_endpoint(
                 from input.pipeline.system_config import get_setting as _gs
                 if not recipe.get("image") and _gs("photo_dish_crop", True):
                     from input.pipeline.dish_photo_crop import crop_and_store
-                    _hero_url, _crop_info = await asyncio.to_thread(crop_and_store, processed or content)
+                    # Page by page, stopping at the first whole dish photograph.
+                    _hero_url, _crop_info = None, {}
+                    for _n, (_u, _look) in enumerate(_stored, 1):
+                        _hero_url, _crop_info = await asyncio.to_thread(crop_and_store, _look)
+                        _crop_info["page"] = _n
+                        if _hero_url:
+                            break
                     _isrc["dishCrop"] = {k: _crop_info.get(k) for k in
-                                         ("method", "model", "found", "complete", "what", "box", "reason")}
+                                         ("method", "model", "found", "complete", "what", "box", "reason", "page")}
                     if _hero_url:
                         recipe["image"] = [_hero_url]
                         if _crop_info.get("meta"):

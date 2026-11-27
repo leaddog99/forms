@@ -1490,6 +1490,49 @@
       display: none;
     }
 
+    /* Multi-page photo tray (2026-11-27): several photos of ONE recipe, put in
+       reading order, read together. Sits directly under the drop zone. */
+    .page-tray-open { margin: -8px 0 16px; }
+    .page-tray-link {
+      background: none; border: 0; padding: 0; cursor: pointer;
+      color: var(--accent); font: inherit; font-size: 0.85em; text-decoration: underline;
+    }
+    .page-tray {
+      border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+      padding: 14px; margin: 0 0 16px;
+    }
+    .page-tray-hint { font-size: 0.85em; color: var(--muted); margin: 2px 0 10px; }
+    .page-tray-thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+    .page-tray-thumbs:empty::before {
+      content: "No pages yet. Add a photo, or drop or paste one here.";
+      color: var(--muted); font-size: 0.9em;
+    }
+    .page-thumb {
+      width: 112px; border: 1px solid var(--line); border-radius: 8px;
+      overflow: hidden; background: var(--bg); position: relative;
+    }
+    .page-thumb img { width: 100%; height: 140px; object-fit: cover; display: block; }
+    .page-thumb-num {
+      position: absolute; top: 4px; left: 4px; background: var(--accent); color: #fff;
+      border-radius: 10px; padding: 1px 8px; font-size: 0.8em; font-weight: 600;
+    }
+    .page-thumb-bar { display: flex; justify-content: space-between; }
+    .page-thumb-bar button {
+      flex: 1; border: 0; border-top: 1px solid var(--line); background: var(--card);
+      color: var(--ink); padding: 8px 0; cursor: pointer; font-size: 0.95em;
+    }
+    .page-thumb-bar button + button { border-left: 1px solid var(--line); }
+    .page-thumb-bar button:disabled { opacity: 0.3; cursor: default; }
+    .page-tray-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .page-tray-actions button {
+      padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line);
+      background: var(--card); color: var(--ink); cursor: pointer; font: inherit;
+    }
+    .page-tray-actions button.primary {
+      background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500;
+    }
+    .page-tray-actions button:disabled { opacity: 0.5; cursor: default; }
+
     /* URL extraction row */
     .url-row {
       display: flex;
@@ -2218,7 +2261,28 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           </div>
           <div class="processing-text">Extracting recipe...</div>
         </div>
-        <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*,.pdf,application/pdf" />
+        <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*,.pdf,application/pdf" multiple />
+      </div>
+
+      <!-- Multi-page photo tray. A recipe that runs over two or more cookbook
+           pages: collect a photo of each page, put them in reading order, and
+           read them together as ONE recipe (POST /extract-from-image with
+           more_images). Opens from the link, or by itself when several images
+           are dropped or picked at once. While it is open, a dropped / picked /
+           pasted image is ADDED to it instead of being extracted alone. -->
+      <div class="page-tray-open" id="pageTrayOpenRow">
+        <button type="button" class="page-tray-link" id="pageTrayOpenBtn">Recipe runs over more than one page? Add the photos together</button>
+      </div>
+      <div class="page-tray" id="pageTray" hidden>
+        <div><strong>Pages of one recipe</strong></div>
+        <div class="page-tray-hint">Add a photo of each page, in reading order. They are read together as one recipe.</div>
+        <div class="page-tray-thumbs" id="pageTrayThumbs"></div>
+        <div class="page-tray-actions">
+          <button type="button" id="pageTrayAddBtn">+ Add a page</button>
+          <button type="button" class="primary" id="pageTrayExtractBtn" disabled>Extract recipe</button>
+          <button type="button" id="pageTrayCancelBtn">Cancel</button>
+        </div>
+        <input type="file" id="pageTrayInput" accept="image/*" multiple hidden />
       </div>
 
       <form id="recipeForm" novalidate>
@@ -7730,6 +7794,8 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
         extractFromPdf(file);
       } else if (file.type && file.type.startsWith('image/')) {
         // Handwritten recipes, magazine photos, manual screenshot fallback.
+        // With the page tray open the image is another PAGE, not a new recipe.
+        if (pageTrayIsOpen()) { addPagesToTray([file]); return; }
         console.log('[drop] -> extractFromImage');
         extractFromImage(file);
       } else {
@@ -7744,16 +7810,123 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
       dropZone.classList.remove('drag-over');
       const files = e.dataTransfer.files;
       console.log('[drop] drop event, files:', files.length);
-      if (files.length > 0) handleDroppedFile(files[0]);
+      handleDroppedFiles(files);
     });
 
     // File input handler
     extractImageInput.addEventListener('change', (e) => {
       console.log('[drop] file-input change, files:', e.target.files.length);
       if (e.target.files.length > 0) {
-        handleDroppedFile(e.target.files[0]);
+        handleDroppedFiles(Array.from(e.target.files));
         e.target.value = ''; // Reset so same file can be selected again
       }
+    });
+
+    // ---- Multi-page photo tray ------------------------------------------
+    // Several photos of ONE recipe (a cookbook recipe that runs over two
+    // pages), kept in reading order and read together in one extract.
+    const PAGE_TRAY_MAX = 8;            // mirrors to_markdown.image_to_markdown.MAX_PAGES
+    let _trayPages = [];                // [{file, url}] in reading order
+    const pageTray = document.getElementById('pageTray');
+    const pageTrayThumbs = document.getElementById('pageTrayThumbs');
+    const pageTrayExtractBtn = document.getElementById('pageTrayExtractBtn');
+    const pageTrayInput = document.getElementById('pageTrayInput');
+
+    function pageTrayIsOpen() { return !!pageTray && !pageTray.hidden; }
+
+    function renderPageTray() {
+      pageTrayThumbs.textContent = '';
+      _trayPages.forEach((p, i) => {
+        const card = document.createElement('div');
+        card.className = 'page-thumb';
+        const img = document.createElement('img');
+        img.src = p.url;
+        img.alt = 'Page ' + (i + 1);
+        const num = document.createElement('span');
+        num.className = 'page-thumb-num';
+        num.textContent = String(i + 1);
+        const bar = document.createElement('div');
+        bar.className = 'page-thumb-bar';
+        const mk = (label, title, disabled, fn) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title);
+          b.disabled = !!disabled;
+          b.addEventListener('click', fn);
+          return b;
+        };
+        bar.append(
+          mk('◀', 'Move this page earlier', i === 0, () => {
+            [_trayPages[i - 1], _trayPages[i]] = [_trayPages[i], _trayPages[i - 1]]; renderPageTray(); }),
+          mk('✕', 'Remove this page', false, () => {
+            try { URL.revokeObjectURL(p.url); } catch (_) {}
+            _trayPages.splice(i, 1); renderPageTray(); }),
+          mk('▶', 'Move this page later', i === _trayPages.length - 1, () => {
+            [_trayPages[i + 1], _trayPages[i]] = [_trayPages[i], _trayPages[i + 1]]; renderPageTray(); }),
+        );
+        card.append(img, num, bar);
+        pageTrayThumbs.append(card);
+      });
+      const n = _trayPages.length;
+      pageTrayExtractBtn.disabled = n === 0;
+      pageTrayExtractBtn.textContent = n > 1 ? `Extract recipe from ${n} pages` : 'Extract recipe';
+      document.getElementById('pageTrayAddBtn').disabled = n >= PAGE_TRAY_MAX;
+    }
+
+    function openPageTray() {
+      pageTray.hidden = false;
+      document.getElementById('pageTrayOpenRow').hidden = true;
+      renderPageTray();
+    }
+
+    function closePageTray() {
+      _trayPages.forEach(p => { try { URL.revokeObjectURL(p.url); } catch (_) {} });
+      _trayPages = [];
+      if (pageTray) pageTray.hidden = true;
+      const row = document.getElementById('pageTrayOpenRow');
+      if (row) row.hidden = false;
+    }
+
+    function addPagesToTray(files) {
+      const imgs = Array.from(files || []).filter(f => f && f.type && f.type.startsWith('image/'));
+      if (!imgs.length) {
+        showFeedback('Only photos can be added as pages.', 'error');
+        return;
+      }
+      if (!pageTrayIsOpen()) openPageTray();
+      const room = PAGE_TRAY_MAX - _trayPages.length;
+      imgs.slice(0, Math.max(0, room)).forEach(f => _trayPages.push({ file: f, url: URL.createObjectURL(f) }));
+      renderPageTray();
+      if (imgs.length > room) {
+        showFeedback(`One recipe can have at most ${PAGE_TRAY_MAX} pages. The extra photos were not added.`, 'error');
+      } else {
+        showFeedback(`Page ${_trayPages.length} added. Add the next page, or extract the recipe.`, 'info');
+      }
+    }
+
+    // One door for a drop or a pick. Several images at once = pages of one
+    // recipe, so they go to the tray to be checked for order. Anything else
+    // keeps the old behaviour (first file, extracted straight away).
+    function handleDroppedFiles(files) {
+      const list = Array.from(files || []);
+      if (!list.length) return;
+      const imgs = list.filter(f => f && f.type && f.type.startsWith('image/'));
+      if (imgs.length && (pageTrayIsOpen() || imgs.length > 1)) { addPagesToTray(imgs); return; }
+      handleDroppedFile(list[0]);
+    }
+
+    document.getElementById('pageTrayOpenBtn').addEventListener('click', openPageTray);
+    document.getElementById('pageTrayCancelBtn').addEventListener('click', closePageTray);
+    document.getElementById('pageTrayAddBtn').addEventListener('click', () => pageTrayInput.click());
+    pageTrayInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) addPagesToTray(Array.from(e.target.files));
+      e.target.value = '';
+    });
+    pageTrayExtractBtn.addEventListener('click', () => {
+      if (!_trayPages.length) return;
+      const files = _trayPages.map(p => p.file);
+      // The tray stays as it is until the extract succeeds, so a failed read
+      // does not throw the photos away (extractFromImage closes it on success).
+      extractFromImage(files[0], '', '', files.slice(1));
     });
 
     // Click anywhere in the drop zone triggers the (now hidden) file picker,
@@ -8270,15 +8443,21 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
     // image to a source URL (e.g. extractFromStagedImage in the
     // bookmarklet fallback) pass it explicitly.
     const UPLOAD_TIMEOUT_MS = 90000; // fail fast with an honest message, not a silent 3-4 min grind
-    async function extractFromImage(file, sourceUrl = '', title = '') {
+    // `morePages` = pages 2..n of the SAME recipe (the page tray); they ride
+    // along as more_images and the server reads all of them in one pass.
+    async function extractFromImage(file, sourceUrl = '', title = '', morePages = []) {
       dropZone.classList.add('processing');
       const stopRotation = startStatusRotation('image');
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+      // More pages = a bigger upload and a longer read; give each one room.
+      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS + 45000 * morePages.length);
       try {
         file = await downscaleImage(file); // best-effort shrink so weak networks can push it
         const formData = new FormData();
         formData.append('image', file);
+        for (const extra of morePages) {
+          formData.append('more_images', await downscaleImage(extra));
+        }
         if (sourceUrl) formData.append('source_url', sourceUrl);
         if (title) formData.append('title', title);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
@@ -8301,6 +8480,7 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
           return;
         }
         if (res.ok && result.success) {
+          closePageTray();   // the pages are now a recipe; a failed read keeps them
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
           captureExtractionTrace(result);
@@ -8312,7 +8492,9 @@ Word endings are folded (<i>chowders</i> finds <i>chowder</i>) and accents are i
               showImageButton: false,
             });
           } else {
-            showFeedback('Recipe extracted from image! Review and save when ready.', 'success');
+            showFeedback(morePages.length
+              ? `Recipe extracted from ${morePages.length + 1} pages! Review and save when ready.`
+              : 'Recipe extracted from image! Review and save when ready.', 'success');
           }
         } else {
           showErrorDialog({
