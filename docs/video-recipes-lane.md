@@ -329,6 +329,10 @@ contradiction in ReciMe's framing, see the dossier §5); frame OCR of video.
    HAND SAVES are lenient: `_video_caution_message` warns (save / cancel) on a
    spoken-only recipe or a failed method check and never refuses.
    Plain-language account: docs/research/video-recipes-white-paper-2026-11-24.md.
+   TO DO, DEFERRED (curator, 2026-11-27: wait for more experience): a ONE SEAT PER
+   CHANNEL rule. Seats go to the most views per day, so one prolific channel can
+   take all of them (Shrimp Stir Fry #3345: 5 of 8 eligible videos from one
+   channel, also the three most watched). Not built; watch how often it happens.
    TO DO (curator asked for this note): (1) HUMAN CALIBRATION - watch about 10
    judged videos, passes and fails, and compare with the verdicts; the judge
    reads captions, not the video. (2) Run the five-question version on real
