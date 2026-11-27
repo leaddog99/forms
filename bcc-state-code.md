@@ -13574,6 +13574,24 @@ a scheduled job is added, name folding changes.
   dishes; dish page loads with no script errors. Runtime check of the curator's Sauce Jean Vignard
   save (19:22Z): description, identity card, embedding text, vector and dishes_vec row all rebuilt
   and consistent. Tests 58. NEEDS A BCC RESTART.
+* **2026-11-27 - GREEK: 12 MORE DISHES, ALL DESCRIPTIONS REWRITTEN, chapter "Uncertain" retried.**
+  Created Imam Bayildi, Papoutsakia, Youvarlakia, Taramosalata, Melitzanosalata, Kolokithokeftedes,
+  Fakes, Kokkinisto, Magiritsa, Horta, Greek Lemon Roasted Potatoes, Mavromatika (same set-up as
+  the earlier eight) and ran ten refreshes simultaneously. Curator asked for every existing Greek
+  dish's description to be rewritten with the search-first writer: 40 dishes (picked by the dish
+  ETHNICITY field, not the title; Chicken Traybake and Fried Calamari left out as mis-tagged;
+  Kalogeros added), each = one results page + up to 8 of its recipes, saved through update_dish
+  (card + vector rebuilt; 0 dishes without card or vector after). Old/new text kept in the session
+  scratchpad (greek_redescribe.json), not in the repo. Real corrections: Fava (fava beans ->
+  yellow split peas), Melopita (phyllo pie -> crustless honey-cheese custard), Portokalopita
+  (custard -> torn-phyllo syrup cake), Gemista (layered -> stuffed), Kalogeros (vegetable stew ->
+  Naxos beef-eggplant-cheese bake), Ekmek Kataifi (Turkish -> Greek, custard), Maroulosalata.
+  CODE (embeddings.ensure_dish_description): a chapter of "Uncertain" is no longer kept when the
+  profile pass runs, and when the NAME classifies as Uncertain the DESCRIPTION is classified
+  instead (foreign names: Fava, Mavromatika, Kalogeros all came back Uncertain from the name).
+  `chapter` is still not patchable through update_dish. 14 dishes remain Uncertain, mostly
+  ingredient entries (Cabbage, Yogurt, Dijon...). Started a chapter-by-chapter gap review
+  (top dishes per chapter vs the catalog); first three chapters reported to the curator.
 * **2026-11-27 - PARALLEL DISH REFRESHES + a startup race (init_db).** Created Grilled Octopus,
   Greek Lemon Chicken, Greek Roast Lamb, Briam (search-first descriptions, first real use; all
   four read correctly) and ran their refreshes as four simultaneous `jobs exec` processes. Three

@@ -307,7 +307,15 @@ def ensure_dish_description(conn: sqlite3.Connection, dish_row: dict) -> Optiona
             print(f"[EMBED] evidence-based description failed ({type(e).__name__}: {e}); "
                   f"falling back to the name")
     signal = signal or generate_dish_signal_for_dish(label, dish_row.get("queries"))
-    chapter = existing_chapter or classify_chapter(label)
+    # "Uncertain" is not an answer worth keeping: this pass runs whenever the
+    # description or card is being rebuilt, so try again. A foreign name alone
+    # tells the classifier nothing ("Fava", "Mavromatika" both came back
+    # Uncertain, 2026-11-27), so the second try reads the description, which
+    # says what the dish is.
+    chapter = existing_chapter if existing_chapter != "Uncertain" else ""
+    chapter = chapter or classify_chapter(label)
+    if chapter == "Uncertain" and signal:
+        chapter = classify_chapter(signal)
     if not has_card:
         # Pass the freshly-derived description in so the card LLM has
         # the curator's framing available even before persist.
