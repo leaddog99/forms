@@ -292,12 +292,18 @@ def ensure_dish_description(conn: sqlite3.Connection, dish_row: dict) -> Optiona
         print(f"[EMBED] dish-helper imports failed: {e}")
         return existing_desc or None
 
-    signal = existing_desc or generate_dish_signal_for_dish(name, dish_row.get("queries"))
-    chapter = existing_chapter or classify_chapter(name)
+    # Describe the dish by what the curator CALLS it. `name` is the immutable
+    # key and can carry a typo the display name has since corrected: the key
+    # "Chicken Marenga" was described as a Filipino soy-and-vinegar braise
+    # (2026-11-27), and that wrong card became the dish's matching text.
+    label = (dish_row.get("display_name") or "").strip() or name
+    signal = existing_desc or generate_dish_signal_for_dish(label, dish_row.get("queries"))
+    chapter = existing_chapter or classify_chapter(label)
     if not has_card:
         # Pass the freshly-derived description in so the card LLM has
         # the curator's framing available even before persist.
         feed = dict(dish_row)
+        feed["name"] = label
         feed["description"] = signal or existing_desc
         card = generate_identity_card_for_dish(feed)
     else:

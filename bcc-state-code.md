@@ -13471,6 +13471,20 @@ a scheduled job is added, name folding changes.
   Bourgignon"); of 135 real catalog names, 2 questioned wrongly-or-arguably (Licurdia -> Licordia,
   Chicken Marenga -> Chicken Meringue) plus the known "Seared Scallope". NOT tested: the form in a
   signed-in browser. NEEDS THE BCC RESTART. Tests: intake/tests/test_dish_name_check.py (4).
+* **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
+  A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
+  search; the video search uses the display name). Curator asked whether aliases should be searched
+  too; decision: not automatically (most aliases are respellings the engine already folds, and each
+  line is a paid search), one click per alias instead. Under the Aliases box each alias is a chip:
+  "searched" when a search line already contains it, else "Search this too" (adds a line; saved with
+  Save); an alias sharing no word with the dish's own name is marked "different name". Page-only,
+  no restart. Checked in the browser on Seared Scallops (chip, add, Save lights); not saved there.
+* **2026-11-27 - Dish description/chapter/identity card are now generated from the DISPLAY name**
+  (embeddings.ensure_dish_description), key as fallback: the misspelled key "Chicken Marenga" had
+  been described as a Filipino soy-and-vinegar braise and that became its matching text. Data fix,
+  curator-approved, in place (key unchanged): search lines -> "Chicken Marengo" / "Chicken Marengo
+  Recipe", alias "Chicken Marengo", description + chapter (Uncertain -> Poultry) + card + vector
+  regenerated. Takes effect in the service on the next BCC restart; refresh not re-run.
 * **2026-11-27 - Shrimp Stir Fry #3345 (curator created it):** 10/10 web, 3/3 video seats, all three
   from one channel (4,601 / 4,288 / 2,013 views/day), all passed the method check. Curator leans
   AGAINST a one-seat-per-channel rule (see docs/video-recipes-lane.md).

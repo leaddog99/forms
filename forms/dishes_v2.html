@@ -120,7 +120,7 @@
   </div>
 
   <script src="/forms/library-shell.js?v=20261029a"></script>
-  <script src="/forms/query-rows.js?v=20261121a"></script>
+  <script src="/forms/query-rows.js?v=20261127a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -227,6 +227,61 @@
       paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
     });
     function collectQueryRows(boxId){ return QueryRows.collect(boxId); }
+
+    /* ALIAS -> SEARCH LINE (2026-11-27). A refresh searches the web with the
+       dish's search lines ONLY; aliases feed matching and the in-app search,
+       never the web search. Searching every alias automatically would mostly
+       buy respellings the search engine already folds together, so each alias
+       gets a chip instead: one click adds it as a search line. An alias that
+       shares no word with the dish's own name is marked as a different name,
+       the kind that finds pages the main name misses. */
+    const _aliasFold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9Ͱ-￿]+/g, ' ').trim();
+    function _aliasIsDifferentName(alias, d){
+      const own = new Set(_aliasFold(`${d.name} ${d.display_name || ''}`).split(' ').filter(w => w.length > 2));
+      const words = _aliasFold(alias).split(' ').filter(w => w.length > 2);
+      if (!words.length || !own.size) return false;
+      // A respelling keeps a word, or stays within two letters of one.
+      const near = (a, b) => {
+        if (Math.abs(a.length - b.length) > 2) return false;
+        let diff = 0; const n = Math.max(a.length, b.length);
+        for (let i = 0; i < n; i++) if (a[i] !== b[i]) diff++;
+        return diff <= 2;
+      };
+      return !words.some(w => [...own].some(o => o === w || near(o, w)));
+    }
+    function paintAliasChips(d){
+      const box = $('#aliasChips'), inp = $('#f_aliases');
+      if (!box || !inp) return;
+      const seen = new Set();
+      const aliases = inp.value.split(/[,\n]/).map(s => s.trim()).filter(a => {
+        const k = a.toLowerCase(); if (!a || seen.has(k)) return false; seen.add(k); return true; });
+      const lines = [...document.querySelectorAll('#qrows_edit .qr-q')].map(q => ` ${_aliasFold(q.value)} `);
+      box.innerHTML = aliases.map(a => {
+        const f = _aliasFold(a);
+        const searched = !!f && lines.some(l => l.includes(` ${f} `));
+        const diff = _aliasIsDifferentName(a, d);
+        return `<span class="ed-pill ${searched ? 'ok' : ''}" style="gap:8px">${escapeHtml(a)}`
+          + (diff && !searched ? `<span style="color:var(--accent-dark)" title="Shares no word with the dish's own name, so a search for it should find pages the main name misses">different name</span>` : '')
+          + (searched
+              ? `<span style="color:var(--muted)">searched</span>`
+              : `<button type="button" class="ed-btn alias-search" data-alias="${escapeHtml(a)}" style="padding:2px 9px;font-size:.92em" title="Add this alias as a search line. It becomes one more web search on every refresh; nothing is saved until you press Save.">Search this too</button>`)
+          + `</span>`;
+      }).join('');
+    }
+    function initAliasChips(d){
+      const box = $('#aliasChips'), inp = $('#f_aliases');
+      if (!box || !inp) return;
+      paintAliasChips(d);
+      inp.addEventListener('input', () => paintAliasChips(d));
+      $('#qrows_edit').addEventListener('input', () => paintAliasChips(d));
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('.alias-search'); if (!b) return;
+        const row = QueryRows.addLine('qrows_edit', b.dataset.alias);
+        paintAliasChips(d);
+        if (row) row.scrollIntoView({behavior: 'smooth', block: 'center'});
+      });
+    }
 
     /* ----------------------------- derivations ----------------------------- */
     const fitOf = (d) => d.last_ou_fit || {};
@@ -440,6 +495,7 @@
         <div class="ed-field full" style="margin:0 0 16px">
           <label for="f_aliases">Aliases <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(other names this dish answers to, comma-separated — a recipe whose identity card names an alias exactly is claimed as strongly as by the dish name itself; use for spellings, translations, and merged-dish names)</span></label>
           <input id="f_aliases" type="text" value="${escapeHtml((d.aliases || []).join(', '))}" placeholder="e.g. Spaghetti alla Nerano, Pasta alla Nerano">
+          <div id="aliasChips" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
         </div>
 
         </section>
@@ -631,6 +687,7 @@
       });
       initQueryRows('qrows_edit', d.query_rows);
       paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
+      initAliasChips(d);
       $('#saveBtn').addEventListener('click', () => doSave(d));
       $('#refreshBtn').addEventListener('click', () => doRefresh(d));
       $('#deleteBtn').addEventListener('click', () => doDelete(d));

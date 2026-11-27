@@ -285,5 +285,24 @@
     return {rows: out};
   }
 
-  global.QueryRows = { rowHtml, blockHtml, init, collect, paintFetchTotal };
+  // Add one search line from outside the block (the dish editor's per-alias
+  // "Search this too"). Reuses an empty line when there is one, and fires the
+  // same bubbling 'input' the + Add line button does, so Save lights.
+  function addLine(boxId, q){
+    const box = document.getElementById(boxId);
+    if (!box || !(q || '').trim()) return null;
+    const list = box.querySelector('.qrows-list');
+    let row = [...list.children].find(r => !r.querySelector('.qr-q').value.trim());
+    if (!row){
+      list.insertAdjacentHTML('beforeend', rowHtml({}, _opts[boxId] || DEFAULTS));
+      row = list.lastElementChild;
+    }
+    const el = row.querySelector('.qr-q');
+    el.value = q.trim();
+    el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
+    box.dispatchEvent(new Event('input', {bubbles: true}));
+    return row;
+  }
+
+  global.QueryRows = { rowHtml, blockHtml, init, collect, paintFetchTotal, addLine };
 })(window);
