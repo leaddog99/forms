@@ -338,6 +338,17 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "URLs on that host do not pause again.",
     },
     {
+        "key": "dish_name_spellcheck",
+        "value": True,
+        "type": "bool",
+        "category": "Search",
+        "label": "Check a new dish's name for typos",
+        "description": "When a dish is being added, one small model call reads the name and, if it "
+                       "looks misspelled, suggests the correction before the dish is created (a dish's "
+                       "name cannot be changed afterwards). The curator can use the suggestion or "
+                       "create the name as typed. Foreign and regional names are left alone.",
+    },
+    {
         "key": "dish_title_screen",
         "value": "drop",
         "type": "string",

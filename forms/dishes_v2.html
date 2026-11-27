@@ -1666,6 +1666,7 @@
           if (!r.ok || $('#n_name').value.trim() !== nm) return;
           const d = await r.json();
           if (d.exists) { hint.style.color = '#b45309'; hint.textContent = `“${nm}” already exists.`; return; }
+          if (d.typo && d.typo.suggestion) { showTypoHint(nm, d.typo.suggestion); return; }
           if (d.similar) {
             const s = d.similar, k = Math.round(s.share * s.n);
             hint.style.color = '#b45309';
@@ -1676,12 +1677,28 @@
       $('#n_name').addEventListener('input', () => {
         syncLines();
         clearTimeout(_nameTimer); _nameTimer = setTimeout(checkName, 700);
-        const b = $('#createBtn'); if (b && b.dataset.armedFor) { delete b.dataset.armedFor; b.textContent = 'Create'; }
+        const b = $('#createBtn'); if (b && b.dataset.armedFor) { delete b.dataset.armedFor; delete b.dataset.armedKind; b.textContent = 'Create'; }
       });
       if (p?.name) { syncLines(); checkName(); }
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
+    }
+
+    // TYPO GUARD: the name looks misspelled. Offer the correction as one click;
+    // the name is the dish's permanent key, so this is the moment to fix it.
+    function showTypoHint(typed, suggestion){
+      const hint = $('#hint'); if (!hint) return;
+      hint.style.color = '#b45309';
+      hint.innerHTML = `“${escapeHtml(typed)}” looks misspelled. Did you mean <a href="#" id="useSpelling"><strong>${escapeHtml(suggestion)}</strong></a>? A dish’s name cannot be changed once it is created.`;
+      const a = $('#useSpelling');
+      if (a) a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const inp = $('#n_name');
+        inp.value = suggestion;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));   // re-derive the search lines, disarm, re-check
+        inp.focus();
+      });
     }
 
     async function doCreate(){
@@ -1702,18 +1719,30 @@
         refresh_ttl_days: $('#n_ttl').value.trim() === '' ? null : parseInt($('#n_ttl').value, 10),
       };
       // Second click on an armed "Create anyway" overrides the duplicate gate.
-      if (btn.dataset.armedFor === name) body.force = true;
+      // An armed "Create as typed" accepts the spelling only - the duplicate
+      // gate still gets its say afterwards.
+      if (btn.dataset.armedFor === name && btn.dataset.armedKind === 'typo') body.spelling_ok = true;
+      else if (btn.dataset.armedFor === name) body.force = true;
+      if (btn.dataset.spellingOkFor === name) body.spelling_ok = true;
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const r = await fetch('/dishes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await r.json().catch(() => ({}));
+        // TYPO GUARD: say what it should probably be, offer it, and ARM the
+        // button to create the name as typed (two-click, like the gate below).
+        if (r.status === 409 && data.detail && data.detail.typo) {
+          btn.disabled = false; btn.textContent = 'Create as typed';
+          btn.dataset.armedFor = name; btn.dataset.armedKind = 'typo'; btn.dataset.spellingOkFor = name;
+          showTypoHint(name, data.detail.typo.suggestion);
+          return;
+        }
         // DUPLICATE GATE: the catalog already seems to hold this dish under
         // another name. Say which, link to it, and ARM the button (house
         // two-click standard) - changing the name disarms it.
         if (r.status === 409 && data.detail && data.detail.similar) {
           const sim = data.detail.similar;
           btn.disabled = false; btn.textContent = 'Create anyway';
-          btn.dataset.armedFor = name;
+          btn.dataset.armedFor = name; btn.dataset.armedKind = 'dup';
           hint.style.color = '#b45309';
           hint.innerHTML = escapeHtml(data.detail.message) + ' <a href="/forms/dishes_v2.html?dish='
             + encodeURIComponent(sim.dish) + '" target="_blank" rel="noopener">Open '

@@ -13462,6 +13462,18 @@ a scheduled job is added, name folding changes.
 * **2026-11-27 - Video search, first live run (Seared Scallops, CLI refresh):** web results 0
   videos, search found 10 (2 description, 5 link, 2 transcript, 1 none). Follow-ups from it: the
   search now uses the dish's display name; linkedin.com is not a recipe host.
+* **2026-11-27 - TYPO GUARD AT DISH CREATION (input/pipeline/dish_name_check.py, new).** One Haiku
+  call reads a new dish name and suggests the correction when it looks misspelled (method
+  `dish_name_spellcheck_v1`; setting `dish_name_spellcheck`, Search, default on). Advisory: `GET
+  /dishes/name-check` returns `typo`, `POST /dishes` answers 409 `{message, typo}` unless
+  `spelling_ok` or `force`; dishes_v2.html shows "Did you mean X?" (one click uses it) and arms
+  "Create as typed". A failed call never blocks. Measured: 11 of 12 test typos caught (missed "Beef
+  Bourgignon"); of 135 real catalog names, 2 questioned wrongly-or-arguably (Licurdia -> Licordia,
+  Chicken Marenga -> Chicken Meringue) plus the known "Seared Scallope". NOT tested: the form in a
+  signed-in browser. NEEDS THE BCC RESTART. Tests: intake/tests/test_dish_name_check.py (4).
+* **2026-11-27 - Shrimp Stir Fry #3345 (curator created it):** 10/10 web, 3/3 video seats, all three
+  from one channel (4,601 / 4,288 / 2,013 views/day), all passed the method check. Curator leans
+  AGAINST a one-seat-per-channel rule (see docs/video-recipes-lane.md).
 * **2026-11-25 - Form fix:** populateFormFromRecipe now carries `sourceImage` into the save (photo
   extracts were saving `sourceImage: []`).
 * **2026-11-25 - Data repair, curator-approved: recipes 918, 919, 922, 925 (user 5).** Page photo

@@ -3862,13 +3862,20 @@ def dish_name_check_endpoint(request: Request, name: str = ""):
     _require_perm(request, "manage_dishes")
     name = (name or "").strip()
     if not name:
-        return {"name": name, "exists": False, "similar": None}
+        return {"name": name, "exists": False, "similar": None, "typo": None}
     from input.pipeline import dish_match as _dmn
     with _db() as conn:
         exists = dishes_lib.get_dish(conn, name) is not None
         ev = None if exists else _dmn.coverage_evidence(conn, name)
+    # TYPO GUARD (input/pipeline/dish_name_check.py): the name is an immutable
+    # key, so a misspelling is caught here, before it is created.
+    typo = None
+    if not exists:
+        from input.pipeline import dish_name_check as _dnc
+        if _dnc.enabled():
+            typo = _dnc.check(name)
     return {"name": name, "exists": exists,
-            "similar": ev if (ev and ev.get("tier")) else None}
+            "similar": ev if (ev and ev.get("tier")) else None, "typo": typo}
 
 
 @app.post("/dishes/translate-query")
@@ -4381,6 +4388,23 @@ async def create_dish_endpoint(request: Request):
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    # TYPO GUARD (2026-11-27): a dish name is an immutable join key, so a
+    # misspelling cannot be cleanly renamed later ("Seared Scallope"). One small
+    # model call; a hit stops the create with a 409 the editor turns into "use
+    # the suggestion / create as typed". `spelling_ok` (or force) overrides.
+    # Never blocks on a failure to check.
+    if not payload.get("force") and not payload.get("spelling_ok"):
+        try:
+            from input.pipeline import dish_name_check as _dnc
+            _typo = (await asyncio.to_thread(_dnc.check, name)) if _dnc.enabled() else None
+        except Exception as _te:
+            _typo = None
+            print(f"[CREATE-DISH] typo guard skipped: {type(_te).__name__}: {_te}")
+        if _typo:
+            raise HTTPException(status_code=409, detail={
+                "message": (f"{name!r} looks misspelled. Did you mean {_typo['suggestion']!r}? "
+                            "A dish's name cannot be changed after it is created."),
+                "typo": _typo})
     # DUPLICATE GATE (2026-09-19): does the catalog already hold this dish under
     # another name? Asked of the recipes' own vectors (dish_match.coverage_evidence),
     # because names cannot tell "Boeuf" from "Beef". A hit stops the create with a
