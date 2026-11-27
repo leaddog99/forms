@@ -335,7 +335,18 @@ def _video_search(dish: str, entries: list[dict], should_cancel=None) -> dict:
         from input.pipeline.jobs import JobCancelled
         raise JobCancelled("cancelled before the video search")
     from input.pipeline.serp_search import serp_search
-    query = f"{dish.strip()} recipe site:youtube.com"
+    # Search under the name people see: the key is immutable and can carry a
+    # typo the display name corrects ("Seared Scallope" / "Seared Scallops").
+    shown = dish.strip()
+    try:
+        import sqlite3 as _sq
+        with _sq.connect("file:recipes.db?mode=ro", uri=True, timeout=5) as _c:
+            _row = _c.execute("SELECT display_name FROM dishes WHERE name = ?", (shown,)).fetchone()
+        if _row and (_row[0] or "").strip():
+            shown = _row[0].strip()
+    except Exception:
+        pass
+    query = f"{shown} recipe site:youtube.com"
     out.update(ran=True, query=query)
     # skip_hosts is EMPTY on purpose: youtube.com is a blocked host for the web
     # lane, and with it skipped the provider would page on looking for "usable"

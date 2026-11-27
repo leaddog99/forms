@@ -260,6 +260,7 @@ _NOT_A_RECIPE_HOST = (
     "youtube.com", "youtu.be", "instagram.com", "tiktok.com", "facebook.com", "fb.com",
     "twitter.com", "x.com", "threads.net", "pinterest.com", "snapchat.com", "discord.gg",
     "discord.com", "patreon.com", "ko-fi.com", "buymeacoffee.com", "paypal.com", "paypal.me",
+    "linkedin.com",   # a company page, handed to the web lane as a recipe (job 3340, 2026-11-27)
     "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.ca", "amzn.to", "amzn.eu",
     "linktr.ee", "beacons.ai", "spotify.com", "apple.com", "music.apple.com", "podcasts.apple.com",
     "teespring.com", "shopify.com", "merch", "google.com", "goo.gl", "epidemicsound.com",

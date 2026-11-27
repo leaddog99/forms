@@ -13450,6 +13450,18 @@ a scheduled job is added, name folding changes.
   back empty on 2 of 3 tries. OPEN: Shrimp Stir Fry not yet created/re-run; no typo guard at dish
   creation; the YouTube hero-image report (cannot reproduce: the 3 saved user rows and both Dosa
   rows carry the right still; importing.html derives it from the video id since 10-17).
+* **2026-11-27 - WRONG PICTURE ON FACEBOOK REELS (bookmarklet).** Curator reported a wrong image;
+  it is Facebook, not YouTube. Recipes 927, 928, 929 (reels saved 11-26) each carry ANOTHER reel's
+  picture: a reel page is a feed with no og:image of its own, and the loader takes the largest
+  image in the DOM. Fix, server side so the installed bookmark need not change: `_stage_capture`
+  (save_recipe_api.py), for kind facebook/instagram via loader/payload, takes the picture from one
+  link-preview GET of the post (`_fetch_share_html` -> og:image) and stores it
+  (`_coopt_remote_image`). Verified: that GET returns the right dish for all three reels. NOT
+  tested through a real bookmarklet press. The three saved rows are NOT repaired (awaiting a yes).
+  NEEDS THE BCC RESTART.
+* **2026-11-27 - Video search, first live run (Seared Scallops, CLI refresh):** web results 0
+  videos, search found 10 (2 description, 5 link, 2 transcript, 1 none). Follow-ups from it: the
+  search now uses the dish's display name; linkedin.com is not a recipe host.
 * **2026-11-25 - Form fix:** populateFormFromRecipe now carries `sourceImage` into the save (photo
   extracts were saving `sourceImage: []`).
 * **2026-11-25 - Data repair, curator-approved: recipes 918, 919, 922, 925 (user 5).** Page photo

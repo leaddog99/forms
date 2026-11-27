@@ -15924,6 +15924,28 @@ async def _stage_capture(payload: dict) -> dict:
                                          captured_at=captured_at, source=source)
         links = links_in_text(text, *comments, exclude_source=url)[:5]
 
+    # THE PICTURE OF A FACEBOOK / INSTAGRAM POST comes from the post's own link
+    # preview, not from the browser's capture. A reel page is a FEED: the DOM
+    # holds the neighbouring reels too and no og:image of its own, so the
+    # loader's "largest image on the page" was another reel's poster. Verified
+    # 2026-11-27 on the three reels saved 11-26: all three carried a stranger's
+    # picture (a man with a storage bin on "Greek Baked Omelet"), and one
+    # link-preview GET of each reel's address returned the right dish. Same
+    # single user-initiated GET the paste door makes (_fetch_share_html); the
+    # picture is copied to our store because Meta's image links expire.
+    _hero_override = None
+    # Bookmarklet doors only: the Shortcut and paste doors read the post's own
+    # Open Graph picture already.
+    if source and source.kind in ("facebook", "instagram") and via in ("loader", "payload"):
+        try:
+            _og = _share_text_from_html(await asyncio.to_thread(_fetch_share_html, url))
+            if _og.get("image"):
+                _hero_override = await asyncio.to_thread(_coopt_remote_image, _og["image"])
+            print(f"[CAPTURE] {source.kind} picture from the post's link preview: "
+                  f"{'stored ' + _hero_override if _hero_override else 'none found - keeping the capture’s'}")
+        except Exception as _he:  # noqa: BLE001 - the picture is a courtesy
+            print(f"[CAPTURE] link-preview picture skipped: {type(_he).__name__}: {_he}")
+
     now = time.time()
     for k in [k for k, v in _staged_markdown.items() if v.get("expires_at", 0) < now]:
         _staged_markdown.pop(k, None)
@@ -15944,7 +15966,8 @@ async def _stage_capture(payload: dict) -> dict:
         "markdown": md_text,
         "source_url": url,
         "title": envelope_title or title,
-        "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
+        "local_hero_image_url": (_hero_override
+                                 or (payload.get("local_hero_image_url") or "").strip() or None),
         "bcc_hints": None,
         "capture": capture,
         "expires_at": now + _STAGE_TTL_SECONDS,
@@ -15999,6 +16022,32 @@ def _share_text_from_html(html_text: str) -> dict:
 
 _SHARE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
              "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+
+def _coopt_remote_image(image_url: str) -> Optional[str]:
+    """Download one picture and keep it in our image store like an uploaded
+    hero. -> our URL, or None on any failure. Used for a post's link-preview
+    picture, whose own address is signed and expires."""
+    try:
+        import requests
+        from input.pipeline.image_pipeline import standardize_and_meta
+        from input.pipeline.image_store import get_image_store
+        if not image_url.startswith(("http://", "https://")):
+            return None
+        r = requests.get(image_url, headers={"User-Agent": _SHARE_UA}, timeout=30)
+        r.raise_for_status()
+        raw = r.content
+        if not raw or len(raw) > 50 * 1024 * 1024:
+            return None
+        processed, meta = standardize_and_meta(raw, source_url=image_url, localized=True)
+        if not processed:
+            return None
+        fmt = meta.get("format") or "webp"
+        return get_image_store().put(f"heroes/upload_{uuid.uuid4()}.{fmt}", processed,
+                                     content_type=f"image/{fmt}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[CAPTURE] picture not stored ({type(e).__name__}: {e})")
+        return None
 
 
 def _fetch_share_html(url: str) -> str:
