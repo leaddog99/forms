@@ -13574,6 +13574,30 @@ a scheduled job is added, name folding changes.
   dishes; dish page loads with no script errors. Runtime check of the curator's Sauce Jean Vignard
   save (19:22Z): description, identity card, embedding text, vector and dishes_vec row all rebuilt
   and consistent. Tests 58. NEEDS A BCC RESTART.
+* **2026-11-27 - PARALLEL DISH REFRESHES + a startup race (init_db).** Created Grilled Octopus,
+  Greek Lemon Chicken, Greek Roast Lamb, Briam (search-first descriptions, first real use; all
+  four read correctly) and ran their refreshes as four simultaneous `jobs exec` processes. Three
+  finished 15/15 in 6-9 min with no lock or rate-limit errors; the after-refresh description check
+  ran in each ("agrees with its 8 recipes"). The fourth DIED AT IMPORT: `vtable constructor failed:
+  recipes_fts`. Cause (pre-existing): init_db DROPPED and re-CREATED the six search-index triggers
+  on every start of every process, so processes starting together rewrote the schema under each
+  other, and for an instant the recipe tables had no index triggers. FIX: a trigger is (re)created
+  only when its stored definition differs. Verified: definitions byte-identical before/after, six
+  simultaneous starts all exit 0, index row counts unchanged (16016/16016, 496/496). Server picks
+  it up on the next BCC restart.
+* **2026-11-27 - TESTED AND REJECTED: choosing primary ingredients by "is it a different dish
+  without it?".** Trigger: Sauce Jean Vignard's profile lists only "tomato paste" as primary.
+  How it works: the model tags each ingredient with one of 14 structural roles and code keeps six
+  roles (main_protein, primary_vegetable, starch, pastry, sauce_base, filling) as primary; wine =
+  liquid, mustard = seasoning, cream = dairy fall out. Systemic: 209 of 649 dish profiles have 0-1
+  primary ingredients (Sauces 32/49, Preserving 15/16, Breads 21/32; Mac and Cheese = "elbow
+  pasta"). TEST (read-only, ~$1): 20 thin-chapter dishes as 10 look-alike pairs, 189 recipes, only
+  the primary list changed, both variants embedded fresh. Result: nearest-dish-right 171/189 both;
+  own-dish distance 0.346 vs 0.350; gap to nearest wrong dish 0.200 vs 0.202; intra-dish spread
+  0.380 vs 0.396. No gain: the technique sentence and dish name already carry those ingredients.
+  DECISION: no migration (~16k profiles + re-embed avoided). Not checked: other readers of the
+  primary list (e.g. product suggestions). Side finding: "Bechamel" and "Béchamel Sauce" are one
+  dish (6 of 7 Bechamel recipes sit nearer the other).
 * **2026-11-27 - ALIAS -> SEARCH LINE BUTTON (dishes_v2.html, query-rows.js `QueryRows.addLine`).**
   A refresh's web search uses the dish's search lines ONLY (aliases feed matching and the in-app
   search; the video search uses the display name). Curator asked whether aliases should be searched

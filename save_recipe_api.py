@@ -1518,23 +1518,33 @@ def init_db():
                         f"COALESCE(json_extract({row}.data,'$._source.siteName'), '')"
                     )
                 _col_list = ", ".join(FTS_COLUMNS)
-                for _sfx in ("ai", "au", "ad"):
+                # (Re)create a trigger ONLY when its definition changed. This used
+                # to DROP and CREATE all three on every start of every process,
+                # so for a moment the table had no index triggers at all, and
+                # processes starting together rewrote the schema under each other:
+                # four dish refreshes launched side by side (2026-11-27) and one
+                # died at import with "vtable constructor failed: recipes_fts".
+                # SQLite keeps the CREATE text verbatim, so the comparison is exact.
+                _want = {
+                    "ai": (f"CREATE TRIGGER {_tbl}_fts_ai AFTER INSERT ON {_tbl} BEGIN "
+                           f"  INSERT INTO {_fts}(rowid, {_col_list}) "
+                           f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"),
+                    "au": (f"CREATE TRIGGER {_tbl}_fts_au AFTER UPDATE OF data ON {_tbl} BEGIN "
+                           f"  DELETE FROM {_fts} WHERE rowid = OLD.id; "
+                           f"  INSERT INTO {_fts}(rowid, {_col_list}) "
+                           f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"),
+                    "ad": (f"CREATE TRIGGER {_tbl}_fts_ad AFTER DELETE ON {_tbl} BEGIN "
+                           f"  DELETE FROM {_fts} WHERE rowid = OLD.id; END"),
+                }
+                for _sfx, _sql in _want.items():
+                    _cur = conn.execute(
+                        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+                        (f"{_tbl}_fts_{_sfx}",)).fetchone()
+                    if _cur and " ".join((_cur[0] or "").split()) == " ".join(_sql.split()):
+                        continue
                     conn.execute(f"DROP TRIGGER IF EXISTS {_tbl}_fts_{_sfx}")
-                conn.execute(
-                    f"CREATE TRIGGER {_tbl}_fts_ai AFTER INSERT ON {_tbl} BEGIN "
-                    f"  INSERT INTO {_fts}(rowid, {_col_list}) "
-                    f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"
-                )
-                conn.execute(
-                    f"CREATE TRIGGER {_tbl}_fts_au AFTER UPDATE OF data ON {_tbl} BEGIN "
-                    f"  DELETE FROM {_fts} WHERE rowid = OLD.id; "
-                    f"  INSERT INTO {_fts}(rowid, {_col_list}) "
-                    f"  VALUES (NEW.id, {_fts_cols('NEW')}); END"
-                )
-                conn.execute(
-                    f"CREATE TRIGGER {_tbl}_fts_ad AFTER DELETE ON {_tbl} BEGIN "
-                    f"  DELETE FROM {_fts} WHERE rowid = OLD.id; END"
-                )
+                    conn.execute(_sql)
+                    print(f"[SETUP] {_tbl}_fts_{_sfx}: trigger (re)created")
                 # Backfill whatever the triggers never saw. Self-healing: a row
                 # that somehow misses the index is picked up on the next boot
                 # instead of staying unsearchable forever.
