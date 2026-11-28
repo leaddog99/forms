@@ -9275,13 +9275,20 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
     # SERP page losses (retries exhausted) = ~10 candidates each, silently
     # shrinking the pool. Alert LOUDLY + email the curator (alerts.py).
+    _out_of_credit = False
     try:
         from input.pipeline.serp_search import pop_page_losses
         _losses = pop_page_losses()
+        # HTTP 402 = the search account is out of prepaid credit. Unlike a lost
+        # page this is not partial and not transient: every later request fails
+        # the same way until the account is topped up.
+        _out_of_credit = any("HTTP 402" in str(l.get("error") or "") for l in _losses)
         if _losses:
             from input.pipeline.alerts import alert_curator
             alert_curator(
-                f"SERP pages lost during '{canonical_name}' dish refresh",
+                (f"Search provider OUT OF CREDIT (dish refresh '{canonical_name}')"
+                 if _out_of_credit else
+                 f"SERP pages lost during '{canonical_name}' dish refresh"),
                 f"{len(_losses)} search page(s) exhausted their retries — roughly "
                 f"{10*len(_losses)} candidate(s) never reached the run.\n\n" +
                 "\n".join(f"- {l['query']!r} page {l['page']}: {l['error']}" for l in _losses) +
@@ -9296,14 +9303,23 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # EXISTING dish would have wiped every kind=top winner and reported
     # success. Cheese Sauce survived only by being new. A refresh that found
     # nothing must not destroy what a working refresh found before it.
+    # OUT OF CREDIT = ABORT too, even with candidates in hand (2026-11-28: the
+    # prepaid search balance ran out mid-batch at 23:56). A run whose credit
+    # died part-way holds only the lines searched before it did, and the
+    # delete-and-replace below would rebuild the dish from that partial pool.
+    if _out_of_credit:
+        raise RuntimeError(
+            f"dish refresh for {canonical_name!r} stopped: the search provider "
+            f"answered HTTP 402, the account is out of prepaid credit. Top up the "
+            f"account, then run the refresh again. Prior winners left untouched.")
     if not entries and not _absent_pool:
         raise RuntimeError(
             f"dish refresh for {canonical_name!r} found ZERO candidates. Either "
             f"the search lines do not find this dish (results dropped as "
-            f"off-topic, or none passed the recipe gate: see the [scaleserp] "
-            f"and DROP lines above; fix the dish's search lines) or the SERP "
-            f"provider failed (timeouts or errors in the [scaleserp] lines; "
-            f"retry later). Prior winners left untouched.")
+            f"off-topic, or none passed the recipe gate: see the search "
+            f"provider's lines and the DROP lines above; fix the dish's search "
+            f"lines) or the search provider failed (timeouts or errors in its "
+            f"lines; retry later). Prior winners left untouched.")
 
     # Persist the (URL, DA, PA) cohort the dish fit saw — used by the
     # chapter-level aggregate fit to grade niche dishes whose own

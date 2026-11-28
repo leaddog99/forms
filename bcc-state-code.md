@@ -13574,6 +13574,45 @@ a scheduled job is added, name folding changes.
   dishes; dish page loads with no script errors. Runtime check of the curator's Sauce Jean Vignard
   save (19:22Z): description, identity card, embedding text, vector and dishes_vec row all rebuilt
   and consistent. Tests 58. NEEDS A BCC RESTART.
+* **2026-11-28 (00:30) - GREEK WALK COMPLETE (all 24 chapters created); SEARCH CREDIT RAN OUT;
+  AUDIT of the day's later code.**
+  DATA. Chapters 13-24 created after the fish/poultry/meat set: casseroles 7, sauces 7, breads 9,
+  pies & pastries 10, cakes 6, cookies 5, puddings 4, fruit 3, frozen 3, candies 7, preserving 5,
+  beverages 7. The spelling gate held six real Greek names (Brizoles, Soufle Makaronion,
+  Kannelonia, Kopenhagi, Parfe, Kariokes) and the duplicate gate held Greek Coffee against the
+  minute-old Greek Frappe; all created by hand. Chicken Souvlaki stays held (Chicken Kabobs
+  carries a Greek souvlaki line). Top-ups to 15: Kleftiko, Moussaka, Souvlaki (Greece), Skordalia,
+  Baklava, Ekmek Kataifi, Portokalopita.
+  JOBS. Refreshed and complete (18): Psari Plaki, Lavraki, Bakaliaros Skordalia, Marides
+  Tiganites (11/15), Kalamaria Gemista, Garides Youvetsi, Kotopoulo Kapama, Kotopoulo me Bamies,
+  Greek Grilled Chicken, Kotokeftedes, Galopoula Gemisti, Bifteki, Paidakia, Kontosouvli, Arni
+  Souvlas, Kalamari Psito, Midia Saganaki, Htapodi Krasato. AT 23:56 THE SEARCH PROVIDER BEGAN
+  ANSWERING HTTP 402 (prepaid credit exhausted; 607 answered requests counted since 17:01, about
+  8 per refresh). 16 jobs failed on it with prior winners untouched (3480-3490, 3496-3500), each
+  emailing an alert; I stopped the queue. STILL TO RUN ONCE THE ACCOUNT IS TOPPED UP: the 16
+  failed dishes (new jobs needed), Brizoles (#3491, died as 'running'), and 81 queued jobs
+  (#3492, rematch #3501, #3502-#3580). Memory: three at once held ~4 GB free of 15.5; pacing on
+  the free figure alone had reached 8 processes and got the run killed at 20:52.
+  AUDIT (commits since 7cc1a2d: start-up trigger/retry, timeout skip, search counter,
+  side-by-side loop, chapter retry). CORRECTED: (1) the Uncertain-chapter retry ran the TITLE
+  keywords over a whole description, so an incidental word chose the chapter (Kormos, "shaped
+  like a salami" -> Meat); names alone also mislead (Lagana -> Pasta). classify_chapter gained
+  `shortcut=False`; ensure_dish_description reads the chapter from the description with the
+  model and falls back to the name. 50 Greek dishes: 35 right as stored, 46 this way.
+  intake/tests/test_dish_chapter.py. 18 plainly wrong chapters among the 213 dishes created
+  since 11-27 were rewritten (old/new in the session scratchpad chapter_fix.json); 24 more that
+  the model would move are a matter of taste and left for the curator (e.g. Dolmades Vegetables
+  -> Appetizers, Kokkinisto Meat -> Soups & Stews, Milopita -> Fruit Desserts). (2) Side-by-side
+  loop logged "N left" off a counter that also drops for held seats; now "k of n filled".
+  (3) Dish refresh: an HTTP 402 from the search provider now ABORTS the refresh before the
+  delete-and-replace (a run whose credit died part-way would rebuild the dish from the lines
+  searched before it), with its own alert subject; the zero-candidates message no longer names
+  the retired provider's log tag. CHECKED, SOUND: in-flight extractions never exceed seats left,
+  so the loop abandons none; the timeout flag is set and read under the same host key; no
+  traceback, lock, save failure or rate-limit answer in the night's logs; no successful job
+  ran on a partially failed search. NOT DONE: a batch has no way to stop itself on an
+  account-level failure (16 alert emails); search_usage has no in-app page; the start-up retry
+  is still unproven under a truly simultaneous start. NEEDS A BCC RESTART.
 * **2026-11-27 (evening) - DISH REFRESH: winners extracted side by side; paid-fetch timeout skip;
   search request counter; Greek chapter walk through Meat; RUN STOPPED FOR LOW MEMORY.**
   CODE. (1) save_recipe_api winner loop (23c9c34): up to `dish_refresh_extract_workers` (system
