@@ -13574,6 +13574,35 @@ a scheduled job is added, name folding changes.
   dishes; dish page loads with no script errors. Runtime check of the curator's Sauce Jean Vignard
   save (19:22Z): description, identity card, embedding text, vector and dishes_vec row all rebuilt
   and consistent. Tests 58. NEEDS A BCC RESTART.
+* **2026-11-27 (evening) - DISH REFRESH: winners extracted side by side; paid-fetch timeout skip;
+  search request counter; Greek chapter walk through Meat; RUN STOPPED FOR LOW MEMORY.**
+  CODE. (1) save_recipe_api winner loop (23c9c34): up to `dish_refresh_extract_workers` (system
+  setting, default 3) extractions in flight; guards, seat rules, rank and save still run one
+  candidate at a time in seating order; a candidate HOLDS its seat while its extraction runs and
+  gives it back on failure (the seating generator re-offers it). Simulated against the old loop
+  over 20,000 pools (workers=1 identical; never fewer saves). Real test, Kolokithopita, old code
+  then new code back to back: same 15 pages in the same order, same 5 reserved Greek seats, save
+  stage 7m03s -> 2m31s, whole refresh ~10.5 -> 6.3 min. (2) to_markdown/fetch.py (b8c64e5): a
+  host whose paid fetch TIMED OUT (70 s) is skipped by the paid rung for the rest of the run.
+  (3) input/pipeline/search_usage.py (b8c64e5): table `search_requests`, one row per provider
+  request, wired into serp_search._brave; `python -m input.pipeline.search_usage [days]`. About 8
+  requests per dish refresh. No in-app page yet. (4) init_db (9d0af23): opening a search index
+  that is briefly busy at start-up is retried (not proven under a truly simultaneous start).
+  DATA. Greek chapter walk (curator: most popular with Greek Americans, no duplicates across
+  chapters) now covers 12 of 24 chapters: appetizers, soups, salads, breakfast, savory pastry,
+  pasta, rice, beans, vegetables, fish, poultry, meat. Created today for fish/poultry/meat: 33
+  dishes (Psari Plaki ... Sofrito (Corfu), Brizoles); Chicken Souvlaki HELD by the duplicate gate
+  (Chicken Kabobs already has a Greek souvlaki line, keep 10). Kleftiko, Moussaka, Souvlaki
+  (Greece) raised to 15 keepers. Chapter landings to review: Xifias Souvlaki and Kotokeftedes in
+  Meat, Garides Youvetsi in Rice & Grains, Htapodi Krasato in Soups & Stews.
+  STOPPED. MARLEY has 15.5 GB and sat at ~2 GB free all evening. Two background runs were killed
+  by Claude Code for low memory (17:31 and 20:52). The second was the fish/poultry/meat batch:
+  my launcher paced starts on FREE memory >= 1.6 GB and still reached 8 processes, because free
+  memory lags what the processes will commit (~0.8 GB each). LESSON: cap by count from committed
+  memory, not by the free figure. State at the stop: jobs 3457-3460, 3462, 3464 success (Marides
+  Tiganites 11/15); 3461, 3463, 3465-3470 died mid-run and still read 'running' (their dishes are
+  partial); 3471-3492 still queued, never started. Not restarted (needs the curator's go-ahead;
+  16 GB more memory planned for 11-28). NEEDS A BCC RESTART for the server to pick up the code.
 * **2026-11-27 - GREEK: 12 MORE DISHES, ALL DESCRIPTIONS REWRITTEN, chapter "Uncertain" retried.**
   Created Imam Bayildi, Papoutsakia, Youvarlakia, Taramosalata, Melitzanosalata, Kolokithokeftedes,
   Fakes, Kokkinisto, Magiritsa, Horta, Greek Lemon Roasted Potatoes, Mavromatika (same set-up as
