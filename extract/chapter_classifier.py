@@ -421,8 +421,15 @@ def classify_chapter(
     *,
     model: str = "claude-haiku-4-5",
     usage_log: Optional[list] = None,
+    shortcut: bool = True,
 ) -> str:
     """Classify a recipe into one of CHAPTERS.
+
+    `shortcut=False` skips the keyword layer and asks the model. Pass it when
+    `name` is a DESCRIPTION rather than a title: the keywords are written for
+    titles, and in a sentence an incidental word decides (a chocolate biscuit
+    log "shaped like a salami" -> Meat; tzatziki "served with pita" -> Breads,
+    2026-11-27).
 
     Shortcut layer first (zero-cost; most dishes hit it). LLM fallback
     with tool_use + enum input_schema guarantees the output is
@@ -443,7 +450,7 @@ def classify_chapter(
 
     # Tier-1 shortcut layer (title-only — ingredients don't influence
     # the shortcut decision; they're an LLM-fallback signal only).
-    short = _shortcut_lookup(name)
+    short = _shortcut_lookup(name) if shortcut else None
     if short is not None:
         if usage_log is not None:
             usage_log.append({

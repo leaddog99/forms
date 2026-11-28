@@ -9514,6 +9514,8 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         _workers = 1
     _seats = _seating(pool)
     _ahead = _deque()            # (entry, seat_line, held, extraction) in seating order
+    _seats_reserved = dict(_quotas)      # as configured, for the log line
+    _seats_filled: dict = {}
     _seats_done = [False]
 
     def _hold(line):
@@ -9733,8 +9735,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
                 # failure anywhere above gave it back (the `finally` below).
                 _won = True
                 if _seat_hold == ("line", _seat_line):
+                    # Counted from what is SAVED: `_quotas` also drops for a seat
+                    # merely held by an extraction in flight, so "N left" read
+                    # off it said 0 three saves running (Kolokithopita).
+                    _seats_filled[_seat_line] = _seats_filled.get(_seat_line, 0) + 1
                     print(f"[REFRESH-DISH] RESERVED SEAT ({_seat_line!r}, "
-                          f"{_quotas[_seat_line]} left)"
+                          f"{_seats_filled[_seat_line]} of {_seats_reserved[_seat_line]} filled)"
                           f"{' [authority absent — Google order]' if entry.get('_authority_absent') else ''}"
                           f" <- {url}")
                 if isinstance(entry.get("ou"), (int, float)):
