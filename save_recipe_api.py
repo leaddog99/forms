@@ -9443,226 +9443,315 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         CURRENT quota state at yield time, so save failures upstream never
         strand a seat. Deferred candidates re-offered quota-free at the end."""
         deferred = []
+        absent_wait = []     # authority-absent, their line's seats all held just now
+
+        def _line_of(e):
+            _lines = e.get("_lines") or e.get("_queries") or []
+            return next((q for q in _lines if _quotas.get(q, 0) > 0), None)
+
+        def _freed():
+            """Candidates passed over while every seat was HELD by an extraction
+            in flight, now that one of those failed and gave its seat back, best
+            first. Never fires when winners are extracted one at a time: seats
+            are then only ever consumed."""
+            for w in list(absent_wait):
+                _l = _line_of(w)
+                if _l is not None:
+                    absent_wait.remove(w)
+                    yield w, _l
+            for d in list(deferred):
+                _l = _line_of(d)
+                if _l is not None or _open[0] > 0:
+                    deferred.remove(d)
+                    yield d, _l
+
         for e in seq:
             if not _quotas:
                 yield e, None
                 continue
-            _lines = e.get("_lines") or e.get("_queries") or []
-            _line = next((q for q in _lines if _quotas.get(q, 0) > 0), None)
+            yield from _freed()
+            _line = _line_of(e)
             if e.get("_authority_absent"):
                 # No OU → no claim on an open seat and no place in the top-up;
                 # its line's reserved seat or nothing.
                 if _line is not None:
                     yield e, _line
+                else:
+                    absent_wait.append(e)
                 continue
             if _line is None and _open[0] <= 0:
                 deferred.append(e)
                 continue
             yield e, _line
-        for e in deferred:                    # top-up: quotas done or unfillable
-            yield e, None
+        while True:
+            yield from _freed()
+            for e in list(deferred):          # top-up: quotas done or unfillable
+                deferred.remove(e)
+                yield e, None
+            if not absent_wait:
+                return
+            # Nothing to offer NOW, but a candidate is waiting on a seat an
+            # extraction in flight still holds: ask again once one is given back.
+            yield None
 
-    for entry, _seat_line in _seating(pool):
-        if saved_count >= target:
-            break
-        url = entry["url"]
+    # THE NEXT FEW WINNERS ARE EXTRACTED SIDE BY SIDE AND SAVED IN ORDER
+    # (2026-11-27). Extraction is the slow part of this stage - a fetch, a model
+    # call and, for a foreign page, a 12-53 s translation - and it ran one page
+    # at a time: a Greek dish spent 1-3 minutes on translations alone. Now up to
+    # `dish_refresh_extract_workers` extractions are in flight. Everything that
+    # decides (the guards, the seat rules, the rank, the save) still runs one
+    # candidate at a time, in the seating order.
+    #   A candidate HOLDS its seat from the moment its extraction starts, so the
+    #   seating rules see the seats already spoken for; a candidate that then
+    #   fails gives the seat back, and the seating re-offers it to the best
+    #   candidate passed over meanwhile. Never more in flight than seats left,
+    #   so nothing is extracted that could not be saved.
+    from collections import deque as _deque
+    from input.pipeline import system_config as _sc_x
+    try:
+        _workers = max(1, int(_sc_x.get_setting("dish_refresh_extract_workers", 3) or 1))
+    except Exception:
+        _workers = 1
+    _seats = _seating(pool)
+    _ahead = _deque()            # (entry, seat_line, held, extraction) in seating order
+    _seats_done = [False]
+
+    def _hold(line):
+        if line is not None and _quotas.get(line, 0) > 0:
+            _quotas[line] -= 1
+            return ("line", line)
+        if _quotas and _open[0] > 0:
+            _open[0] -= 1
+            return ("open", None)
+        return None
+
+    def _release(held):
+        if held and held[0] == "line":
+            _quotas[held[1]] += 1
+        elif held:
+            _open[0] += 1
+
+    def _extract_ahead():
+        while not _seats_done[0] and len(_ahead) < min(_workers, target - saved_count):
+            try:
+                _next = next(_seats)
+            except StopIteration:
+                _seats_done[0] = True
+                break
+            if _next is None:        # see _seating: wait for a seat to come back
+                break
+            _e, _l = _next
+            # Dish refresh always force-refreshes the extract cache (see below).
+            _ahead.append((_e, _l, _hold(_l), asyncio.ensure_future(asyncio.to_thread(
+                extract_recipe_from_url, _e["url"], user_id=0, force_refresh=True))))
+
+    _extract_ahead()
+    while _ahead:
+        entry, _seat_line, _seat_hold, _task = _ahead.popleft()
+        _won = False
         try:
-            # Dish refresh always force-refreshes the extract cache:
-            # the refresh has already paid SerpAPI + Moz quota; re-extracting
-            # is the cheap, deterministic step, and cache hits would
-            # mask updates to the extraction pipeline (e.g. extraction-
-            # stage translation provenance landing 2026-05-29). Cache
-            # is still useful for the interactive form / single-URL
-            # extracts that aren't part of a batch refresh.
-            extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0, force_refresh=True,
+            if saved_count >= target:
+                break
+            url = entry["url"]
+            try:
+                # Dish refresh always force-refreshes the extract cache:
+                # the refresh has already paid SerpAPI + Moz quota; re-extracting
+                # is the cheap, deterministic step, and cache hits would
+                # mask updates to the extraction pipeline (e.g. extraction-
+                # stage translation provenance landing 2026-05-29). Cache
+                # is still useful for the interactive form / single-URL
+                # extracts that aren't part of a batch refresh.
+                extract_result = await _task
+            except Exception as e:
+                print(f"[REFRESH-DISH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
+                _record_reject(entry, f"extract-miss: {type(e).__name__}")
+                continue
+            recipe_dict = (extract_result or {}).get("recipe") or {}
+            if not recipe_dict:
+                _record_reject(entry, "extract-miss: empty recipe")
+                continue
+
+            ok, reason = _is_cacheable(
+                recipe_dict,
+                min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                min_steps=SAVE_GATE_MIN_INSTRUCTIONS,
             )
-        except Exception as e:
-            print(f"[REFRESH-DISH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
-            _record_reject(entry, f"extract-miss: {type(e).__name__}")
-            continue
-        recipe_dict = (extract_result or {}).get("recipe") or {}
-        if not recipe_dict:
-            _record_reject(entry, "extract-miss: empty recipe")
-            continue
+            if not ok:
+                print(f"[REFRESH-DISH] SKIP-THIN {reason}  {url}")
+                _record_reject(entry, f"skip-thin: {reason}")
+                continue
 
-        ok, reason = _is_cacheable(
-            recipe_dict,
-            min_ings=SAVE_GATE_MIN_INGREDIENTS,
-            min_steps=SAVE_GATE_MIN_INSTRUCTIONS,
-        )
-        if not ok:
-            print(f"[REFRESH-DISH] SKIP-THIN {reason}  {url}")
-            _record_reject(entry, f"skip-thin: {reason}")
-            continue
+            # QUALIFIER GUARD: a run harvesting a family-split dish (Chicken
+            # Breast - Boneless) must not stamp a recipe whose OWN words claim the
+            # sibling attribute ('split chicken breasts (bone-in, skin on)').
+            # Google returns them for the sibling's query; the blind stamp was how
+            # 21 contradictions got into the breast/thigh cohorts (2026-08-30).
+            # Dropped like any other reject — the slot backfills from the pool.
+            try:
+                from input.pipeline import dish_match as _dm
+                with _db() as _qc:
+                    _cat = [r[0] for r in _qc.execute("SELECT name FROM dishes")]
+                _sib = _dm.qualifier_contradiction(
+                    canonical_name, _dm.evidence_text(recipe_dict), _cat)
+            except Exception as _qe:
+                _sib = None
+                print(f"[REFRESH-DISH] qualifier guard skipped: {type(_qe).__name__}: {_qe}")
+            if _sib:
+                print(f"[REFRESH-DISH] QUALIFIER-DROP text says {_sib!r}, "
+                      f"run is {canonical_name!r}  {url}")
+                _record_reject(entry, f"qualifier-contradiction: recipe text says {_sib}")
+                continue
 
-        # QUALIFIER GUARD: a run harvesting a family-split dish (Chicken
-        # Breast - Boneless) must not stamp a recipe whose OWN words claim the
-        # sibling attribute ('split chicken breasts (bone-in, skin on)').
-        # Google returns them for the sibling's query; the blind stamp was how
-        # 21 contradictions got into the breast/thigh cohorts (2026-08-30).
-        # Dropped like any other reject — the slot backfills from the pool.
-        try:
-            from input.pipeline import dish_match as _dm
-            with _db() as _qc:
-                _cat = [r[0] for r in _qc.execute("SELECT name FROM dishes")]
-            _sib = _dm.qualifier_contradiction(
-                canonical_name, _dm.evidence_text(recipe_dict), _cat)
-        except Exception as _qe:
-            _sib = None
-            print(f"[REFRESH-DISH] qualifier guard skipped: {type(_qe).__name__}: {_qe}")
-        if _sib:
-            print(f"[REFRESH-DISH] QUALIFIER-DROP text says {_sib!r}, "
-                  f"run is {canonical_name!r}  {url}")
-            _record_reject(entry, f"qualifier-contradiction: recipe text says {_sib}")
-            continue
+            # RIGHT-DISH GUARD: a stranger Google padded the results with (kimchi in
+            # Apple Crumble, 2026-09-18) is far from the dish AND never names it -
+            # dish_match.off_dish wants both. Uses the row's stored vector when the
+            # page is already in the library, else embeds the same text the save
+            # will. Dropped like any other reject; the slot backfills.
+            try:
+                from input.pipeline import dish_match as _dmo
+                from input.pipeline.embeddings import (bytes_to_vec as _ob2v,
+                                                       compose_recipe_text as _octxt,
+                                                       embed_text as _oemb)
+                with _db() as _oc:
+                    _orow = _oc.execute(
+                        "SELECT embedding FROM master_recipes WHERE url_normalized = ? "
+                        "AND user_id = 0", (normalize_url(url) or url,)).fetchone()
+                    _ovec = _ob2v(_orow[0]) if (_orow and _orow[0]) else None
+                    if _ovec is None:
+                        _otxt = _octxt(recipe_dict)
+                        _ovec = _oemb(_otxt) if _otxt.strip() else None
+                    _stranger = _dmo.off_dish(_oc, _ovec, canonical_name, recipe_dict)
+            except Exception as _oe:
+                _stranger = None
+                print(f"[REFRESH-DISH] right-dish guard skipped: {type(_oe).__name__}: {_oe}")
+            if _stranger:
+                print(f"[REFRESH-DISH] OFF-DISH-DROP {_stranger}  "
+                      f"{(recipe_dict.get('name') or '')[:60]!r}  {url}")
+                _record_reject(entry, _stranger)
+                continue
 
-        # RIGHT-DISH GUARD: a stranger Google padded the results with (kimchi in
-        # Apple Crumble, 2026-09-18) is far from the dish AND never names it -
-        # dish_match.off_dish wants both. Uses the row's stored vector when the
-        # page is already in the library, else embeds the same text the save
-        # will. Dropped like any other reject; the slot backfills.
-        try:
-            from input.pipeline import dish_match as _dmo
-            from input.pipeline.embeddings import (bytes_to_vec as _ob2v,
-                                                   compose_recipe_text as _octxt,
-                                                   embed_text as _oemb)
-            with _db() as _oc:
-                _orow = _oc.execute(
-                    "SELECT embedding FROM master_recipes WHERE url_normalized = ? "
-                    "AND user_id = 0", (normalize_url(url) or url,)).fetchone()
-                _ovec = _ob2v(_orow[0]) if (_orow and _orow[0]) else None
-                if _ovec is None:
-                    _otxt = _octxt(recipe_dict)
-                    _ovec = _oemb(_otxt) if _otxt.strip() else None
-                _stranger = _dmo.off_dish(_oc, _ovec, canonical_name, recipe_dict)
-        except Exception as _oe:
-            _stranger = None
-            print(f"[REFRESH-DISH] right-dish guard skipped: {type(_oe).__name__}: {_oe}")
-        if _stranger:
-            print(f"[REFRESH-DISH] OFF-DISH-DROP {_stranger}  "
-                  f"{(recipe_dict.get('name') or '')[:60]!r}  {url}")
-            _record_reject(entry, _stranger)
-            continue
+            payload = dict(recipe_dict)
+            payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+            payload["user_id"] = 0
+            master_block = {
+                "kind": "top",
+                "dish": canonical_name,
+                "refreshed_at": now_iso,
+                # Re-sequence 1..N over the ACTUAL saved set (a backfilled reserve
+                # takes the next slot rather than showing its raw blend rank).
+                "rank": saved_count + 1,
+                "queries": entry.get("_queries") or [],
+                # WHICH search line captured this recipe: the first line (row order)
+                # whose results carried it, text + locale. `lines` = every line that
+                # did. `seat_line` = the line whose RESERVED seat it took; absent
+                # when it won an open seat on merit.
+                "search_line": ((entry.get("_lines") or entry.get("_queries") or [None])[0]),
+                "lines": entry.get("_lines") or [],
+                "batch_source": "/dishes/refresh",
+            }
+            if _seat_hold == ("line", _seat_line):
+                master_block["seat_line"] = _seat_line
+            # Found through a video whose description links to this page (the video
+            # lane's link class): keep which video, so the page can show it.
+            if entry.get("_via_video"):
+                master_block["via_video"] = {k: v for k, v in entry["_via_video"].items()
+                                             if v not in (None, "")}
+            # Exceptionalism grade was computed in _compute_custom_ou at the
+            # batch step. Stamp it onto _master so the row carries its grade
+            # forever (the cohort's σ is also persisted on dish.last_ou_fit
+            # for future harvest-grading). n<25 dishes don't get a custom
+            # fit and therefore no exceptionalism — surfaces as em-dash in
+            # display.
+            exc = entry.get("exceptionalism")
+            if exc:
+                master_block["exceptionalism"] = exc
+            payload["_master"] = master_block
+            # A recipe ANOTHER dish already holds moves here only if this dish is
+            # its nearer neighbour (dish_match.label_holder - the suggested-dish
+            # judgment). When the other dish keeps it, its _master block is left
+            # exactly as it was: the recipe is still THIS run's winner (the
+            # selection ledger says so, and the dish results page reads the ledger),
+            # its content is still refreshed, only the label does not move.
+            try:
+                from input.pipeline import dish_match as _dmh
+                from input.pipeline.embeddings import bytes_to_vec as _b2v
+                _norm = normalize_url(url) or url
+                with _db() as _hc:
+                    _held = _hc.execute(
+                        "SELECT data, embedding FROM master_recipes "
+                        "WHERE url_normalized = ? AND user_id = 0", (_norm,)).fetchone()
+                    _prior = (json.loads(_held[0]).get("_master") or {}) if _held else {}
+                    if (_prior.get("kind") == "top" and _prior.get("dish")
+                            and _prior["dish"] != canonical_name):
+                        _v = _b2v(_held[1]) if _held[1] else None
+                        _who = _dmh.label_holder(
+                            _hc, _v, _prior["dish"], canonical_name,
+                            likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""))
+                        if _who["holder"] == _prior["dish"]:
+                            payload["_master"] = _prior
+                            print(f"[REFRESH-DISH] LABEL STAYS with {_prior['dish']!r} "
+                                  f"({_who['method']}: {_prior['dish']}={_who['current']} vs "
+                                  f"{canonical_name}={_who['challenger']})  {url}")
+                        else:
+                            print(f"[REFRESH-DISH] LABEL MOVES {_prior['dish']!r} -> "
+                                  f"{canonical_name!r} ({_who['method']}: "
+                                  f"{_prior['dish']}={_who['current']} vs "
+                                  f"{canonical_name}={_who['challenger']})  {url}")
+            except Exception as _he:
+                print(f"[REFRESH-DISH] label-holder check skipped: {type(_he).__name__}: {_he}")
+            # Stamp the DISH-COHORT scoring (in-cohort percentiles + field context +
+            # competitiveness) onto _scoring. This is the LIVE refresh path — it does
+            # NOT use pre_scored_from_entry, so the cohort signals must be merged here,
+            # on top of the URL-static Moz _scoring set during extract. Feeds the
+            # editorial authority commentary (relative/qualitative only).
+            _cs = payload.get("_scoring") or {}
+            if entry.get("power") is not None:
+                _cs["power"] = float(entry["power"])
+            if entry.get("ou_pct") is not None:
+                _cs["ouPercentile"] = round(float(entry["ou_pct"]) * 100, 1)
+            if entry.get("power_pct") is not None:
+                _cs["powerPercentile"] = round(float(entry["power_pct"]) * 100, 1)
+            _f = entry.get("_field") or {}
+            if _f.get("avg_power") is not None:
+                _cs["fieldAvgPower"] = float(_f["avg_power"])
+                _cs["fieldMaxPower"] = float(_f.get("max_power", _f["avg_power"]))
+                _cs["fieldMinPower"] = float(_f.get("min_power", _f["avg_power"]))
+                _cs["fieldN"] = int(_f.get("n", 0))
+            if _f.get("site_restriction"):
+                _cs["fieldScope"] = ", ".join(_f["site_restriction"])
+            payload["_scoring"] = _cs
+            # A dish refresh never enriches at save time: the three enrich blocks
+            # (~$0.05 + ~10s per row) are a separate, batch-shaped step. The
+            # per-dish opt-in that used to sit here was removed 2026-10-16 (3 of
+            # 461 dishes had it on; everyone enriched later by hand).
+            payload["_skip_auto_enrich"] = True
+            try:
+                await asyncio.to_thread(_save_recipe_core, payload)
+                saved_count += 1
+                saved_urls.append(url)
+                # The seat held when this extraction started is now consumed; a
+                # failure anywhere above gave it back (the `finally` below).
+                _won = True
+                if _seat_hold == ("line", _seat_line):
+                    print(f"[REFRESH-DISH] RESERVED SEAT ({_seat_line!r}, "
+                          f"{_quotas[_seat_line]} left)"
+                          f"{' [authority absent — Google order]' if entry.get('_authority_absent') else ''}"
+                          f" <- {url}")
+                if isinstance(entry.get("ou"), (int, float)):
+                    last_saved_ou = float(entry["ou"])   # lowest saved = the real cut bar
+                if (entry.get("rank") or 0) > target:
+                    backfilled += 1
+            except HTTPException as e:
+                print(f"[REFRESH-DISH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
+                _record_reject(entry, f"save-fail-{e.status_code}: {e.detail}")
+            except Exception as e:
+                print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
+                _record_reject(entry, f"save-fail: {type(e).__name__}")
 
-        payload = dict(recipe_dict)
-        payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
-        payload["user_id"] = 0
-        master_block = {
-            "kind": "top",
-            "dish": canonical_name,
-            "refreshed_at": now_iso,
-            # Re-sequence 1..N over the ACTUAL saved set (a backfilled reserve
-            # takes the next slot rather than showing its raw blend rank).
-            "rank": saved_count + 1,
-            "queries": entry.get("_queries") or [],
-            # WHICH search line captured this recipe: the first line (row order)
-            # whose results carried it, text + locale. `lines` = every line that
-            # did. `seat_line` = the line whose RESERVED seat it took; absent
-            # when it won an open seat on merit.
-            "search_line": ((entry.get("_lines") or entry.get("_queries") or [None])[0]),
-            "lines": entry.get("_lines") or [],
-            "batch_source": "/dishes/refresh",
-        }
-        if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
-            master_block["seat_line"] = _seat_line
-        # Found through a video whose description links to this page (the video
-        # lane's link class): keep which video, so the page can show it.
-        if entry.get("_via_video"):
-            master_block["via_video"] = {k: v for k, v in entry["_via_video"].items()
-                                         if v not in (None, "")}
-        # Exceptionalism grade was computed in _compute_custom_ou at the
-        # batch step. Stamp it onto _master so the row carries its grade
-        # forever (the cohort's σ is also persisted on dish.last_ou_fit
-        # for future harvest-grading). n<25 dishes don't get a custom
-        # fit and therefore no exceptionalism — surfaces as em-dash in
-        # display.
-        exc = entry.get("exceptionalism")
-        if exc:
-            master_block["exceptionalism"] = exc
-        payload["_master"] = master_block
-        # A recipe ANOTHER dish already holds moves here only if this dish is
-        # its nearer neighbour (dish_match.label_holder - the suggested-dish
-        # judgment). When the other dish keeps it, its _master block is left
-        # exactly as it was: the recipe is still THIS run's winner (the
-        # selection ledger says so, and the dish results page reads the ledger),
-        # its content is still refreshed, only the label does not move.
-        try:
-            from input.pipeline import dish_match as _dmh
-            from input.pipeline.embeddings import bytes_to_vec as _b2v
-            _norm = normalize_url(url) or url
-            with _db() as _hc:
-                _held = _hc.execute(
-                    "SELECT data, embedding FROM master_recipes "
-                    "WHERE url_normalized = ? AND user_id = 0", (_norm,)).fetchone()
-                _prior = (json.loads(_held[0]).get("_master") or {}) if _held else {}
-                if (_prior.get("kind") == "top" and _prior.get("dish")
-                        and _prior["dish"] != canonical_name):
-                    _v = _b2v(_held[1]) if _held[1] else None
-                    _who = _dmh.label_holder(
-                        _hc, _v, _prior["dish"], canonical_name,
-                        likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""))
-                    if _who["holder"] == _prior["dish"]:
-                        payload["_master"] = _prior
-                        print(f"[REFRESH-DISH] LABEL STAYS with {_prior['dish']!r} "
-                              f"({_who['method']}: {_prior['dish']}={_who['current']} vs "
-                              f"{canonical_name}={_who['challenger']})  {url}")
-                    else:
-                        print(f"[REFRESH-DISH] LABEL MOVES {_prior['dish']!r} -> "
-                              f"{canonical_name!r} ({_who['method']}: "
-                              f"{_prior['dish']}={_who['current']} vs "
-                              f"{canonical_name}={_who['challenger']})  {url}")
-        except Exception as _he:
-            print(f"[REFRESH-DISH] label-holder check skipped: {type(_he).__name__}: {_he}")
-        # Stamp the DISH-COHORT scoring (in-cohort percentiles + field context +
-        # competitiveness) onto _scoring. This is the LIVE refresh path — it does
-        # NOT use pre_scored_from_entry, so the cohort signals must be merged here,
-        # on top of the URL-static Moz _scoring set during extract. Feeds the
-        # editorial authority commentary (relative/qualitative only).
-        _cs = payload.get("_scoring") or {}
-        if entry.get("power") is not None:
-            _cs["power"] = float(entry["power"])
-        if entry.get("ou_pct") is not None:
-            _cs["ouPercentile"] = round(float(entry["ou_pct"]) * 100, 1)
-        if entry.get("power_pct") is not None:
-            _cs["powerPercentile"] = round(float(entry["power_pct"]) * 100, 1)
-        _f = entry.get("_field") or {}
-        if _f.get("avg_power") is not None:
-            _cs["fieldAvgPower"] = float(_f["avg_power"])
-            _cs["fieldMaxPower"] = float(_f.get("max_power", _f["avg_power"]))
-            _cs["fieldMinPower"] = float(_f.get("min_power", _f["avg_power"]))
-            _cs["fieldN"] = int(_f.get("n", 0))
-        if _f.get("site_restriction"):
-            _cs["fieldScope"] = ", ".join(_f["site_restriction"])
-        payload["_scoring"] = _cs
-        # A dish refresh never enriches at save time: the three enrich blocks
-        # (~$0.05 + ~10s per row) are a separate, batch-shaped step. The
-        # per-dish opt-in that used to sit here was removed 2026-10-16 (3 of
-        # 461 dishes had it on; everyone enriched later by hand).
-        payload["_skip_auto_enrich"] = True
-        try:
-            await asyncio.to_thread(_save_recipe_core, payload)
-            saved_count += 1
-            saved_urls.append(url)
-            # Consume the seat only now — a failed save above never did.
-            if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
-                _quotas[_seat_line] -= 1
-                print(f"[REFRESH-DISH] RESERVED SEAT ({_seat_line!r}, "
-                      f"{_quotas[_seat_line]} left)"
-                      f"{' [authority absent — Google order]' if entry.get('_authority_absent') else ''}"
-                      f" <- {url}")
-            elif _quotas:
-                _open[0] = max(0, _open[0] - 1)
-            if isinstance(entry.get("ou"), (int, float)):
-                last_saved_ou = float(entry["ou"])   # lowest saved = the real cut bar
-            if (entry.get("rank") or 0) > target:
-                backfilled += 1
-        except HTTPException as e:
-            print(f"[REFRESH-DISH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
-            _record_reject(entry, f"save-fail-{e.status_code}: {e.detail}")
-        except Exception as e:
-            print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
-            _record_reject(entry, f"save-fail: {type(e).__name__}")
+        finally:
+            if not _won:
+                _release(_seat_hold)
+            _extract_ahead()
 
     # VIDEO LANE: its own seats, after the web winners, never competing with them.
     try:
